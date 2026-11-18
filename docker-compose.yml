@@ -1,0 +1,65 @@
+# Ambiente local: PostgreSQL, app (Next.js) e worker, a partir de uma única imagem.
+# Uso: cp .env.example .env && docker compose up -d --wait
+
+x-env-app: &env-app
+  # .env opcional: `docker compose build`/`config` funcionam sem ele (CA-7).
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    # Na rede do compose o host é "postgres" (o .env aponta para localhost, para uso fora do container).
+    DATABASE_URL: postgresql://${POSTGRES_USER:-agenda}:${POSTGRES_PASSWORD:-agenda_dev}@postgres:5432/${POSTGRES_DB:-agenda_beleza}
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agenda}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agenda_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-agenda_beleza}
+      # Lida pelo script de initdb para criar a base de testes de integração.
+      TEST_DATABASE_URL: ${TEST_DATABASE_URL:-}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Publicada para os testes locais (npm test). Se a 5432 estiver ocupada, troque POSTGRES_PORT.
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      # -h 127.0.0.1 força TCP: durante o initdb o servidor temporário só escuta no socket Unix.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  app:
+    build: .
+    image: agenda-beleza:dev
+    command: ["app"]
+    init: true
+    <<: *env-app
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # A imagem slim não tem curl/wget; usa o fetch do Node.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  worker:
+    # Mesma imagem da app, sem segundo build.
+    image: agenda-beleza:dev
+    command: ["worker"]
+    init: true
+    <<: *env-app
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  pgdata: {}

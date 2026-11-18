@@ -14,5 +14,9 @@ export default defineConfig([
     'test-results/**',
     'blob-report/**',
     'next-env.d.ts',
+    // Cliente Prisma gerado por `npm run db:generate` (não é código escrito à mão).
+    'src/generated/**',
+    // Bundles do worker e do check-env gerados por `npm run build:node`.
+    'dist/**',
   ]),
 ]);

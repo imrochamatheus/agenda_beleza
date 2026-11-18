@@ -3,6 +3,15 @@ import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
+// Carrega o .env local (DATABASE_URL, TEST_DATABASE_URL...) para os processos de teste.
+// Variáveis já definidas no ambiente (CI) prevalecem: loadEnvFile não as sobrescreve.
+// Só o erro de arquivo inexistente é ignorado.
+try {
+  process.loadEnvFile(fileURLToPath(new URL('./.env', import.meta.url)));
+} catch (erro) {
+  if ((erro as NodeJS.ErrnoException).code !== 'ENOENT') throw erro;
+}
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -11,9 +20,6 @@ export default defineConfig({
   },
   test: {
     setupFiles: ['./vitest.setup.ts'],
-    // Na 5.1.1 a opção não é aceita por projeto (R-2); fica na raiz para o projeto
-    // integration terminar com código 0 enquanto não houver testes de banco (RN-6).
-    passWithNoTests: true,
     coverage: {
       provider: 'v8',
       // Com include definido, arquivos de src/ não importados por testes entram com 0%.
@@ -23,6 +29,8 @@ export default defineConfig({
         'src/**/*.test.{ts,tsx}',
         // Arquivos só de tipos não têm linhas executáveis.
         'src/**/*.d.ts',
+        // Cliente Prisma gerado por `npm run db:generate` (código gerado, não escrito à mão).
+        'src/generated/**',
       ],
       thresholds: { lines: 90 },
       reporter: ['text', 'html', 'lcov', 'json-summary'],
