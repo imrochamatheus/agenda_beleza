@@ -57,6 +57,18 @@ npm run test:e2e               # build + Playwright (viewport de celular); liber
 - **Volume antigo sem a base de testes** (criado antes do script de initdb): `docker compose exec postgres createdb -U agenda agenda_beleza_test`.
 - **Volume parcialmente inicializado:** se o `TEST_DATABASE_URL` tiver um nome de base inválido (fora de `[a-z0-9_]`, com mais de 63 caracteres, igual a `POSTGRES_DB` ou a `postgres`, `template0` ou `template1`), a primeira subida do `postgres` falha com `exited (1)`, e o log diz o motivo. Nos `up` seguintes, o initdb não roda de novo, e o banco sobe **sem** a base de testes. Corrija a variável e rode `docker compose down -v` antes de subir de novo (ou crie a base com o `createdb` acima).
 - Navegador do E2E (uma vez por máquina): `npx playwright install chromium`.
+
+### Banco de teste e migrações
+
+- **Cada execução de `npm run test:integration` (e de `npm test` e `npm run test:coverage`) apaga e recria o schema `public` da base de `TEST_DATABASE_URL`** (`DROP SCHEMA public CASCADE; CREATE SCHEMA public`) e depois aplica `prisma migrate deploy` nela. A guarda de `TEST_DATABASE_URL` roda antes de qualquer conexão. A base de `DATABASE_URL` nunca é tocada, e os dados da última execução ficam na base de teste para depuração.
+- **Não rode duas execuções de testes de integração ao mesmo tempo** sobre a mesma base: uma apaga o schema da outra.
+- **Teste único:** `npx vitest run --project integration tests/integration/db/reserva-exclusion.test.ts` (o reset e as migrações rodam do mesmo jeito).
+- **`prisma db push` é proibido:** ele altera o banco sem migração e cria drift com o histórico. Também não use `prisma migrate reset` contra a base de desenvolvimento por engano: ele lê `DATABASE_URL`.
+- **Como criar migrações:**
+  1. Mude `prisma/schema.prisma` e gere a migração pelo Prisma (`npx prisma migrate dev --name <nome>` contra a base de desenvolvimento). Não edite à mão o SQL gerado.
+  2. O que o Prisma não expressa (exclusion constraints, CHECKs, índices parciais, triggers) vai em **migração SQL própria**, criada com `npx prisma migrate dev --create-only --name <nome>` e escrita à mão, com o SQL inverso em comentário.
+  3. **Migrações são congeladas depois do merge:** nunca edite uma migração já aplicada. Mudanças futuras criam migração nova.
+  4. O teste `tests/integration/db/drift.test.ts` confere que o Prisma não acusa drift e que cada objeto de SQL bruto existe no catálogo pelo nome.
 - Outros gates: `npm run lint`, `npm run typecheck`, `npm run build`.
 
 ## Credenciais para os serviços reais

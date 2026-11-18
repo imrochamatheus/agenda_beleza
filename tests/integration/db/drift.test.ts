@@ -1,0 +1,328 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import type pg from 'pg';
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+
+import { urlBancoDeTeste } from '../support/banco';
+import { executarPrisma } from '../support/db';
+import { conectar } from '../support/sql';
+
+// CA-1 (RN-11), CA-15 (RN-3) e CA-22 (RN-13). Os nomes vêm do contrato de docs/demandas/D-004/dba.md §3.
+// O `migrate diff` é cego aos objetos de SQL bruto (design §0), por isso o catálogo os confere pelo nome.
+let c: pg.Client;
+
+beforeAll(async () => {
+  c = await conectar();
+});
+
+afterAll(async () => {
+  await c.end();
+});
+
+async function linhas<T extends pg.QueryResultRow>(sql: string, params: unknown[] = []): Promise<T[]> {
+  return (await c.query<T>(sql, params)).rows;
+}
+
+const TABELAS = [
+  'assinatura',
+  'assinatura_pagamento',
+  'assinatura_transicao',
+  'auditoria',
+  'bloqueio',
+  'cliente',
+  'consentimento',
+  'convite',
+  'email_log',
+  'jornada',
+  'mensagem',
+  'mensagem_tentativa',
+  'profissional',
+  'rate_limit_janela',
+  'reserva',
+  'reserva_item',
+  'salao',
+  'salao_slug',
+  'servico',
+  'servico_profissional',
+  'sessao',
+  'token',
+  'usuario',
+  'webhook_evento',
+];
+
+const ENUMS: Record<string, string[]> = {
+  papel_usuario: ['gestor', 'profissional', 'super_admin'],
+  tipo_token: ['confirmacao_email', 'recuperacao_senha'],
+  status_reserva: ['confirmado', 'cancelado', 'concluido', 'nao_compareceu'],
+  origem_reserva: ['publico', 'equipe'],
+  origem_consentimento: ['publico', 'equipe'],
+  estado_assinatura: ['pendente', 'em_teste', 'ativa', 'em_carencia', 'suspensa', 'cancelada', 'encerrada'],
+  resultado_webhook: ['recebido', 'processado', 'ignorado', 'rejeitado', 'erro'],
+  tipo_mensagem: ['confirmacao', 'remarcacao', 'cancelamento'],
+  estado_mensagem: ['pendente', 'enviando', 'enviada', 'falhou', 'nao_enviada', 'substituida', 'cancelada_anonimizacao'],
+  resultado_tentativa: ['sucesso', 'falha'],
+  resultado_auditoria: ['sucesso', 'falha'],
+};
+
+// [nome, tabela, contype]
+const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
+  ['reserva_sem_sobreposicao', 'reserva', 'x'],
+  ['jornada_sem_sobreposicao', 'jornada', 'x'],
+  ['reserva_ordem_chk', 'reserva', 'c'],
+  ['cliente_anonimizacao_chk', 'cliente', 'c'],
+  ['cliente_telefone_e164_chk', 'cliente', 'c'],
+  ['mensagem_destinatario_e164_chk', 'mensagem', 'c'],
+  ['salao_slug_formato_chk', 'salao_slug', 'c'],
+  ['usuario_email_minusculo_chk', 'usuario', 'c'],
+  ['usuario_papel_salao_chk', 'usuario', 'c'],
+  ['convite_email_minusculo_chk', 'convite', 'c'],
+  ['jornada_dia_semana_chk', 'jornada', 'c'],
+  ['jornada_faixa_chk', 'jornada', 'c'],
+  ['servico_preco_chk', 'servico', 'c'],
+  ['servico_duracao_chk', 'servico', 'c'],
+  ['reserva_item_preco_chk', 'reserva_item', 'c'],
+  ['reserva_item_duracao_chk', 'reserva_item', 'c'],
+  ['assinatura_pagamento_valor_chk', 'assinatura_pagamento', 'c'],
+  ['bloqueio_ordem_chk', 'bloqueio', 'c'],
+];
+
+// [nome, tabela, único]
+const INDICES_SQL_BRUTO: [string, string, boolean][] = [
+  ['usuario_gestor_por_salao_uniq', 'usuario', true],
+  ['salao_slug_atual_uniq', 'salao_slug', true],
+  ['assinatura_vigente_por_salao_uniq', 'assinatura', true],
+  ['webhook_evento_dedupe_uniq', 'webhook_evento', true],
+  ['reserva_cliente_confirmada_idx', 'reserva', false],
+  ['mensagem_pendentes_idx', 'mensagem', false],
+  ['bloqueio_periodo_idx', 'bloqueio', false],
+];
+
+// tgtype: 27 = BEFORE | ROW | DELETE | UPDATE; 34 = BEFORE | TRUNCATE (por instrução).
+const TRIGGERS: [string, string, number][] = [
+  ['auditoria_somente_insercao_linha', 'auditoria', 27],
+  ['auditoria_somente_insercao_truncate', 'auditoria', 34],
+  ['assinatura_transicao_somente_insercao_linha', 'assinatura_transicao', 27],
+  ['assinatura_transicao_somente_insercao_truncate', 'assinatura_transicao', 34],
+];
+
+const FKS_COMPOSTAS = [
+  'reserva_salao_id_profissional_id_fkey',
+  'reserva_salao_id_cliente_id_fkey',
+  'reserva_item_salao_id_reserva_id_fkey',
+  'reserva_item_salao_id_servico_id_fkey',
+  'servico_profissional_salao_id_servico_id_fkey',
+  'servico_profissional_salao_id_profissional_id_fkey',
+  'jornada_salao_id_profissional_id_fkey',
+  'bloqueio_salao_id_profissional_id_fkey',
+  'mensagem_salao_id_reserva_id_fkey',
+  'consentimento_salao_id_cliente_id_fkey',
+  'convite_salao_id_profissional_id_fkey',
+  'profissional_salao_id_usuario_id_fkey',
+];
+
+describe('CA-1: catálogo depois do migrate deploy', () => {
+  it('CA-1: existem exatamente as 24 tabelas do contrato em public (fora _prisma_migrations)', async () => {
+    const r = await linhas<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> '_prisma_migrations'
+       ORDER BY table_name`,
+    );
+    expect(r.map((x) => x.table_name)).toEqual([...TABELAS].sort());
+  });
+
+  it('CA-1: os enums têm exatamente os valores do contrato, na ordem', async () => {
+    const r = await linhas<{ tipo: string; valores: string[] }>(
+      `SELECT t.typname AS tipo, array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] AS valores
+       FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+       WHERE t.typnamespace = 'public'::regnamespace GROUP BY t.typname`,
+    );
+    expect(Object.fromEntries(r.map((x) => [x.tipo, x.valores]))).toEqual(ENUMS);
+  });
+
+  it('CA-1: a extensão btree_gist está instalada', async () => {
+    expect(await linhas("SELECT extname FROM pg_extension WHERE extname = 'btree_gist'")).toEqual([
+      { extname: 'btree_gist' },
+    ]);
+  });
+
+  it('CA-1: cada exclusion e CHECK de SQL bruto existe pelo nome, na tabela e com o tipo certos', async () => {
+    const r = await linhas<{ nome: string; tabela: string; tipo: string }>(
+      `SELECT conname AS nome, conrelid::regclass::text AS tabela, contype::text AS tipo
+       FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND contype IN ('x', 'c')
+       ORDER BY conname`,
+    );
+    expect(r).toEqual(
+      CONSTRAINTS_SQL_BRUTO.map(([nome, tabela, tipo]) => ({ nome, tabela, tipo })).sort((a, b) =>
+        a.nome.localeCompare(b.nome),
+      ),
+    );
+  });
+
+  it('CA-1 (RN-7): reserva_sem_sobreposicao usa tstzrange(inicio, ocupado_ate) e só os status ativos', async () => {
+    const [r] = await linhas<{ def: string }>(
+      "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'reserva_sem_sobreposicao'",
+    );
+    expect(r.def).toContain('EXCLUDE USING gist (profissional_id WITH =, tstzrange(inicio, ocupado_ate, \'[)\'::text) WITH &&)');
+    expect(r.def).toContain("'confirmado'::status_reserva");
+    expect(r.def).toContain("'concluido'::status_reserva");
+    expect(r.def).toContain("'nao_compareceu'::status_reserva");
+    expect(r.def).not.toContain("'cancelado'");
+  });
+
+  it('CA-1: cada índice de SQL bruto existe pelo nome, na tabela certa e com a unicidade certa', async () => {
+    const r = await linhas<{ nome: string; tabela: string; unico: boolean }>(
+      `SELECT i.relname AS nome, t.relname AS tabela, x.indisunique AS unico
+       FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid
+       WHERE i.relname = ANY($1) ORDER BY i.relname`,
+      [INDICES_SQL_BRUTO.map(([n]) => n)],
+    );
+    expect(r).toEqual(
+      INDICES_SQL_BRUTO.map(([nome, tabela, unico]) => ({ nome, tabela, unico })).sort((a, b) =>
+        a.nome.localeCompare(b.nome),
+      ),
+    );
+  });
+
+  it('CA-1 (RN-10): os triggers append-only existem com o tgtype do contrato e chamam a função', async () => {
+    const r = await linhas<{ nome: string; tabela: string; tgtype: number; funcao: string }>(
+      `SELECT tgname AS nome, tgrelid::regclass::text AS tabela, tgtype::int AS tgtype, tgfoid::regproc::text AS funcao
+       FROM pg_trigger WHERE NOT tgisinternal ORDER BY tgname`,
+    );
+    expect(r).toEqual(
+      TRIGGERS.map(([nome, tabela, tgtype]) => ({
+        nome,
+        tabela,
+        tgtype,
+        funcao: 'rejeitar_alteracao_somente_insercao',
+      })).sort((a, b) => a.nome.localeCompare(b.nome)),
+    );
+  });
+
+  it('CA-1 (RN-1): nenhuma coluna timestamp sem fuso em public (fora _prisma_migrations)', async () => {
+    const r = await linhas(
+      `SELECT table_name, column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND data_type = 'timestamp without time zone' AND table_name <> '_prisma_migrations'`,
+    );
+    expect(r).toEqual([]);
+  });
+});
+
+describe('CA-1: o Prisma não acusa drift', () => {
+  it(
+    'CA-1: migrate diff --from-config-datasource --to-schema sai com 0 (sem diferença)',
+    () => {
+      const r = executarPrisma(
+        ['migrate', 'diff', '--from-config-datasource', '--to-schema', 'prisma/schema.prisma', '--exit-code'],
+        urlBancoDeTeste(),
+      );
+      expect(r.stderr).not.toMatch(/error/i);
+      expect(r.status).toBe(0);
+      expect(r.stdout + r.stderr).toContain('No difference detected');
+    },
+    60_000,
+  );
+
+  it(
+    'CA-1 (controle negativo): com um model a mais no schema, o mesmo diff sai com 2',
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'd004-drift-'));
+      try {
+        const schema = join(dir, 'schema.prisma');
+        writeFileSync(
+          schema,
+          `${readFileSync(fileURLToPath(new URL('../../../prisma/schema.prisma', import.meta.url)), 'utf8')}\nmodel ControleDrift {\n  id Int @id\n}\n`,
+        );
+        const r = executarPrisma(
+          ['migrate', 'diff', '--from-config-datasource', '--to-schema', schema, '--exit-code'],
+          urlBancoDeTeste(),
+        );
+        expect(r.status).toBe(2);
+        expect(r.stdout).toContain('ControleDrift');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+});
+
+describe('CA-15: integridade referencial e identificadores', () => {
+  it('CA-15: as 35 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
+    const r = await linhas<{ nome: string; del: string; upd: string }>(
+      `SELECT conname AS nome, confdeltype::text AS del, confupdtype::text AS upd
+       FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace`,
+    );
+    expect(r).toHaveLength(35);
+    expect(r.filter((f) => f.del !== 'r' || f.upd !== 'r')).toEqual([]);
+  });
+
+  it('CA-15 (RN-2): as FKs compostas do contrato existem e têm (salao_id, x_id) como colunas', async () => {
+    const r = await linhas<{ nome: string; colunas: string[] }>(
+      `SELECT conname AS nome,
+              array(SELECT attname FROM unnest(conkey) WITH ORDINALITY k(n, o)
+                    JOIN pg_attribute a ON a.attrelid = conrelid AND a.attnum = k.n ORDER BY k.o)::text[] AS colunas
+       FROM pg_constraint WHERE contype = 'f' AND conname = ANY($1) ORDER BY conname`,
+      [FKS_COMPOSTAS],
+    );
+    expect(r.map((f) => f.nome)).toEqual([...FKS_COMPOSTAS].sort());
+    for (const f of r) {
+      expect(f.colunas).toHaveLength(2);
+      expect(f.colunas[0]).toBe('salao_id');
+    }
+  });
+
+  it('CA-15 (RN-3): toda coluna id é uuid com default gen_random_uuid()', async () => {
+    const r = await linhas<{ tabela: string; tipo: string; padrao: string | null }>(
+      `SELECT table_name AS tabela, udt_name AS tipo, column_default AS padrao FROM information_schema.columns
+       WHERE table_schema = 'public' AND column_name = 'id' AND table_name <> '_prisma_migrations'`,
+    );
+    expect(r.filter((x) => x.tipo !== 'uuid' || x.padrao !== 'gen_random_uuid()')).toEqual([]);
+    // Tabelas sem id: PKs compostas (rate_limit_janela, servico_profissional) e o slug como PK (salao_slug).
+    const semId = TABELAS.filter((t) => !r.some((x) => x.tabela === t));
+    expect(semId).toEqual(['rate_limit_janela', 'salao_slug', 'servico_profissional']);
+  });
+
+  it('CA-15 (RN-3): criado_em e os instantes de registro têm default now() no banco', async () => {
+    const r = await linhas<{ tabela: string; coluna: string; padrao: string | null }>(
+      `SELECT table_name AS tabela, column_name AS coluna, column_default AS padrao FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND column_name IN ('criado_em', 'ocorrido_em', 'ocorrida_em', 'recebido_em', 'iniciada_em')`,
+    );
+    // O Prisma grava @default(now()) como CURRENT_TIMESTAMP, que é o mesmo que now() no PostgreSQL.
+    expect(r.filter((x) => x.padrao !== 'CURRENT_TIMESTAMP' && x.padrao !== 'now()')).toEqual([]);
+    // Exceções a criado_em registradas no dba.md: auditoria (ocorrido_em), assinatura_transicao
+    // (ocorrida_em), webhook_evento (recebido_em) e mensagem_tentativa (iniciada_em).
+    const coluna = Object.fromEntries(r.filter((x) => x.coluna !== 'criado_em').map((x) => [x.tabela, x.coluna]));
+    expect(coluna).toEqual({
+      auditoria: 'ocorrido_em',
+      assinatura_transicao: 'ocorrida_em',
+      webhook_evento: 'recebido_em',
+      mensagem_tentativa: 'iniciada_em',
+    });
+    // Só rate_limit_janela (contador por janela, PK chave + janela_inicio) não tem instante de registro.
+    expect(TABELAS.filter((t) => !r.some((x) => x.tabela === t))).toEqual(['rate_limit_janela']);
+  });
+});
+
+describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
+  it('CA-22: as migrações foram aplicadas nesta execução e nada de uma execução anterior sobrou em auditoria', async () => {
+    const inicio = new Date(inject('inicioDoReset'));
+    const migracoes = await linhas<{ migration_name: string; antes: boolean; ok: boolean }>(
+      `SELECT migration_name, started_at < $1 AS antes, (finished_at IS NOT NULL AND rolled_back_at IS NULL) AS ok
+       FROM _prisma_migrations ORDER BY migration_name`,
+      [inicio],
+    );
+    expect(migracoes).toEqual([
+      { migration_name: '20261118000000_init', antes: false, ok: true },
+      { migration_name: '20261118000100_reserva_exclusion', antes: false, ok: true },
+      { migration_name: '20261118000200_restricoes_sql', antes: false, ok: true },
+    ]);
+    const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
+      inicio,
+    ]);
+    expect(velhas.n).toBe(0);
+  });
+});

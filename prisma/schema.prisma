@@ -1,5 +1,15 @@
-// Schema do Prisma. Os models chegam na E0.4; por ora só o gerador e a fonte de dados.
+// Schema do Prisma da v1 (D-004, E0.4). Parecer e contrato de nomes: docs/demandas/D-004/dba.md.
 // A URL de conexão fica em prisma.config.ts (Prisma 7 não aceita `url` aqui).
+//
+// Regras deste arquivo (não quebre sem passar pelo DBA):
+// - Nomes físicos em snake_case por @@map/@map. O SQL bruto das migrações referencia esses nomes.
+// - Todo DateTime é @db.Timestamptz(6) (instantes em UTC). A jornada é hora local em minutos.
+// - IDs uuid com default gen_random_uuid() e criado_em com default now() NO BANCO.
+// - Toda relação declara onDelete: Restrict e onUpdate: Restrict (nada de CASCADE nem SET NULL).
+// - Relações entre tabelas do mesmo salão usam FK composta (salao_id, x_id) -> (salao_id, id).
+// - Exclusions, CHECKs, índices parciais/de expressão e triggers ficam SÓ nas migrações SQL
+//   (20261118000100_reserva_exclusion e 20261118000200_restricoes_sql). O Prisma não os enxerga.
+// - Proibido renomear valores de StatusReserva: o predicado de reserva_sem_sobreposicao usa os nomes.
 
 generator client {
   provider = "prisma-client"
@@ -8,4 +18,626 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum PapelUsuario {
+  gestor
+  profissional
+  super_admin
+
+  @@map("papel_usuario")
+}
+
+enum TipoToken {
+  confirmacao_email
+  recuperacao_senha
+
+  @@map("tipo_token")
+}
+
+enum StatusReserva {
+  confirmado
+  cancelado
+  concluido
+  nao_compareceu
+
+  @@map("status_reserva")
+}
+
+enum OrigemReserva {
+  publico
+  equipe
+
+  @@map("origem_reserva")
+}
+
+enum OrigemConsentimento {
+  publico
+  equipe
+
+  @@map("origem_consentimento")
+}
+
+enum EstadoAssinatura {
+  pendente
+  em_teste
+  ativa
+  em_carencia
+  suspensa
+  cancelada
+  encerrada
+
+  @@map("estado_assinatura")
+}
+
+enum ResultadoWebhook {
+  recebido
+  processado
+  ignorado
+  rejeitado
+  erro
+
+  @@map("resultado_webhook")
+}
+
+enum TipoMensagem {
+  confirmacao
+  remarcacao
+  cancelamento
+
+  @@map("tipo_mensagem")
+}
+
+enum EstadoMensagem {
+  pendente
+  enviando
+  enviada
+  falhou
+  nao_enviada
+  substituida
+  cancelada_anonimizacao
+
+  @@map("estado_mensagem")
+}
+
+enum ResultadoTentativa {
+  sucesso
+  falha
+
+  @@map("resultado_tentativa")
+}
+
+enum ResultadoAuditoria {
+  sucesso
+  falha
+
+  @@map("resultado_auditoria")
+}
+
+// ---------------------------------------------------------------------------
+// Salão, slugs e usuários
+// ---------------------------------------------------------------------------
+
+model Salao {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome             String
+  /// Fuso IANA usado para exibir agenda e disponibilidade.
+  fuso             String    @default("America/Sao_Paulo")
+  gradeMin         Int       @default(15) @map("grade_min")
+  antecedenciaMin  Int       @default(120) @map("antecedencia_min")
+  janelaDias       Int       @default(60) @map("janela_dias")
+  intervaloMin     Int       @default(0) @map("intervalo_min")
+  /// Suspensão manual pelo super admin, independente do estado da assinatura (S11).
+  suspensoManualEm DateTime? @map("suspenso_manual_em") @db.Timestamptz(6)
+  criadoEm         DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm     DateTime  @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+
+  slugs                SalaoSlug[]
+  usuarios             Usuario[]
+  profissionais        Profissional[]
+  servicos             Servico[]
+  servicosProfissional ServicoProfissional[]
+  jornadas             Jornada[]
+  bloqueios            Bloqueio[]
+  clientes             Cliente[]
+  consentimentos       Consentimento[]
+  reservas             Reserva[]
+  reservaItens         ReservaItem[]
+  assinaturas          Assinatura[]
+  webhookEventos       WebhookEvento[]
+  mensagens            Mensagem[]
+  convites             Convite[]
+  auditorias           Auditoria[]
+
+  @@map("salao")
+}
+
+/// Slugs atuais e históricos numa só tabela: a PK garante unicidade global.
+/// Um slug atual por salão: índice parcial salao_slug_atual_uniq (SQL bruto).
+model SalaoSlug {
+  slug     String   @id
+  salaoId  String   @map("salao_id") @db.Uuid
+  atual    Boolean
+  criadoEm DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao Salao @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([salaoId])
+  @@map("salao_slug")
+}
+
+/// salao_id é nulo só para super_admin (CHECK usuario_papel_salao_chk).
+model Usuario {
+  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId            String?      @map("salao_id") @db.Uuid
+  papel              PapelUsuario
+  /// Gravado em minúsculas (CHECK usuario_email_minusculo_chk).
+  email              String       @unique
+  nome               String
+  senhaHash          String       @map("senha_hash")
+  emailConfirmadoEm  DateTime?    @map("email_confirmado_em") @db.Timestamptz(6)
+  /// Segredo TOTP do super admin, cifrado (AES-256-GCM). Nunca em claro.
+  totpSegredoCifrado String?      @map("totp_segredo_cifrado")
+  totpAtivadoEm      DateTime?    @map("totp_ativado_em") @db.Timestamptz(6)
+  criadoEm           DateTime     @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm       DateTime     @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+
+  salao        Salao?        @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  profissional Profissional?
+  sessoes      Sessao[]
+  tokens       Token[]
+  auditorias   Auditoria[]
+
+  @@unique([salaoId, id])
+  @@map("usuario")
+}
+
+model Sessao {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId        String    @map("usuario_id") @db.Uuid
+  /// Hash do token do cookie; o token em claro nunca é gravado.
+  tokenHash        String    @unique @map("token_hash")
+  expiraEm         DateTime  @map("expira_em") @db.Timestamptz(6)
+  revogadaEm       DateTime? @map("revogada_em") @db.Timestamptz(6)
+  /// Segundo fator concluído nesta sessão (super admin).
+  totpVerificadoEm DateTime? @map("totp_verificado_em") @db.Timestamptz(6)
+  ultimoUsoEm      DateTime? @map("ultimo_uso_em") @db.Timestamptz(6)
+  criadoEm         DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([usuarioId])
+  @@index([expiraEm])
+  @@map("sessao")
+}
+
+/// Tokens de uso único (confirmação de e-mail e recuperação de senha), guardados como hash.
+model Token {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId    String    @map("usuario_id") @db.Uuid
+  tipo         TipoToken
+  tokenHash    String    @unique @map("token_hash")
+  expiraEm     DateTime  @map("expira_em") @db.Timestamptz(6)
+  usadoEm      DateTime? @map("usado_em") @db.Timestamptz(6)
+  invalidadoEm DateTime? @map("invalidado_em") @db.Timestamptz(6)
+  criadoEm     DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([usuarioId, tipo])
+  @@index([expiraEm])
+  @@map("token")
+}
+
+// ---------------------------------------------------------------------------
+// Profissionais, serviços, jornada e bloqueios
+// ---------------------------------------------------------------------------
+
+model Profissional {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId      String   @map("salao_id") @db.Uuid
+  /// Usuário vinculado (convite aceito, ou o próprio gestor que atende). Do mesmo salão (FK composta).
+  /// Único por usuário: UNIQUE (salao_id, usuario_id) equivale a UNIQUE (usuario_id), porque a FK
+  /// composta obriga salao_id = usuario.salao_id e cada usuário tem um só salão.
+  usuarioId    String?  @map("usuario_id") @db.Uuid
+  nome         String
+  /// E-mail para o convite (opcional).
+  email        String?
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+
+  salao     Salao                 @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  usuario   Usuario?              @relation(fields: [salaoId, usuarioId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  servicos  ServicoProfissional[]
+  jornadas  Jornada[]
+  bloqueios Bloqueio[]
+  reservas  Reserva[]
+  convites  Convite[]
+
+  @@unique([salaoId, id])
+  @@unique([salaoId, usuarioId])
+  @@map("profissional")
+}
+
+model Servico {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId       String   @map("salao_id") @db.Uuid
+  nome          String
+  precoCentavos Int      @map("preco_centavos")
+  duracaoMin    Int      @map("duracao_min")
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm  DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+
+  salao         Salao                 @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  profissionais ServicoProfissional[]
+  reservaItens  ReservaItem[]
+
+  @@unique([salaoId, id])
+  @@map("servico")
+}
+
+model ServicoProfissional {
+  salaoId        String   @map("salao_id") @db.Uuid
+  servicoId      String   @map("servico_id") @db.Uuid
+  profissionalId String   @map("profissional_id") @db.Uuid
+  criadoEm       DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao        Salao        @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  servico      Servico      @relation(fields: [salaoId, servicoId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  profissional Profissional @relation(fields: [salaoId, profissionalId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([salaoId, servicoId, profissionalId])
+  @@index([salaoId, profissionalId])
+  @@map("servico_profissional")
+}
+
+/// Jornada semanal em hora LOCAL do salão: dia_semana 0 (domingo) a 6, minutos desde 00:00.
+/// Pausas = vários intervalos no mesmo dia. Sem sobreposição: exclusion jornada_sem_sobreposicao.
+model Jornada {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId        String   @map("salao_id") @db.Uuid
+  profissionalId String   @map("profissional_id") @db.Uuid
+  diaSemana      Int      @map("dia_semana") @db.SmallInt
+  inicioMin      Int      @map("inicio_min")
+  fimMin         Int      @map("fim_min")
+  criadoEm       DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao        Salao        @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  profissional Profissional @relation(fields: [salaoId, profissionalId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([salaoId, profissionalId, diaSemana])
+  @@map("jornada")
+}
+
+/// profissional_id nulo = bloqueio do salão inteiro. Removível (não é histórico protegido).
+model Bloqueio {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId        String   @map("salao_id") @db.Uuid
+  profissionalId String?  @map("profissional_id") @db.Uuid
+  inicio         DateTime @db.Timestamptz(6)
+  fim            DateTime @db.Timestamptz(6)
+  motivo         String?
+  criadoEm       DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao        Salao         @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  profissional Profissional? @relation(fields: [salaoId, profissionalId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([salaoId, profissionalId])
+  @@map("bloqueio")
+}
+
+// ---------------------------------------------------------------------------
+// Clientes e consentimento
+// ---------------------------------------------------------------------------
+
+/// Identificada por (salão, telefone E.164). Anonimizada: nome e telefone nulos, anonimizada_em
+/// preenchido (CHECK cliente_anonimizacao_chk). O UNIQUE é NULLS DISTINCT: anonimizadas coexistem.
+model Cliente {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId       String    @map("salao_id") @db.Uuid
+  nome          String?
+  telefoneE164  String?   @map("telefone_e164")
+  anonimizadaEm DateTime? @map("anonimizada_em") @db.Timestamptz(6)
+  criadoEm      DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm  DateTime  @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+
+  salao          Salao           @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  consentimentos Consentimento[]
+  reservas       Reserva[]
+
+  @@unique([salaoId, telefoneE164])
+  @@unique([salaoId, id])
+  @@map("cliente")
+}
+
+model Consentimento {
+  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId      String              @map("salao_id") @db.Uuid
+  clienteId    String              @map("cliente_id") @db.Uuid
+  origem       OrigemConsentimento
+  /// Versão dos textos de Termos e Privacidade aceitos.
+  versaoTermos String              @map("versao_termos")
+  criadoEm     DateTime            @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao   Salao   @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cliente Cliente @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([salaoId, clienteId])
+  @@map("consentimento")
+}
+
+// ---------------------------------------------------------------------------
+// Reservas
+// ---------------------------------------------------------------------------
+
+/// [inicio, fim) é o atendimento; ocupado_ate = fim + intervalo vigente (snapshot).
+/// Anti-sobreposição: exclusion reserva_sem_sobreposicao sobre tstzrange(inicio, ocupado_ate, '[)').
+model Reserva {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId         String        @map("salao_id") @db.Uuid
+  profissionalId  String        @map("profissional_id") @db.Uuid
+  clienteId       String        @map("cliente_id") @db.Uuid
+  inicio          DateTime      @db.Timestamptz(6)
+  fim             DateTime      @db.Timestamptz(6)
+  ocupadoAte      DateTime      @map("ocupado_ate") @db.Timestamptz(6)
+  status          StatusReserva @default(confirmado)
+  origem          OrigemReserva
+  /// Encaixe confirmado pela equipe (fora da jornada ou sobre bloqueio).
+  encaixe         Boolean       @default(false)
+  /// Incrementa a cada remarcação; compõe a chave de idempotência das mensagens.
+  revisao         Int           @default(0)
+  /// Idempotência do duplo envio do formulário público (nula para a equipe).
+  chaveRequisicao String?       @map("chave_requisicao")
+  canceladaEm     DateTime?     @map("cancelada_em") @db.Timestamptz(6)
+  criadoEm        DateTime      @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm    DateTime      @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+
+  salao        Salao         @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  profissional Profissional  @relation(fields: [salaoId, profissionalId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  cliente      Cliente       @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  itens        ReservaItem[]
+  mensagens    Mensagem[]
+
+  @@unique([salaoId, id])
+  @@unique([salaoId, chaveRequisicao])
+  @@index([salaoId, inicio])
+  @@index([salaoId, profissionalId, inicio])
+  @@index([salaoId, clienteId, inicio])
+  @@index([atualizadoEm])
+  @@map("reserva")
+}
+
+/// Snapshot de preço (centavos) e duração (min) de cada serviço no momento da reserva.
+model ReservaItem {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId       String   @map("salao_id") @db.Uuid
+  reservaId     String   @map("reserva_id") @db.Uuid
+  servicoId     String   @map("servico_id") @db.Uuid
+  /// Posição do serviço na sequência (0, 1, ...).
+  ordem         Int      @db.SmallInt
+  precoCentavos Int      @map("preco_centavos")
+  duracaoMin    Int      @map("duracao_min")
+  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao   Salao   @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reserva Reserva @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  servico Servico @relation(fields: [salaoId, servicoId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([salaoId, reservaId, ordem])
+  @@index([salaoId, servicoId])
+  @@map("reserva_item")
+}
+
+// ---------------------------------------------------------------------------
+// Assinatura e webhooks
+// ---------------------------------------------------------------------------
+
+/// Uma assinatura vigente por salão: índice parcial assinatura_vigente_por_salao_uniq (SQL bruto).
+model Assinatura {
+  id                   String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId              String           @map("salao_id") @db.Uuid
+  estado               EstadoAssinatura @default(pendente)
+  provedorAssinaturaId String?          @unique @map("provedor_assinatura_id")
+  testeFimEm           DateTime?        @map("teste_fim_em") @db.Timestamptz(6)
+  periodoPagoAte       DateTime?        @map("periodo_pago_ate") @db.Timestamptz(6)
+  primeiraFalhaEm      DateTime?        @map("primeira_falha_em") @db.Timestamptz(6)
+  carenciaAte          DateTime?        @map("carencia_ate") @db.Timestamptz(6)
+  canceladaEm          DateTime?        @map("cancelada_em") @db.Timestamptz(6)
+  acessoAte            DateTime?        @map("acesso_ate") @db.Timestamptz(6)
+  criadoEm             DateTime         @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm         DateTime         @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+
+  salao      Salao                 @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  pagamentos AssinaturaPagamento[]
+  transicoes AssinaturaTransicao[]
+
+  @@index([salaoId])
+  @@map("assinatura")
+}
+
+/// Idempotência do efeito do pagamento: pagamento_id único (INSERT ... ON CONFLICT DO NOTHING).
+model AssinaturaPagamento {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assinaturaId  String    @map("assinatura_id") @db.Uuid
+  pagamentoId   String    @unique @map("pagamento_id")
+  status        String
+  valorCentavos Int       @map("valor_centavos")
+  aplicadoEm    DateTime? @map("aplicado_em") @db.Timestamptz(6)
+  criadoEm      DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  assinatura Assinatura @relation(fields: [assinaturaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([assinaturaId])
+  @@map("assinatura_pagamento")
+}
+
+/// Somente inserção (triggers assinatura_transicao_somente_insercao_*).
+model AssinaturaTransicao {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assinaturaId String            @map("assinatura_id") @db.Uuid
+  de           EstadoAssinatura?
+  para         EstadoAssinatura
+  causa        String
+  eventoId     String?           @map("evento_id") @db.Uuid
+  ocorridaEm   DateTime          @default(now()) @map("ocorrida_em") @db.Timestamptz(6)
+
+  assinatura Assinatura     @relation(fields: [assinaturaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  evento     WebhookEvento? @relation(fields: [eventoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([assinaturaId, ocorridaEm])
+  @@index([eventoId])
+  @@map("assinatura_transicao")
+}
+
+/// Todo evento recebido é persistido, inclusive os rejeitados. Deduplicação só entre eventos com
+/// origem válida: índice parcial webhook_evento_dedupe_uniq (SQL bruto).
+model WebhookEvento {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provedor     String
+  chaveDedupe  String           @map("chave_dedupe")
+  tipo         String?
+  recursoId    String?          @map("recurso_id")
+  /// Corpo da notificação (só IDs). A resposta completa do provedor não é guardada.
+  payload      Json             @db.JsonB
+  origemValida Boolean          @map("origem_valida")
+  resultado    ResultadoWebhook @default(recebido)
+  /// Salão resolvido no processamento (nulo enquanto não resolvido ou se rejeitado).
+  salaoId      String?          @map("salao_id") @db.Uuid
+  erro         String?
+  recebidoEm   DateTime         @default(now()) @map("recebido_em") @db.Timestamptz(6)
+  processadoEm DateTime?        @map("processado_em") @db.Timestamptz(6)
+
+  salao      Salao?                @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  transicoes AssinaturaTransicao[]
+
+  @@index([recebidoEm(sort: Desc)])
+  @@index([salaoId, recebidoEm(sort: Desc)])
+  @@map("webhook_evento")
+}
+
+// ---------------------------------------------------------------------------
+// Mensagens (outbox do WhatsApp)
+// ---------------------------------------------------------------------------
+
+/// Idempotência: UNIQUE (reserva_id, tipo, revisao) (decisão P1 do usuário).
+model Mensagem {
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId            String         @map("salao_id") @db.Uuid
+  reservaId          String         @map("reserva_id") @db.Uuid
+  tipo               TipoMensagem
+  revisao            Int
+  estado             EstadoMensagem @default(pendente)
+  /// Nulo depois da anonimização da cliente.
+  destinatarioE164   String?        @map("destinatario_e164")
+  parametros         Json?          @db.JsonB
+  /// ID devolvido pelo provedor (wamid).
+  provedorMensagemId String?        @map("provedor_mensagem_id")
+  /// Último código de erro (ex.: resultado_incerto).
+  erroCodigo         String?        @map("erro_codigo")
+  enviadaEm          DateTime?      @map("enviada_em") @db.Timestamptz(6)
+  criadoEm           DateTime       @default(now()) @map("criado_em") @db.Timestamptz(6)
+  atualizadoEm       DateTime       @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+
+  salao      Salao               @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reserva    Reserva             @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  tentativas MensagemTentativa[]
+
+  @@unique([reservaId, tipo, revisao])
+  @@index([salaoId, criadoEm(sort: Desc)])
+  @@index([salaoId, reservaId])
+  @@map("mensagem")
+}
+
+model MensagemTentativa {
+  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mensagemId   String              @map("mensagem_id") @db.Uuid
+  numero       Int
+  iniciadaEm   DateTime            @default(now()) @map("iniciada_em") @db.Timestamptz(6)
+  finalizadaEm DateTime?           @map("finalizada_em") @db.Timestamptz(6)
+  resultado    ResultadoTentativa?
+  erroCodigo   String?             @map("erro_codigo")
+  /// Pode ecoar o telefone: é anulado na anonimização.
+  erroDetalhe  String?             @map("erro_detalhe")
+
+  mensagem Mensagem @relation(fields: [mensagemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([mensagemId, numero])
+  @@map("mensagem_tentativa")
+}
+
+// ---------------------------------------------------------------------------
+// E-mail, rate limit, convites e auditoria
+// ---------------------------------------------------------------------------
+
+/// Gravado pelo adaptador de e-mail simulado (testes e desenvolvimento).
+model EmailLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  destinatario String
+  assunto      String
+  corpo        String
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  @@index([destinatario, criadoEm(sort: Desc)])
+  @@map("email_log")
+}
+
+/// Janela fixa. A chave por número é um HMAC-SHA256 do E.164, nunca o telefone em claro.
+model RateLimitJanela {
+  chave        String
+  janelaInicio DateTime @map("janela_inicio") @db.Timestamptz(6)
+  contador     Int      @default(1)
+
+  @@id([chave, janelaInicio])
+  @@index([janelaInicio])
+  @@map("rate_limit_janela")
+}
+
+/// Convite de profissional: 7 dias, uso único, token guardado como hash.
+model Convite {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId        String    @map("salao_id") @db.Uuid
+  profissionalId String    @map("profissional_id") @db.Uuid
+  /// Gravado em minúsculas (CHECK convite_email_minusculo_chk).
+  email          String
+  tokenHash      String    @unique @map("token_hash")
+  expiraEm       DateTime  @map("expira_em") @db.Timestamptz(6)
+  aceitoEm       DateTime? @map("aceito_em") @db.Timestamptz(6)
+  invalidadoEm   DateTime? @map("invalidado_em") @db.Timestamptz(6)
+  criadoEm       DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao        Salao        @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  profissional Profissional @relation(fields: [salaoId, profissionalId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([salaoId, profissionalId])
+  @@map("convite")
+}
+
+/// Somente inserção (triggers auditoria_somente_insercao_*). Segredos nunca entram em antes/depois.
+model Auditoria {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Nulo quando o ator não existe (ex.: login com e-mail inexistente).
+  atorId             String?            @map("ator_id") @db.Uuid
+  atorEmailInformado String?            @map("ator_email_informado")
+  acao               String
+  entidade           String?
+  entidadeId         String?            @map("entidade_id")
+  salaoId            String?            @map("salao_id") @db.Uuid
+  antes              Json?              @db.JsonB
+  depois             Json?              @db.JsonB
+  resultado          ResultadoAuditoria
+  ocorridoEm         DateTime           @default(now()) @map("ocorrido_em") @db.Timestamptz(6)
+
+  ator  Usuario? @relation(fields: [atorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  salao Salao?   @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([ocorridoEm(sort: Desc)])
+  @@index([salaoId, ocorridoEm(sort: Desc)])
+  @@index([atorId, ocorridoEm(sort: Desc)])
+  @@map("auditoria")
 }
