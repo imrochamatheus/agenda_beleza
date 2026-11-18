@@ -11,7 +11,7 @@ Convenções deste documento:
 - "Recusado" (G-3): a ação devolve erro tipado (`ErroValidacao{campo}` ou `ErroNegocio{codigo}`) com mensagem pt-BR, e nenhuma linha é criada ou alterada no banco (verificado no teste).
 - Isolamento por item (G-4): todo item que cria leitura ou mutação de entidade de tenant inclui teste de integração A×B (o gestor de A recebe `NaoEncontrado` para ID de B, e o registro de B fica inalterado).
 - Capacidade declarada (G-2): toda ação mutável declara uma capacidade (`configurar`, `agendar`, `cancelar`, `assinatura`, `lgpd`) em `defineAcao` (E0.5); o bloqueio por estado do salão é verificado em E6.4.
-- "Pendência de decisão do usuário" marca os itens afetados por P1 e P2 (R4); até a resposta, vale a recomendação do arquiteto.
+- P1 e P2 (R4) foram decididas pelo usuário em 18/11/2026, ambas na opção (a) recomendada pelo arquiteto.
 
 # Revisão da decomposição
 
@@ -67,13 +67,13 @@ Nenhum item foi removido. E4.4 (E2E) foi mantido como item próprio porque compr
 Nenhuma para a publicação do backlog.
 
 ### Pendências de decisão do usuário (registradas nos itens afetados)
-- **P1 — Chave de idempotência das mensagens (S3; E0.4, E3.5, E7.1).** O `CLAUDE.md` diz "reserva + tipo de evento". Opções: (a) **recomendada pelo arquiteto:** `reserva + tipo + revisão`, uma mensagem por remarcação legítima, sem duplicar repetições; o líder atualiza a frase do invariante após aprovação; (b) literal: no máximo uma mensagem de remarcação por reserva; (c) literal com sobrescrita da mesma linha, perdendo o histórico por remarcação.
-- **P2 — Extensão de teste no Mercado Pago real (S12; E6.6, E8.2).** Opções: (a) **recomendada pelo arquiteto:** o adaptador real tenta adiar a próxima cobrança e falha explicitamente se o provedor não refletir; o simulado cumpre o CA 9 do PLAN; validar em sandbox quando houver credenciais; (b) no modo real, só a data local muda e o MP pode cobrar durante o "teste estendido" (não recomendada); (c) desabilitar a extensão no modo real até confirmação do MP.
+- **P1 — Chave de idempotência das mensagens (S3; E0.4, E3.5, E7.1). DECIDIDA pelo usuário em 18/11/2026: opção (a).** O `CLAUDE.md` diz "reserva + tipo de evento". Opções: (a) **recomendada pelo arquiteto:** `reserva + tipo + revisão`, uma mensagem por remarcação legítima, sem duplicar repetições; o líder atualiza a frase do invariante após aprovação; (b) literal: no máximo uma mensagem de remarcação por reserva; (c) literal com sobrescrita da mesma linha, perdendo o histórico por remarcação.
+- **P2 — Extensão de teste no Mercado Pago real (S12; E6.6, E8.2). DECIDIDA pelo usuário em 18/11/2026: opção (a).** Opções: (a) **recomendada pelo arquiteto:** o adaptador real tenta adiar a próxima cobrança e falha explicitamente se o provedor não refletir; o simulado cumpre o CA 9 do PLAN; validar em sandbox quando houver credenciais; (b) no modo real, só a data local muda e o MP pode cobrar durante o "teste estendido" (não recomendada); (c) desabilitar a extensão no modo real até confirmação do MP.
 
 ### Não bloqueantes (suposições adotadas)
 - **S1 — Status que ocupam horário (aprovada):** lista explícita `status IN ('confirmado','concluido','nao_compareceu')` sobre `tstzrange(inicio, ocupado_ate, '[)')`, com `ocupado_ate = fim + intervalo vigente` (snapshot); só `cancelado` libera o horário. (E0.4, E3.1, E3.2)
 - **S2 — Transições de status:** `confirmado → cancelado` só antes do fim do atendimento; `confirmado → concluido | nao_compareceu` só após o início; troca entre `concluido` e `nao_compareceu` permitida para correção; `cancelado` é final. (E3.5)
-- **S3 — Idempotência de remarcações sucessivas (aprovada tecnicamente; pendente do usuário como P1):** chave `reserva:tipo:revisao`, com `UNIQUE(reserva_id, tipo, revisao)`; a revisão incrementa na transação da remarcação; pendentes obsoletas viram `substituida`. Confirmação usa revisão 0; cancelamento, a revisão vigente. (E0.4, E3.5, E7.1)
+- **S3 — Idempotência de remarcações sucessivas (aprovada pelo usuário em 18/11/2026, P1 opção a):** chave `reserva:tipo:revisao`, com `UNIQUE(reserva_id, tipo, revisao)`; a revisão incrementa na transação da remarcação; pendentes obsoletas viram `substituida`. Confirmação usa revisão 0; cancelamento, a revisão vigente. (E0.4, E3.5, E7.1)
 - **S4 — Reservas manuais da equipe** também geram confirmação, desde que a cliente tenha consentimento registrado de qualquer origem (página pública ou declarado pela equipe, origem `equipe`). Sem consentimento, o registro fica `nao_enviada`. (E3.4, E7.1)
 - **S5 — Regras de horário para a equipe:** antecedência mínima e janela máxima valem só para a página pública; a equipe não pode criar reserva com início no passado. (E3.4)
 - **S6 — Limite de 3 reservas futuras por número** vale só para a página pública. (E4.2)
@@ -82,7 +82,7 @@ Nenhuma para a publicação do backlog.
 - **S9 — Conta provisória (antes da autorização do MP):** o gestor pode entrar e configurar o salão, mas a página pública mostra "agendamento indisponível" até o teste começar. (E6.1, E6.4)
 - **S10 — Fim do período após cancelamento da assinatura:** o salão passa ao estado `encerrada`, com o mesmo comportamento somente leitura do suspenso. O gestor pode iniciar nova assinatura pela tela de assinatura, sem novo período grátis. (E6.3, E6.5)
 - **S11 — Suspensão manual** pelo super admin é um indicador independente do estado da assinatura; o salão fica efetivamente suspenso se qualquer um dos dois indicar suspensão. Reativar manualmente remove só o indicador manual. (E6.3, E8.2)
-- **S12 — Extensão de teste (aprovada como comportamento; pendente do usuário como P2):** atualiza a data local de fim do teste e, via `adiarProximaCobranca`, adia a primeira cobrança no MP. Se o provedor não refletir o adiamento, o adaptador falha com `ProvedorNaoSuportaAdiamento` e a ação não é concluída. A documentação do MP não confirma o suporte. (E6.6, E8.2)
+- **S12 — Extensão de teste (aprovada pelo usuário em 18/11/2026, P2 opção a):** atualiza a data local de fim do teste e, via `adiarProximaCobranca`, adia a primeira cobrança no MP. Se o provedor não refletir o adiamento, o adaptador falha com `ProvedorNaoSuportaAdiamento` e a ação não é concluída. A documentação do MP não confirma o suporte. (E6.6, E8.2)
 - **S13 — Operações por estado do salão (aprovada com complemento):** modelo de capacidades (`configurar`, `agendar`, `cancelar`, `assinatura`, `lgpd`) com a tabela de E6.4. Suspenso/encerrado: só leitura, `cancelar` (com aviso à cliente), `assinatura` e `lgpd`. Complemento: em `pendente`, `configurar` é permitido e `agendar` (público e equipe) é bloqueado. (E6.4)
 - **S14 — Auditoria do super admin** registra login (sucesso e falha de TOTP) e toda mutação; leituras não são auditadas. (E8.1)
 - **S15 — Validade de tokens:** confirmação de e-mail 24 h, recuperação de senha 1 h, convite 7 dias; todos de uso único e armazenados como hash. Senha mínima de 8 caracteres. Redefinir senha encerra as demais sessões do usuário. (E1.1, E1.3, E1.4)
@@ -247,7 +247,7 @@ Decidido:
 - RN-9: `salao_slug` com `UNIQUE(slug)` global, `UNIQUE(salao_id) WHERE atual` e CHECK de formato.
 - RN-10: `auditoria` e `assinatura_transicao` são somente inserção, garantido por trigger que rejeita UPDATE e DELETE (por linha) e TRUNCATE (por instrução).
 - RN-11: `prisma migrate dev` não pode gerar drift sobre os objetos criados em SQL bruto.
-Pendência de decisão do usuário: P1 (chave `reserva:tipo:revisao`, que diverge do texto literal do CLAUDE.md). Até a resposta, vale a recomendação do arquiteto (opção a).
+Decidido pelo usuário em 18/11/2026 (P1, opção a): a chave de idempotência é `reserva:tipo:revisao`, e o CLAUDE.md foi atualizado para refletir essa regra.
 Impacto em dados: alto; parecer do DBA em `docs/demandas/D-001/dba.md`.
 
 #### Critérios de aceite
@@ -914,7 +914,7 @@ Decidido:
 - RN-4: transições de status conforme S2.
 - RN-5: capacidades declaradas: remarcar = `agendar`; cancelar e marcar status = `cancelar`. O bloqueio por estado do salão é verificado em E6.4.
 - RN-6: cliente anonimizada: operações permitidas, sem mensagem.
-Pendência de decisão do usuário: P1 (uma mensagem por remarcação, via chave `reserva:tipo:revisao`). Até a resposta, vale a recomendação do arquiteto (opção a).
+Decidido pelo usuário em 18/11/2026 (P1, opção a): cada remarcação gera uma mensagem, via chave `reserva:tipo:revisao`.
 
 #### Critérios de aceite
 - [ ] CA-1: Dado uma reserva confirmada de Ana, quando o gestor a remarca para Bia (que faz todos os serviços) num horário livre, então a reserva passa para Bia, `revisao` é incrementada e existe registro `remarcacao` `pendente` dessa revisão.
@@ -1359,7 +1359,7 @@ Decidido:
 - RN-2: nenhum dado de cartão é recebido ou armazenado; o cartão é informado no checkout do provedor.
 - RN-3: erros do provedor são traduzidos em erros da porta, sem vazar para a lógica de negócio.
 - RN-4: `adiarProximaCobranca` faz o PUT e confere com uma consulta; se a nova data não for refletida, falha com `ProvedorNaoSuportaAdiamento`.
-Pendência de decisão do usuário: P2 (comportamento da extensão de teste no MP real). Até a resposta, vale a recomendação do arquiteto (opção a).
+Decidido pelo usuário em 18/11/2026 (P2, opção a): o adaptador real tenta adiar a próxima cobrança no MP e falha explicitamente se o provedor não refletir o adiamento; validar em sandbox.
 Pendência (não é CA): validação em sandbox, que exige credenciais, URL pública HTTPS e autorização do usuário.
 
 #### Critérios de aceite
@@ -1416,7 +1416,7 @@ Decidido:
 - RN-9: reconciliação periódica reenfileira mensagens `pendente` sem job ativo há mais de N minutos; não deriva eventos do estado das reservas.
 - RN-10: mensagem `enviada` nunca é reenviada; o reenvio manual de `falhou` reutiliza o mesmo registro e chave.
 - RN-11: conteúdo da confirmação: salão, serviços, profissional, data e horário no fuso do salão.
-Pendência de decisão do usuário: P1 (chave `reserva:tipo:revisao`, que diverge do texto literal do CLAUDE.md). Até a resposta, vale a recomendação do arquiteto (opção a).
+Decidido pelo usuário em 18/11/2026 (P1, opção a): a chave de idempotência é `reserva:tipo:revisao`, e o CLAUDE.md foi atualizado para refletir essa regra.
 
 #### Critérios de aceite
 - [ ] CA-1: Dado uma reserva da fábrica e o registro gravado por `registrarMensagem(confirmacao)` numa transação, com o job enviado após o commit, quando o worker processa, então existe 1 mensagem `confirmacao` `enviada` com 1 tentativa registrada.
@@ -1557,7 +1557,7 @@ Decidido:
 - RN-2: suspender/reativar altera só o indicador manual (S11).
 - RN-3: estender teste só para assinatura `em_teste`; usa `adiarProximaCobranca` (E6.6); se o provedor falhar, nada muda e a falha é auditada.
 Sugestão (não decidida): N inteiro de 1 a 90 dias.
-Pendência de decisão do usuário: P2 (extensão de teste no MP real). Até a resposta, vale a recomendação do arquiteto (opção a).
+Decidido pelo usuário em 18/11/2026 (P2, opção a): estender o teste adia a próxima cobrança no MP real; se o provedor não refletir, a ação falha explicitamente e nada muda localmente.
 - RN-4: edição respeita as mesmas validações de E2.5.
 
 #### Critérios de aceite

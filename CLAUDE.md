@@ -26,7 +26,7 @@ These rules span many files. Breaking any of them breaks an acceptance criterion
 - **Clients** have no account. Each client is identified by salon + phone number, normalized to Brazilian E.164.
 - **Integrations sit behind adapters:** Mercado Pago, WhatsApp Cloud API, transactional email and Turnstile each get a real adapter, selected by environment variables, and a simulated adapter for local runs and tests. Keep integration code out of the business logic. Never store card data.
 - **Subscriptions:** never trust the browser redirect. Query Mercado Pago and process webhooks with origin validation and idempotency (persist every event). Timeline: 30-day trial → R$79/month → a 3-day grace period after the first failed charge → suspended. A suspended salon is read-only, except that staff can still cancel future bookings, and those cancellations still notify the client.
-- **WhatsApp messages** (confirmation, reschedule, cancellation only) are queued *after* the booking is saved. Each attempt is logged, retries use backoff, and the idempotency key is booking + event type. A failed send must never change the booking.
+- **WhatsApp messages** (confirmation, reschedule, cancellation only) are queued *after* the booking is saved. Each attempt is logged, retries use backoff, and the idempotency key is booking + event type + booking revision (`reserva:tipo:revisao`), so each legitimate reschedule is notified once and never duplicated. A failed send must never change the booking.
 - **Super admin** accounts are created by seed or environment variable and require TOTP. Every super admin action writes an audit log entry: who, when, what, and the old and new values.
 
 ## Roles
