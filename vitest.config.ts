@@ -52,6 +52,9 @@ export default defineConfig({
           name: 'integration',
           environment: 'node',
           include: ['tests/integration/**/*.test.ts'],
+          // Só aqui (não no projeto unit): recria o schema da base de TEST_DATABASE_URL e aplica
+          // `prisma migrate deploy` uma vez por execução. `npm run test:unit` segue sem banco.
+          globalSetup: ['./tests/integration/support/global-setup.ts'],
         },
       },
     ],
