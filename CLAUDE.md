@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The repository has no application code yet. `PLAN.md` (in Portuguese) is the authoritative spec for the first version of **Agenda Beleza**, a multi-tenant SaaS for scheduling at Brazilian beauty salons. Read it before you implement anything. Once the project is scaffolded, add the real build, lint, test and single-test commands to this file. Do not guess them before then.
+The project is scaffolded (D-002): Next.js 16 (App Router) + TypeScript, ESLint, Vitest with coverage and Playwright, with a placeholder home page. There is no database, Prisma, queue, Docker or CI yet (E0.2–E0.4). `PLAN.md` (in Portuguese) is the authoritative spec for the first version of **Agenda Beleza**, a multi-tenant SaaS for scheduling at Brazilian beauty salons. Read it before you implement anything. The real commands are listed in "Comandos e cobertura" below. Keep them up to date when you add scripts.
 
 ## Required stack (from PLAN.md)
 
@@ -46,13 +46,34 @@ Don't build screens or schema for these: cash register, inventory, commissions, 
 
 ## Comandos e cobertura
 
-Ainda não há código, `package.json` nem CI, então nenhum comando de build, lint, teste ou cobertura existe hoje. A cobertura **não é mensurável** neste momento.
+Pré-requisito: Node 24 (`.nvmrc` é a fonte única; `package.json#engines` exige `>=24.15.0 <25`). As versões das dependências são exatas (`.npmrc` com `save-exact=true`): não introduza `^`/`~`. Os comandos funcionam em caminhos com espaço e acento.
 
-Decisão já tomada para o gate de cobertura, a ser implementada pela primeira demanda (scaffolding):
-- Ferramenta: Vitest (exigida pelo `PLAN.md`) com `@vitest/coverage-v8`, o provedor de cobertura nativo do Vitest, que não exige instrumentação extra.
-- Limiar: `coverage.thresholds.lines = 90` no `vitest.config.ts`, para que o próprio comando falhe abaixo de 90%. A CI (quando existir) executa o mesmo comando.
-- Escopo: código de produção (`src/**`). A medição soma unidade e integração Vitest, porque o projeto proíbe mocks de banco e o código de persistência só é testável contra o PostgreSQL real. São permitidas apenas as exclusões de código gerado (cliente Prisma), arquivos só de tipos, arquivos de configuração e migrações, cada uma com um comentário que a justifique. Playwright não entra na métrica.
-- Quando o scaffolding existir, substitua este bloco pelos comandos reais: instalar, dev, build, lint, typecheck, teste, teste único, cobertura, E2E e migrações.
+| Objetivo | Comando | Observações |
+|---|---|---|
+| Selecionar o Node | `nvm use` | lê o `.nvmrc` |
+| Instalar | `npm ci` | instalação oficial (lock versionado); sem `--legacy-peer-deps`/`--force` |
+| Navegador do E2E | `npx playwright install chromium` | uma vez por máquina. `--with-deps` instala bibliotecas do sistema e exige sudo; só use se o Chromium não abrir |
+| Desenvolvimento | `npm run dev` | http://localhost:3000 |
+| Build | `npm run build` | `next build` (Turbopack) |
+| Servir o build | `npm run start` | exige `npm run build` antes |
+| Lint | `npm run lint` | `eslint . --max-warnings=0`: qualquer aviso reprova |
+| Typecheck | `npm run typecheck` | `tsc --noEmit`; não depende de build |
+| Testes (todos) | `npm test` | Vitest, projetos `unit` e `integration` |
+| Só unidade | `npm run test:unit` | `src/**/*.test.ts(x)`; ambiente `node`. Todo `*.test.tsx` deve começar com `/** @vitest-environment jsdom */` |
+| Só integração | `npm run test:integration` | `tests/integration/**/*.test.ts`; passa sem testes até existir banco (E0.2/E0.4) |
+| Teste único (Vitest) | `npx vitest run src/lib/site.test.ts -t "define a marca"` | `-t` filtra pelo nome (substring) |
+| Teste único (Playwright) | `npx playwright test e2e/smoke.spec.ts -g "viewport móvel"` | exige build prévio e porta 3000 livre |
+| Cobertura (gate) | `npm run test:coverage` | falha abaixo de 90% de linhas; relatório em `coverage/` (`text`, `html`, `lcov`, `json-summary`) |
+| E2E | `npm run test:e2e` | faz `next build` e roda o Playwright (Chromium, viewport 375×812). Libere a porta 3000 antes: fora da CI, um servidor já rodando nela é reaproveitado |
+| Migrações | — | ainda não existem; chegam com o Prisma (E0.2) e o esquema (E0.4) |
+
+Na CI (E0.3), quando o build já tiver rodado, use `npx playwright install --with-deps chromium` e `npx playwright test` direto, para não compilar duas vezes. Opcional: `npx next telemetry disable` desliga a telemetria anônima do Next nesta máquina.
+
+Política do gate de cobertura (vigente):
+- Ferramenta: Vitest com `@vitest/coverage-v8`. Limiar `coverage.thresholds.lines = 90` no `vitest.config.ts`: o próprio `npm run test:coverage` falha abaixo de 90%. A CI executa o mesmo comando.
+- Escopo: código de produção (`coverage.include: src/**/*.{ts,tsx}`). Arquivos sem teste entram com 0%. A medição soma unidade e integração numa única execução, porque o projeto proíbe mocks de banco e o código de persistência só é testável contra o PostgreSQL real.
+- Exclusões permitidas, cada uma com um comentário que a justifique: os próprios testes, código gerado (cliente Prisma), arquivos só de tipos, arquivos de configuração e migrações. Nenhuma outra.
+- Playwright não entra na métrica. Cobertura abaixo de 90% vira trabalho obrigatório da demanda, sem exclusões injustificadas nem testes sem asserções.
 
 ## Squad de agentes e orquestração
 
