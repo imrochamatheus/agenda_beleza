@@ -1,0 +1,11 @@
+// Schema do Prisma. Os models chegam na E0.4; por ora só o gerador e a fonte de dados.
+// A URL de conexão fica em prisma.config.ts (Prisma 7 não aceita `url` aqui).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
