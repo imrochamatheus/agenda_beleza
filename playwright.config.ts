@@ -31,5 +31,8 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // D-009 CA-18: liga a vitrine /dev/componentes só no servidor do E2E (o mesmo build responde
+    // 404 sem a variável). Prevalece sobre o ambiente e o .env.
+    env: { VITRINE_COMPONENTES: 'true' },
   },
 });

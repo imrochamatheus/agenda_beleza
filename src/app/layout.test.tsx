@@ -1,10 +1,22 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import RootLayout, { metadata } from './layout';
+// next/font/local é uma macro de compilação do Next, vazia fora dele (D-009 R-3).
+vi.mock('next/font/local', () => ({
+  default: (o: { variable: string }) => ({
+    className: `cls${o.variable}`,
+    variable: `var${o.variable}`,
+    style: { fontFamily: 'x' },
+  }),
+}));
 
-type ElementWithChildren = ReactElement<{ children?: ReactNode; lang?: string }>;
+const { default: RootLayout, metadata } = await import('./layout');
+
+type ElementWithChildren = ReactElement<{ children?: ReactNode; lang?: string; className?: string }>;
 
 describe('RootLayout', () => {
   it('declara <html lang="pt-BR"> com os filhos dentro do <body>', () => {
@@ -24,5 +36,18 @@ describe('RootLayout', () => {
   it('exporta título e descrição da marca', () => {
     expect(metadata.title).toBe('Agenda Beleza');
     expect(metadata.description).toBe('Agendamento online para salões de beleza.');
+  });
+
+  it('CA-19: aplica as classes variable das duas fontes no <html>', () => {
+    const html = RootLayout({ children: null }) as ElementWithChildren;
+    expect(html.props.className?.split(' ').sort()).toEqual(
+      ['var--fonte-corpo', 'var--fonte-titulo'].sort(),
+    );
+  });
+
+  it('CA-19: importa o globals.css', () => {
+    // No ambiente jsdom, import.meta.url não é file:; o Vitest roda na raiz do projeto.
+    const fonte = readFileSync(join(process.cwd(), 'src/app/layout.tsx'), 'utf8');
+    expect(fonte).toMatch(/^import '\.\/globals\.css';$/m);
   });
 });

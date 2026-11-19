@@ -1,0 +1,71 @@
+.botao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--espaco-2);
+  min-height: var(--alvo-minimo);
+  min-width: var(--alvo-minimo);
+  padding: var(--espaco-2) var(--espaco-4);
+  border: 1px solid transparent;
+  border-radius: var(--raio);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background-color var(--duracao),
+    border-color var(--duracao);
+}
+
+.primaria {
+  background: var(--cor-primaria);
+  border-color: var(--cor-primaria);
+  color: var(--cor-sobre-primaria);
+}
+
+.secundaria {
+  background: var(--cor-superficie);
+  border-color: var(--cor-borda-controle);
+  color: var(--cor-texto);
+}
+
+.perigo {
+  background: var(--cor-perigo);
+  border-color: var(--cor-perigo);
+  color: var(--cor-sobre-perigo);
+}
+
+.discreta {
+  background: transparent;
+  color: var(--cor-primaria-forte);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+/* A cor forte só aparece fora do foco visível: o anel de foco fica sempre ao lado da cor base. */
+.primaria:hover:not(:focus-visible, :disabled, [aria-disabled='true']) {
+  background: var(--cor-primaria-forte);
+  border-color: var(--cor-primaria-forte);
+}
+
+.perigo:hover:not(:focus-visible, :disabled, [aria-disabled='true']) {
+  background: var(--cor-perigo-forte);
+  border-color: var(--cor-perigo-forte);
+}
+
+.secundaria:hover:not(:focus-visible, :disabled, [aria-disabled='true']),
+.discreta:hover:not(:focus-visible, :disabled, [aria-disabled='true']) {
+  background: var(--cor-superficie-alt);
+}
+
+/* Desabilitado: opacidade E cursor (não só cor); o focável desabilitado ganha borda tracejada. */
+.botao:disabled,
+.botao[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.botao[aria-disabled='true'] {
+  border-style: dashed;
+  border-color: currentColor;
+}
