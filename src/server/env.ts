@@ -9,6 +9,15 @@ import * as ambienteWhatsApp from './integrations/whatsapp/ambiente';
 export const ADAPTADORES = ['simulado', 'real'] as const;
 export type Modo = (typeof ADAPTADORES)[number];
 
+/** Texto só de dígitos convertido em inteiro na faixa [min, max]. */
+function inteiroEntre(min: number, max: number) {
+  return z
+    .string()
+    .regex(/^\d+$/)
+    .transform(Number)
+    .pipe(z.int().min(min).max(max));
+}
+
 /**
  * Variáveis base lidas pelo runtime da app e do worker, mais os 4 seletores.
  * As variáveis de cada provedor NÃO entram aqui: são lidas por `lerConfigReal` do módulo
@@ -22,6 +31,13 @@ export const esquemaEnv = z.object({
   WHATSAPP_ADAPTER: z.enum(ADAPTADORES).default('simulado'),
   MP_ADAPTER: z.enum(ADAPTADORES).default('simulado'),
   TURNSTILE_ADAPTER: z.enum(ADAPTADORES).default('simulado'),
+  // Fila (D-008 RN-9/RN-10). Só dígitos: '-1', '1.5', ' 4' e 'abc' são recusados.
+  QUEUE_RETRY_LIMIT: inteiroEntre(0, 20).default(4),
+  QUEUE_RETRY_DELAY_SECONDS: inteiroEntre(1, 3600).default(30),
+  QUEUE_RETRY_BACKOFF: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 });
 
 export type ConfigIntegracao<C> = { modo: 'simulado' } | { modo: 'real'; config: C };
@@ -29,6 +45,8 @@ export type ConfigIntegracao<C> = { modo: 'simulado' } | { modo: 'real'; config:
 export type Env = {
   DATABASE_URL: string;
   APP_URL: string;
+  /** Política de retry da fila (D-008 RN-9): lida só por `politicaDeRetry` (src/server/queue/config.ts). */
+  fila: { retryLimit: number; retryDelaySeconds: number; retryBackoff: boolean };
   integracoes: {
     email: ConfigIntegracao<ambienteEmail.ConfigSmtp>;
     turnstile: ConfigIntegracao<ambienteTurnstile.ConfigTurnstile>;
@@ -147,6 +165,11 @@ export function validarEnv(fonte: Record<string, string | undefined>): Env {
   return {
     DATABASE_URL: base.data.DATABASE_URL,
     APP_URL: base.data.APP_URL,
+    fila: {
+      retryLimit: base.data.QUEUE_RETRY_LIMIT,
+      retryDelaySeconds: base.data.QUEUE_RETRY_DELAY_SECONDS,
+      retryBackoff: base.data.QUEUE_RETRY_BACKOFF,
+    },
     integracoes: { email, turnstile, mercadoPago, whatsapp },
   };
 }

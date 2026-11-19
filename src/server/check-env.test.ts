@@ -70,6 +70,18 @@ describe('executarCheckEnv', () => {
     expect(nomeadas(r.error[0])).toEqual([seletor]);
   });
 
+  it.each([
+    ['QUEUE_RETRY_LIMIT', '21'],
+    ['QUEUE_RETRY_DELAY_SECONDS', '0'],
+    ['QUEUE_RETRY_BACKOFF', 'sim'],
+  ])('CA-11 (D-008): %s=%j devolve 1 nomeando só a variável, sem o valor', (variavel, valor) => {
+    const r = executar({ [variavel]: valor });
+    expect(r.codigo).toBe(1);
+    expect(r.log).toEqual([]);
+    expect(nomeadas(r.error[0])).toEqual([variavel]);
+    expect(r.error[0]).not.toContain(valor);
+  });
+
   describe('CA-8: combinações do modo real', () => {
     const casos: Array<[string, Record<string, string>, string[]]> = [
       [

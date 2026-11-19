@@ -3,7 +3,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import pg from 'pg';
+import { PgBoss } from 'pg-boss';
 import { inject } from 'vitest';
+
+// Caminho relativo (e não o alias @/): o globalSetup carrega este módulo antes dos setupFiles.
+import { opcoesPgBoss } from '../../src/server/queue/config';
 
 import {
   nomesDaExecucao,
@@ -59,8 +63,28 @@ export const schemaDeProva: InicializadorDeSchema = {
   },
 };
 
-/** Inicializadores executados no template, em ordem. A E0.7 acrescenta o do pg-boss. */
-export const INICIALIZADORES: InicializadorDeSchema[] = [schemaDeProva];
+/**
+ * Schema `pgboss` (D-008 §3.10, CA-6): `start()`/`stop()` do pg-boss com as opções do papel
+ * `instalador` (as mesmas do worker para a instalação), então toda base de worker do Vitest já nasce
+ * com o schema na versão da dependência fixada e SEM filas (as filas são do worker, D-6). O `stop`
+ * com `close: true` fecha o pool antes da conferência de sessões (A-9).
+ */
+export const filaPgBoss: InicializadorDeSchema = {
+  nome: 'pgboss',
+  async executar(urlTemplate) {
+    const boss = new PgBoss(opcoesPgBoss(urlTemplate, 'instalador'));
+    // O erro relevante chega pela rejeição de start(); sem ouvinte, o evento derrubaria o processo.
+    boss.on('error', () => undefined);
+    try {
+      await boss.start();
+    } finally {
+      await boss.stop({ graceful: false, close: true });
+    }
+  },
+};
+
+/** Inicializadores executados no template, em ordem. */
+export const INICIALIZADORES: InicializadorDeSchema[] = [schemaDeProva, filaPgBoss];
 
 /** Caminho absoluto do binário do Prisma CLI (node_modules/.bin/prisma), resolvido a partir da raiz do repo. */
 export function binarioPrisma(): string {

@@ -76,11 +76,14 @@ const SIMULADOS = {
   whatsapp: { modo: 'simulado' },
 };
 
+const FILA_PADRAO = { retryLimit: 4, retryDelaySeconds: 30, retryBackoff: true };
+
 describe('validarEnv', () => {
   it('CA-1: aceita o .env.example sem alterações e seleciona os quatro adaptadores simulados', () => {
     expect(validarEnv(exemplo)).toEqual({
       DATABASE_URL: exemplo.DATABASE_URL,
       APP_URL: 'http://localhost:3000',
+      fila: FILA_PADRAO,
       integracoes: SIMULADOS,
     });
   });
@@ -224,6 +227,76 @@ describe('validarEnv', () => {
     const fonte = { DATABASE_URL: URL_VALIDA, APP_URL: '' };
     validarEnv(fonte);
     expect(fonte).toEqual({ DATABASE_URL: URL_VALIDA, APP_URL: '' });
+  });
+});
+
+describe('CA-11 (D-008): variáveis da fila', () => {
+  it('sem as três variáveis, ou com elas vazias, aplica os padrões 4, 30 e true', () => {
+    expect(validarEnv({ DATABASE_URL: URL_VALIDA }).fila).toEqual(FILA_PADRAO);
+    expect(
+      validarEnv({
+        DATABASE_URL: URL_VALIDA,
+        QUEUE_RETRY_LIMIT: '',
+        QUEUE_RETRY_DELAY_SECONDS: '',
+        QUEUE_RETRY_BACKOFF: '',
+      }).fila,
+    ).toEqual(FILA_PADRAO);
+  });
+
+  it('converte valores válidos, inclusive os extremos das faixas', () => {
+    expect(
+      validarEnv({
+        DATABASE_URL: URL_VALIDA,
+        QUEUE_RETRY_LIMIT: '0',
+        QUEUE_RETRY_DELAY_SECONDS: '3600',
+        QUEUE_RETRY_BACKOFF: 'false',
+      }).fila,
+    ).toEqual({ retryLimit: 0, retryDelaySeconds: 3600, retryBackoff: false });
+    expect(
+      validarEnv({
+        DATABASE_URL: URL_VALIDA,
+        QUEUE_RETRY_LIMIT: '20',
+        QUEUE_RETRY_DELAY_SECONDS: '1',
+        QUEUE_RETRY_BACKOFF: 'true',
+      }).fila,
+    ).toEqual({ retryLimit: 20, retryDelaySeconds: 1, retryBackoff: true });
+  });
+
+  it.each([
+    ['QUEUE_RETRY_LIMIT', '-1'],
+    ['QUEUE_RETRY_LIMIT', '21'],
+    ['QUEUE_RETRY_LIMIT', 'abc'],
+    ['QUEUE_RETRY_LIMIT', ' 4'],
+    ['QUEUE_RETRY_LIMIT', '1.5'],
+    ['QUEUE_RETRY_DELAY_SECONDS', '0'],
+    ['QUEUE_RETRY_DELAY_SECONDS', '1.5'],
+    ['QUEUE_RETRY_DELAY_SECONDS', '3601'],
+    ['QUEUE_RETRY_BACKOFF', 'sim'],
+    ['QUEUE_RETRY_BACKOFF', 'TRUE'],
+  ])('%s=%j é recusado nomeando só a variável, sem o valor', (variavel, valor) => {
+    const erro = falhaDe({ DATABASE_URL: URL_VALIDA, [variavel]: valor });
+    expect(erro).toBeInstanceOf(ErroDeAmbiente);
+    expect(erro.variaveis).toEqual([variavel]);
+    expect(erro.message).toBe(`Variáveis de ambiente ausentes ou inválidas: ${variavel}`);
+  });
+
+  it('o .env.example traz as três chaves com os padrões e um comentário de unidade e padrão', () => {
+    const texto = readFileSync(caminhoExemplo, 'utf8');
+    expect(exemplo).toMatchObject({
+      QUEUE_RETRY_LIMIT: '4',
+      QUEUE_RETRY_DELAY_SECONDS: '30',
+      QUEUE_RETRY_BACKOFF: 'true',
+    });
+    const comentarioAntes = (chave: string) => {
+      const linhas = texto.split('\n');
+      const i = linhas.findIndex((l) => l.startsWith(`${chave}=`));
+      const bloco: string[] = [];
+      for (let j = i - 1; j >= 0 && linhas[j].startsWith('#'); j--) bloco.unshift(linhas[j]);
+      return bloco.join(' ');
+    };
+    expect(comentarioAntes('QUEUE_RETRY_LIMIT')).toMatch(/Padrão: 4.*5 execuções/);
+    expect(comentarioAntes('QUEUE_RETRY_DELAY_SECONDS')).toMatch(/segundos.*Padrão: 30/);
+    expect(comentarioAntes('QUEUE_RETRY_BACKOFF')).toMatch(/true \| false.*Padrão: true/);
   });
 });
 

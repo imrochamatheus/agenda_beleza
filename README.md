@@ -17,7 +17,7 @@ docker compose up -d --wait   # builda a imagem e espera postgres e app ficarem 
 |---|---|---|
 | `postgres` | PostgreSQL 17; na primeira inicialização cria também a base de testes de `TEST_DATABASE_URL` | `localhost:5432` |
 | `app` | Valida o ambiente (o log mostra o modo de cada adaptador), aplica as migrações (`prisma migrate deploy`) e sobe o Next.js | http://localhost:3000 e http://localhost:3000/api/health |
-| `worker` | Processo separado (mesma imagem); valida o ambiente, registra os modos dos adaptadores e, por ora, só emite um heartbeat em JSON | `docker compose logs -f worker` |
+| `worker` | Processo separado (mesma imagem) que consome a fila de jobs (pg-boss, schema `pgboss`; ver "Fila de jobs e worker"): valida o ambiente, registra os modos dos adaptadores, instala/migra o schema `pgboss`, processa os jobs com novas tentativas e emite um heartbeat em JSON a cada 30 s. `docker compose stop worker` espera até 25 s pelos jobs em andamento (`stop_grace_period: 30s`) | `docker compose logs -f worker` |
 
 App e worker rodam como usuário não root. Só a app aplica migrações.
 
@@ -37,7 +37,8 @@ npm run db:generate           # obrigatório depois de todo npm ci (gera o clien
 cp .env.example .env
 docker compose up -d postgres
 npm run dev                   # http://localhost:3000
-npm run worker                # em outro terminal; Ctrl-C encerra
+npm run worker                # em outro terminal; Ctrl-C encerra (espera os jobs em andamento)
+npm run fila:exemplo -- 3000  # em outro terminal: enfileira um job de exemplo de 3 s
 ```
 
 ## Testes
@@ -62,7 +63,7 @@ npm run test:e2e               # build + Playwright (viewport de celular); liber
 
 O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.ts`, `banco.ts`). A base de `TEST_DATABASE_URL` passa a ser só **administrativa**: o harness se conecta a ela para criar e apagar bases, mas não lê, grava, migra nem apaga nada dentro dela. A base de `DATABASE_URL` nunca é tocada.
 
-1. **Uma vez por execução** (`globalSetup` do projeto `integration`): a guarda valida `TEST_DATABASE_URL` antes de qualquer conexão. Em seguida, apaga bases órfãs de execuções antigas e cria o template `<base>_r<exec>_tpl` a partir de `template0` (UTF-8). Depois aplica `prisma migrate deploy` nele e roda os **inicializadores de schema**, o ponto de extensão onde a E0.7 vai plugar o `pg-boss`. Por fim, confere que nenhuma sessão ficou aberta no template e o fecha para conexões (`ALLOW_CONNECTIONS false`).
+1. **Uma vez por execução** (`globalSetup` do projeto `integration`): a guarda valida `TEST_DATABASE_URL` antes de qualquer conexão. Em seguida, apaga bases órfãs de execuções antigas e cria o template `<base>_r<exec>_tpl` a partir de `template0` (UTF-8). Depois aplica `prisma migrate deploy` nele e roda os **inicializadores de schema** (`INICIALIZADORES` em `tests/support/db.ts`): o schema de prova e o `pgboss`, instalado pelo `start()`/`stop()` do pg-boss com as mesmas opções do worker (papel `instalador`), sem filas. Por fim, confere que nenhuma sessão ficou aberta no template e o fecha para conexões (`ALLOW_CONNECTIONS false`).
 2. **No início de cada arquivo de teste** (`setupFiles`): a base do worker `<base>_r<exec>_w<VITEST_POOL_ID>` é recriada a partir do template (`DROP DATABASE … WITH (FORCE)` + `CREATE DATABASE … TEMPLATE`). O `DATABASE_URL` do processo de teste passa a apontar para ela, e o pool do Prisma vai para 16 conexões. Cada arquivo começa com a base vazia e migrada. Não há `TRUNCATE` nem transação com rollback, então os testes de concorrência fazem `COMMIT` de verdade.
 3. **No fim da execução**: o teardown apaga todas as bases da execução.
 
@@ -70,17 +71,18 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Até 4 workers** no projeto `integration` (`maxWorkers: 4` em `vitest.config.ts`).
 - **Privilégio:** o papel de `TEST_DATABASE_URL` precisa de `CREATEDB`, e não de superusuário. No compose, o `POSTGRES_USER` já é superusuário. Na CI (job `testes`), o papel é o `POSTGRES_USER` do service `postgres` (`agenda`, superusuário). O service cria só a base de `DATABASE_URL` (`POSTGRES_DB=agenda_beleza`), e um passo cria a base de `TEST_DATABASE_URL` com `createdb` dentro do container do service (`docker exec <service> createdb -U agenda agenda_beleza_test`), porque o initdb do compose não roda lá.
 - **Nome da base de teste:** no máximo **46 caracteres** em `[a-z0-9_]`, porque os sufixos `_r<10>_w999` precisam caber nos 63 do PostgreSQL. Um nome maior é recusado com uma mensagem que nomeia `TEST_DATABASE_URL`. O initdb do compose aceita até 63 caracteres, mas o harness exige até 46.
-- **Orçamento de conexões:** cada execução usa até `maxWorkers × (POOL_MAX_TESTES + 2)` = 4 × 18 = 72 conexões. Mantenha `execuções × 72 + compose (≈ 3) + psql/IDE (≈ 5) ≤ max_connections` (100 no compose). Duas execuções simultâneas cabem, mas sem folga quando os picos coincidem. Se aparecer `53300 too many clients already`, pare app e worker durante o teste (`docker compose stop app worker`). Nos testes, um arquivo não satura o pool do Prisma e um `pg.Pool` ao mesmo tempo, e `criarPoolPg()` usa 12 conexões por padrão.
+- **Orçamento de conexões:** cada execução usa até `maxWorkers × (POOL_MAX_TESTES + 2)` = 4 × 18 = 72 conexões (os arquivos de fila usam ≈ 11 por worker do Vitest: worker em teste 4, cliente 2, boss de inspeção 2, admin e Prisma). Mantenha `execuções × maxWorkers × (POOL_MAX_TESTES + 2) + compose (≈ 7 com o worker no ar) + psql/IDE (≈ 5) ≤ max_connections − superuser_reserved_connections` (100 − 3 = 97 no compose). Uma execução cabe (≈ 84). **Duas execuções simultâneas exigem `docker compose stop app worker`**: com o worker do compose no ar (4 conexões contínuas), os picos somados passam do limite. Se aparecer `53300 too many clients already`, pare app e worker durante o teste. Nos testes, um arquivo não satura o pool do Prisma e um `pg.Pool` ao mesmo tempo, e `criarPoolPg()` usa 12 conexões por padrão.
 - **Sessão de superusuário aberta numa base de worker:** quando o papel de teste **não** é superusuário (por exemplo, um papel só com `CREATEDB`), um `psql` de superusuário conectado a uma base `…_w<N>` faz o `DROP … WITH (FORCE)` do reset falhar (`42501`). Feche essas sessões antes de rodar. No compose e na CI o papel é superusuário, e esse caso não ocorre.
 - **Depuração:** os dados de um arquivo ficam na base `…_w<N>` só enquanto a execução dura, porque o teardown apaga tudo no final. Para inspecionar, rode o arquivo isolado e pause dentro do teste (ou consulte a base durante a execução). Uma execução interrompida deixa bases órfãs, que a varredura da próxima execução apaga quando tiverem **mais de 6 h**. Por isso, uma depuração parada por mais de 6 h pode perder a base para a varredura de outra execução. Limpeza manual: `psql "$TEST_DATABASE_URL" -Atc "SELECT datname FROM pg_database WHERE datname ~ '^agenda_beleza_test_r[0-9a-z]{10}_(tpl|w[0-9]{1,3})$'"` e, para cada nome, `DROP DATABASE IF EXISTS "<nome>" WITH (FORCE)`.
 - **Teste único:** `npx vitest run --project integration tests/integration/db/reserva-exclusion.test.ts`. O template é criado e a base do worker é recriada do mesmo jeito.
 - **Concorrência (CA-6 da D-005):** `for i in $(seq 10); do npx vitest run --project integration tests/integration/concorrencia --maxWorkers=2 --silent=false || break; done`. Com `--silent=false`, cada arquivo imprime `[CA-6] arquivo=… VITEST_POOL_ID=… base=…`.
+- **Fila e worker (D-008):** os testes de `tests/integration/fila/` e `tests/integration/worker/` usam o pg-boss real na base do worker do Vitest, com atraso de retry de 1 s e busca a cada 0,5 s; o do CA-4 (`sigterm.test.ts`) empacota `src/worker/main.ts` com os argumentos do `build:node` em `node_modules/.cache/agenda-beleza/` e manda SIGTERM a um processo filho. Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/worker/retry.test.ts tests/integration/worker/sigterm.test.ts || break; done`.
 - **Fábricas e sessão nos testes:** `tests/support/factories.ts` cria salões completos pelo Prisma (`criarSalaoCompleto`, `criarDoisSaloes`), e `tests/support/auth.ts` cria sessões reais (`credencialDoGestor`, `credencialDoProfissional`, `criarSuperAdmin`, `criarSessao`).
 
 ### Escopo de salão no servidor
 
 - **Repositórios** (`src/server/repos/`): só eles importam o cliente Prisma. Toda operação de tenant recebe um `TenantContext` ou `SistemaContext` como primeiro argumento e filtra por `salao_id` na própria consulta. Um recurso de outro salão, inexistente ou com ID malformado gera a mesma resposta: `NaoEncontrado` (404). As leituras públicas (`repos/publico.ts`) resolvem o salão pelo slug e expõem só serviços e profissionais ativos.
-- **Lint:** a regra `no-restricted-imports` proíbe importar `@/generated/prisma`, `@prisma/client`, `@prisma/adapter-pg`, `pg` e `src/server/repos/db` fora de `src/server/repos/**`, `src/worker/**`, `prisma/seed.ts`, `tests/**` e `*.test.ts(x)`. `import type` continua permitido.
+- **Lint:** a regra `no-restricted-imports` proíbe importar `@/generated/prisma`, `@prisma/client`, `@prisma/adapter-pg`, `pg` e `src/server/repos/db` fora de `src/server/repos/**`, `src/worker/**`, `prisma/seed.ts`, `tests/**` e `*.test.ts(x)`. `import type` continua permitido. O `pg-boss` só pode ser importado em `src/server/queue/**`, `src/worker/**` e nos testes (inclusive `import type`); o resto da app enfileira pelo cliente de `src/server/queue/client.ts`.
 - **Ações autenticadas:** são criadas com `defineAcao({ papeis, capacidade }, handler)` (`src/server/tenant/define-acao.ts`). O wrapper resolve a sessão do cookie `ab_sessao` (401), confere o papel (403), consulta a política de operação com a capacidade (403) e só então chama `handler(ctx, input)`. O `salaoId` vem **só** da sessão. A capacidade é obrigatória: `leitura`, `configurar`, `agendar`, `cancelar`, `assinatura` ou `lgpd`. Server Components usam `exigirContexto()` (`src/server/tenant/next.ts`).
 - **Convenção `*.acao.ts`:** um arquivo `'use server'` em que **toda** exportação é `export const x = defineAcao(...)`. Tipos e constantes ficam em outro arquivo. O teste `tests/integration/tenant/registro.test.ts` carrega `src/**/*.acao.ts` e falha se alguma exportação não passar por `defineAcao` com capacidade válida.
 
@@ -168,6 +170,69 @@ docker compose exec postgres psql -U agenda -d agenda_beleza -c "DELETE FROM sim
 ```
 
 A ordem importa: pagamentos e adiamentos antes das assinaturas. A alternativa é `docker compose down -v`, que apaga o volume inteiro. As bases dos testes de integração são descartadas ao fim de cada execução e não precisam de limpeza.
+
+## Fila de jobs e worker
+
+O worker (`src/worker/main.ts` → `src/worker/iniciar.ts`) é um processo separado do Next.js, ligado ao mesmo banco. Ele consome a fila do [pg-boss](https://github.com/timgit/pg-boss) (versão fixada `12.38.0`), que fica no schema **`pgboss`**, separado do `public` gerido pelo Prisma. Nenhuma migração Prisma toca em `pgboss`.
+
+- **Quem instala:** só o worker cria e migra o schema `pgboss` (no `start()`) e cria as filas. A app nunca o faz: antes do primeiro início do worker, enfileirar falha com `ErroFilaIndisponivel` (motivo `schema_ausente` ou `fila_inexistente`).
+- **Filas** (`src/server/queue/filas.ts`, contratos; `src/worker/handlers/`, um arquivo por fila; `src/worker/handlers/registry.ts`, a lista):
+
+  | Fila | Política | Payload | Agendamento (UTC) | Situação |
+  |---|---|---|---|---|
+  | `exemplo` | `standard` | `{ esperaMs?: 0..60000 }` | — | funcional (verificação manual) |
+  | `whatsapp-reserva` | `exclusive`, chave obrigatória | `{ mensagemId: uuid }` | — | stub (E7.1) |
+  | `assinatura-prazos` | `exclusive` | `{}` | `*/5 * * * *` | stub (E6.3) |
+  | `reconciliar-mensagens` | `exclusive` | `{}` | `* * * * *` | stub (E7.1) |
+
+  No início, o worker cria as filas que faltam, recusa iniciar se a política de uma fila existente divergir (`worker.falha_inicio`, `motivo: politica_divergente`; a política é imutável), aplica o retry do ambiente (`updateQueue`), registra um consumidor por fila e sincroniza os agendamentos: cria ou atualiza os crons e remove os que não estão mais no registro. Reiniciar não duplica nada.
+- **Enfileirar** (`enfileirar(fila, payload, { chave })` de `src/server/queue/client.ts`):
+  - **só depois do commit** da transação de negócio. O cliente tem conexão própria (pool de 2), não aceita transação e não participa dela;
+  - o payload é validado antes de qualquer I/O: objeto estrito só com IDs (UUID), sem dados pessoais. Campo extra, id inválido ou payload que não é objeto lançam `ErroPayloadInvalido`, sem criar job;
+  - `chave` vira a `singletonKey`. Nas filas `exclusive`, enquanto houver um job com a mesma chave em `created`, `retry` ou `active`, um novo `enfileirar` devolve `{ criado: false, motivo: 'chave_em_uso' }`; depois que ele termina (concluído ou falho), a chave pode ser usada de novo. Sem chave, uma fila `exclusive` aceita um job pendente por vez (é o que impede varreduras sobrepostas nos crons). A deduplicação definitiva das mensagens fica no banco de domínio (E7.1);
+  - falha de banco ou de schema vira `ErroFilaIndisponivel`, sem URL nem senha, e o cliente não tenta de novo.
+- **Novas tentativas** (valem para todo job, inclusive os dos crons; padrões no `.env.example`):
+
+  | Variável | Faixa | Padrão | Significado |
+  |---|---|---|---|
+  | `QUEUE_RETRY_LIMIT` | 0 a 20 | `4` | novas tentativas depois da 1ª execução (4 = 5 execuções no total) |
+  | `QUEUE_RETRY_DELAY_SECONDS` | 1 a 3600 | `30` | atraso `d` antes da 1ª nova tentativa |
+  | `QUEUE_RETRY_BACKOFF` | `true`/`false` | `true` | backoff exponencial com jitter |
+
+  Com backoff, a k-ésima espera fica entre `d·2^(k−1)` e `d·2^k` segundos. Com os padrões: [30, 60], [60, 120], [120, 240] e [240, 480] s, ou seja, de 7,5 a 15 min até a falha definitiva. Sem backoff, todas as esperas valem `d`. Valor inválido faz `check-env` e o worker falharem na inicialização nomeando a variável. A falha de um job não derruba o worker: esgotadas as tentativas, o job fica `failed`, consultável por id até a retenção.
+- **Encerramento:** no SIGTERM ou SIGINT, o worker para de buscar jobs e espera até **25 s** os que estão em andamento (`stop({ graceful: true, timeout: 25000 })`); um 2º sinal é ignorado. Se todos concluírem, sai com 0 (`worker.encerrado`). Se o prazo estourar, sai com 1 (`worker.encerramento_forcado`): o job interrompido volta para nova tentativa e **consome uma tentativa**, então os handlers reais precisam ser idempotentes. O compose usa `stop_grace_period: 30s`.
+- **Eventos de log** (uma linha JSON com `em` em UTC; nunca o payload, a `DATABASE_URL` ou credenciais): `worker.adaptadores`, `worker.iniciado` (lista de filas), `worker.heartbeat` (a cada 30 s), `worker.exemplo_iniciado`, `worker.job_concluido` e `worker.job_falhou` (fila, id, tentativa e, na falha, nome e mensagem do erro), `worker.erro_fila` e `worker.aviso_fila` (erros e avisos do pg-boss, inclusive queda de conexão: o worker continua e volta a buscar quando o banco responde), `worker.encerrando`, `worker.encerrado`, `worker.encerramento_forcado`, `worker.erro_encerramento`, `worker.ambiente_invalido` e `worker.falha_inicio` (saída 1). Na app, um erro do pg-boss vira `fila.erro`.
+- **`application_name`:** as conexões aparecem em `pg_stat_activity` como `agenda-beleza:worker` e `agenda-beleza:app`. Se a `DATABASE_URL` trouxer `?application_name=…`, ele vence o do pg-boss e esses nomes somem do diagnóstico: não o use nas URLs.
+- **Retenção (padrões do pg-boss):** um job `active` expira em 15 min, um job em `created`/`retry` é apagado em 14 dias e um job encerrado é apagado 7 dias depois. A limpeza é feita pelo worker em execução: com o worker parado, nada é apagado. O histórico de tentativas das mensagens não vem do pg-boss (é do domínio, E7.1).
+
+### Verificar o worker manualmente
+
+- **Sem Docker:** `npm run worker` num terminal e `npm run fila:exemplo -- 3000` em outro. O log mostra `worker.exemplo_iniciado` e, 3 s depois, `worker.job_concluido`. Ctrl-C encerra com 0.
+- **Encerramento gracioso no compose (CA-4 da D-008):**
+  ```bash
+  docker compose up -d --wait
+  docker compose exec worker node dist/scripts/enfileirar-exemplo.js 20000   # job de 20 s
+  docker compose logs -f worker      # espere worker.exemplo_iniciado; depois, em outro terminal:
+  time docker compose stop worker    # menos de 30 s
+  docker compose ps -a worker        # Exited (0)
+  ```
+  O log termina com `worker.encerrando`, `worker.job_concluido` e `worker.encerrado`.
+
+### Conexões, privilégios e upgrade
+
+- **Conexões em produção:** o pool do pg-boss usa conexões do mesmo cluster que o Prisma. Mantenha `instâncias_app × (10 + 2) + worker × (10 + 4) + 3 ≤ max_connections − superuser_reserved_connections − reserved_connections` (10 = Prisma por processo; 2 e 4 = pg-boss na app e no worker; 3 = `migrate deploy`, psql e administração). No compose (97 utilizáveis): 1 app + 1 worker = 29. Esta versão prevê **um** worker por banco.
+- **Privilégios:** o papel do worker precisa de `CREATE` no database (ele cria o schema `pgboss` e fica dono dele). Com um papel único para app e worker (compose e v1), nada mais é necessário. Com papéis separados:
+  ```sql
+  GRANT CREATE ON DATABASE <base> TO <papel_worker>;
+  -- depois do 1º start do worker (o schema precisa existir):
+  GRANT USAGE ON SCHEMA pgboss TO <papel_app>;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO <papel_app>;
+  ALTER DEFAULT PRIVILEGES FOR ROLE <papel_worker> IN SCHEMA pgboss
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO <papel_app>;
+  ```
+  O papel da app não precisa de `CREATE` nem de ser dono de nada em `pgboss`.
+- **Upgrade do pg-boss:** a versão é exata (o `config.test.ts` confere `package.json` e lock) porque o `start()` do worker migra o schema `pgboss` sozinho, e o cliente da app (`migrate: false`) exige a mesma versão de schema. Toda mudança de versão é uma demanda própria, revisada pelo DBA: comparar `pgboss.schema` do `package.json` do pacote novo com o antigo; se mudar, ler o SQL de `getMigrationPlans(schema, versãoAtual)` (locks e tempo em volume), trocar app e worker **juntos** (mesma imagem) e documentar a reversão com `getRollbackPlans(schema, versãoNova)`, aplicada antes de voltar à imagem anterior. Evidência: `SELECT version FROM pgboss.version` antes e depois, e o `tests/integration/worker/schema.test.ts` verde.
+- **Reverter numa base local:** `docker compose down -v`. `DROP SCHEMA pgboss CASCADE` (com o worker parado) remove só a fila, sem tocar em `public`.
 
 ## CI
 
