@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import type { CSSProperties } from 'react';
 
+import { formatarMoeda } from '@/lib/format';
+import { modoSelecionado } from '@/server/env';
 import { carregarCheckoutSimulado } from '@/server/integrations/mercadopago/checkout-simulado';
 
 // Página do checkout do Mercado Pago SIMULADO (RN-20, CA-19). Imita a página do provedor: não usa
@@ -9,12 +11,19 @@ import { carregarCheckoutSimulado } from '@/server/integrations/mercadopago/chec
 // O ambiente é lido na requisição: a rota nunca é pré-renderizada no build.
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
+const METADADOS: Metadata = {
   title: 'Checkout simulado · Agenda Beleza',
   robots: { index: false, follow: false },
 };
 
-const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+/**
+ * Metadados só no modo simulado (D-009 DEF-2): fora dele a página é 404, e uma `metadata`
+ * estática exporia o título no payload. Fica só a do layout raiz. (No modo simulado, um ID
+ * inválido ainda dá 404 com o título do checkout: a rota é de desenvolvimento.)
+ */
+export function generateMetadata(): Metadata {
+  return modoSelecionado(process.env, 'MP_ADAPTER') === 'simulado' ? METADADOS : {};
+}
 
 const ESTADO_DESCRITO = { autorizada: 'já foi autorizada', cancelada: 'foi cancelada' } as const;
 
@@ -65,7 +74,7 @@ export default async function CheckoutSimulado({ searchParams }: Props) {
     <main style={estilos.main}>
       <h1 style={estilos.titulo}>Assinatura Agenda Beleza</h1>
       <p style={estilos.valor}>
-        {BRL.format(dados.valorCentavos / 100)}
+        {formatarMoeda(dados.valorCentavos)}
         <span style={{ fontSize: '1rem' }}> por mês</span>
       </p>
       <p>{`${dados.diasTeste} dias grátis. A primeira cobrança acontece depois do período de teste.`}</p>

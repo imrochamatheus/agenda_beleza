@@ -3,6 +3,9 @@ import type { ReactNode } from 'react';
 
 import { siteConfig } from '@/lib/site';
 
+import { fonteCorpo, fonteTitulo } from './fontes';
+import './globals.css';
+
 export const metadata: Metadata = {
   title: siteConfig.name,
   description: siteConfig.description,
@@ -10,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang={siteConfig.locale}>
+    <html lang={siteConfig.locale} className={`${fonteTitulo.variable} ${fonteCorpo.variable}`}>
       <body>{children}</body>
     </html>
   );

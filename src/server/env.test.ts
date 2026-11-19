@@ -11,6 +11,7 @@ import {
   modoSelecionado,
   modosAtivos,
   validarEnv,
+  vitrineHabilitada,
 } from './env';
 
 const caminhoExemplo = fileURLToPath(new URL('../../.env.example', import.meta.url));
@@ -346,3 +347,54 @@ describe('modosAtivos', () => {
     expect(JSON.stringify(modos)).not.toContain('segredo-turnstile');
   });
 });
+
+describe('D-009 (CA-18): VITRINE_COMPONENTES e vitrineHabilitada', () => {
+  it.each([
+    ['ausente', undefined],
+    ['vazia', ''],
+    ['false', 'false'],
+    ['1', '1'],
+    ['TRUE', 'TRUE'],
+    ['sim', 'sim'],
+    [' true', ' true'],
+  ])('production com a variável %s → desabilitada', (_rotulo, valor) => {
+    expect(vitrineHabilitada({ NODE_ENV: 'production', VITRINE_COMPONENTES: valor })).toBe(false);
+  });
+
+  it('só o texto exato "true" habilita, em qualquer NODE_ENV', () => {
+    for (const NODE_ENV of ['production', 'test', undefined]) {
+      expect(vitrineHabilitada({ NODE_ENV, VITRINE_COMPONENTES: 'true' })).toBe(true);
+    }
+  });
+
+  it('NODE_ENV=development habilita sem a variável; test sem a variável não', () => {
+    expect(vitrineHabilitada({ NODE_ENV: 'development' })).toBe(true);
+    expect(vitrineHabilitada({ NODE_ENV: 'test' })).toBe(false);
+    expect(vitrineHabilitada({})).toBe(false);
+  });
+
+  it('não valida o resto do ambiente (sem DATABASE_URL, com seletor inválido)', () => {
+    expect(vitrineHabilitada({ VITRINE_COMPONENTES: 'true', MP_ADAPTER: 'x' })).toBe(true);
+  });
+
+  it('validarEnv aceita true/false/ausente e não acrescenta campo ao Env', () => {
+    for (const valor of ['true', 'false', undefined, '']) {
+      const env = validarEnv({ DATABASE_URL: URL_VALIDA, VITRINE_COMPONENTES: valor });
+      expect(Object.keys(env).sort()).toEqual(['APP_URL', 'DATABASE_URL', 'fila', 'integracoes']);
+    }
+  });
+
+  it.each(['TRUE', '1', 'sim', 'yes'])('validarEnv recusa %s nomeando só a variável', (valor) => {
+    const erro = falhaDe({ DATABASE_URL: URL_VALIDA, VITRINE_COMPONENTES: valor });
+    expect(erro).toBeInstanceOf(ErroDeAmbiente);
+    expect(erro.variaveis).toEqual(['VITRINE_COMPONENTES']);
+    expect(erro.message).toBe('Variáveis de ambiente ausentes ou inválidas: VITRINE_COMPONENTES');
+  });
+
+  it('o .env.example traz VITRINE_COMPONENTES=false com comentário', () => {
+    expect(exemplo.VITRINE_COMPONENTES).toBe('false');
+    const texto = readFileSync(caminhoExemplo, 'utf8');
+    expect(texto).toMatch(/# Vitrine \/dev\/componentes \(true \| false; padrão false\)[^\n]*\n[^\n]*nunca true em produção/);
+  });
+});
+

@@ -52,6 +52,7 @@ npm run db:generate
 npm test                       # unidade + integração
 npm run test:coverage          # o mesmo, com o gate de 90% de linhas (relatório em coverage/)
 npm run test:e2e               # build + Playwright (viewport de celular); libere a porta 3000 antes
+npx playwright test e2e/a11y-base.spec.ts  # só o E2E de acessibilidade (exige build prévio)
 ```
 
 - Os testes de integração usam **somente** `TEST_DATABASE_URL`, nunca `DATABASE_URL`, e recusam rodar se as duas forem iguais. Sem `TEST_DATABASE_URL`, eles falham com uma mensagem que nomeia a variável.
@@ -233,6 +234,84 @@ O worker (`src/worker/main.ts` → `src/worker/iniciar.ts`) é um processo separ
   O papel da app não precisa de `CREATE` nem de ser dono de nada em `pgboss`.
 - **Upgrade do pg-boss:** a versão é exata (o `config.test.ts` confere `package.json` e lock) porque o `start()` do worker migra o schema `pgboss` sozinho, e o cliente da app (`migrate: false`) exige a mesma versão de schema. Toda mudança de versão é uma demanda própria, revisada pelo DBA: comparar `pgboss.schema` do `package.json` do pacote novo com o antigo; se mudar, ler o SQL de `getMigrationPlans(schema, versãoAtual)` (locks e tempo em volume), trocar app e worker **juntos** (mesma imagem) e documentar a reversão com `getRollbackPlans(schema, versãoNova)`, aplicada antes de voltar à imagem anterior. Evidência: `SELECT version FROM pgboss.version` antes e depois, e o `tests/integration/worker/schema.test.ts` verde.
 - **Reverter numa base local:** `docker compose down -v`. `DROP SCHEMA pgboss CASCADE` (com o worker parado) remove só a fila, sem tocar em `public`.
+
+## Interface e acessibilidade
+
+Base visual e de navegação (D-009). Toda tela compõe estas peças; não crie cores, fontes, formatadores nem caminhos próprios.
+
+### Tema (`src/app/globals.css`)
+
+Tokens em `:root`, com nomes em pt-BR. **Só o `globals.css` tem literais de cor** (`#rrggbb`, dentro do `:root`). Componentes e layouts usam apenas `var(--…)`, e os testes `src/app/globals.test.ts` e `src/components/conformidade.test.ts` conferem isso.
+
+| Grupo | Tokens |
+|---|---|
+| Fundo e superfície | `--cor-fundo`, `--cor-superficie`, `--cor-superficie-alt` |
+| Texto | `--cor-texto`, `--cor-texto-suave` |
+| Bordas | `--cor-borda-controle` (controles, contraste ≥ 3:1), `--cor-borda-sutil` (divisores) |
+| Ações | `--cor-primaria`, `--cor-primaria-forte`, `--cor-sobre-primaria`, `--cor-perigo`, `--cor-perigo-forte`, `--cor-sobre-perigo` |
+| Foco | `--cor-foco`, `--foco-largura` (3px), `--foco-afastamento` |
+| Alertas | `--cor-{info,sucesso,aviso,erro}-{fundo,texto}` |
+| Tipografia | `--fonte-titulo`, `--fonte-corpo`, `--texto-sm` … `--texto-3xl`, `--altura-linha` |
+| Espaço e forma | `--espaco-1` … `--espaco-16` (base 0,25 rem), `--raio`, `--raio-grande`, `--largura-conteudo`, `--largura-lateral`, `--alvo-minimo` (44 px) |
+
+- Contraste WCAG AA de todos os pares conferido por teste (texto ≥ 4,5:1; bordas de controle e foco ≥ 3:1). Nenhum token tem matiz em [290°, 360°) com saturação ≥ 20% (sem rosa genérico).
+- **Ponto de quebra único:** `@media (min-width: 48rem)` (768 px), mobile-first. Nenhuma outra media query de largura é aceita.
+- Foco visível por `:focus-visible` (contorno de 3 px). Nunca use `outline: none`/`0`. `prefers-reduced-motion: reduce` desliga transições.
+
+### Fontes
+
+| Uso | Família | Arquivo (`src/app/_fontes/`) | Origem | sha256 |
+|---|---|---|---|---|
+| Títulos | Fraunces (variável) | `fraunces-latin-opsz-normal.woff2` | `@fontsource-variable/fraunces@5.3.0` | `7234ed86…e0d783` |
+| Corpo e controles | Source Sans 3 (variável) | `source-sans-3-latin-wght-normal.woff2` | `@fontsource-variable/source-sans-3@5.3.1` | `19143dca…60c7d5` |
+
+As duas têm licença SIL OFL 1.1 (`OFL-Fraunces.txt` e `OFL-SourceSans3.txt`, ao lado dos arquivos). Elas são carregadas por `next/font/local` (`src/app/fontes.ts`), então o build não acessa servidor de fontes. Os pacotes **não** ficam instalados. Para atualizar, extraia os arquivos numa pasta temporária vazia e confira o sha256, que `src/app/fontes.test.ts` verifica:
+
+```bash
+npm pack @fontsource-variable/fraunces@5.3.0 @fontsource-variable/source-sans-3@5.3.1
+mkdir -p fraunces sourcesans   # o -C do tar exige a pasta existente
+tar -xzf fontsource-variable-fraunces-5.3.0.tgz -C fraunces      # package/files/fraunces-latin-opsz-normal.woff2 + package/LICENSE
+tar -xzf fontsource-variable-source-sans-3-5.3.1.tgz -C sourcesans  # package/files/source-sans-3-latin-wght-normal.woff2 + package/LICENSE
+sha256sum fraunces/package/files/fraunces-latin-opsz-normal.woff2 sourcesans/package/files/source-sans-3-latin-wght-normal.woff2
+```
+
+### Formatação (`src/lib/format.ts`)
+
+Fonte única de formatação de exibição. Um teste recusa `Intl.NumberFormat` e `toLocale*String` em `src/`, e `Intl.DateTimeFormat` nas camadas de exibição. `src/server` pode usar `Intl.DateTimeFormat` para cálculo.
+
+- `formatarMoeda(centavos)` → `R$ 79,00` (U+00A0 depois de `R$`, aritmética inteira; negativo, fração e não finito lançam `RangeError`).
+- `formatarData`, `formatarHora` e `formatarDataHora(instante, fuso?)` → `dd/mm/aaaa`, `HH:mm` e `dd/mm/aaaa HH:mm`, no fuso IANA do salão (padrão `FUSO_PADRAO = 'America/Sao_Paulo'`, igual ao `@default` de `salao.fuso`), independentes do `TZ` do processo.
+- `formatarDeslocamentoUtc(instante, fuso?)` → `UTC−03:00`.
+
+### Componentes (`src/components/ui/`, sem barril)
+
+Importe cada um pelo caminho: `@/components/ui/Button`, `Field`, `Select`, `Checkbox`, `ConfirmDialog`, `Alert`, `EmptyState`, `ErrorState`, `DataList` e `SlotGrid`.
+
+- `Button`: variantes `primaria`, `secundaria`, `perigo` e `discreta`; `type="button"` por padrão; `ocupado` (com `disabled` e `aria-busy`); `desabilitadoFocavel` (`aria-disabled`, continua focável e bloqueia o clique).
+- `Field`, `Select` e `Checkbox`: rótulo associado, `ajuda`, `erro` (com `aria-invalid`, `aria-describedby` e "Erro:" visível) e `obrigatorio` (escrito no rótulo).
+- `ConfirmDialog`: `<dialog>` nativo com `showModal()`; foco inicial em Cancelar; ciclo de foco explícito; Esc cancela; clique no fundo não fecha; `onConfirmar` assíncrono deixa o diálogo ocupado e chama a ação uma vez; o foco volta à origem (ou ao `main`).
+- `Alert` (`erro` com `role="alert"`, demais com `role="status"`), `EmptyState` e `ErrorState` (só recebem texto, nunca o `Error`).
+- `DataList`: tabela semântica que empilha as linhas abaixo de 48 rem. **Limitação conhecida:** o Safari remove a semântica de tabela quando `tr`/`td` mudam de `display`. Chromium e Firefox preservam. Na v1, o `DataList` é usado só no painel da equipe.
+- `SlotGrid`: rádios nativos num `fieldset`, com uma parada de Tab por grupo e setas para mudar a seleção. Mostra só os instantes recebidos (UTC), em `HH:mm` no fuso do salão. Rótulos repetidos (fim de horário de verão) ganham o deslocamento UTC.
+
+### Layouts e navegação
+
+- `@/components/layout/PublicLayout`: `variante="plataforma"` (padrão: Entrar e Criar conta) ou `variante="salao"` com `nomeSalao` (sem links de equipe). Rodapé com Termos de Uso e Política de Privacidade.
+- `@/components/layout/PanelLayout`: props `papel` (`gestor` | `profissional`, vindo da sessão no servidor), `nomeSalao`, `caminhoAtual?` (padrão `usePathname()`) e `areaUsuario?`. Um papel inválido não mostra nenhum item. A navegação por papel é só interface: a autorização continua no servidor.
+- `@/components/layout/AdminLayout`: navegação do super admin, com `caminhoAtual?`, `areaUsuario?` e `rotuloArea?`.
+- Os três têm o link "Pular para o conteúdo" (1º focável), `header`, `nav` com nome próprio e um `main#conteudo` com `tabindex="-1"`. Abaixo de 48 rem, a navegação do painel e do admin fica atrás do botão "Menu" (um *disclosure*, que não prende o foco).
+- `src/config/navegacao.ts` é a fonte única dos caminhos (`ROTAS`, com funções que codificam parâmetros), da navegação por papel (`NAVEGACAO_PAINEL`, `NAVEGACAO_ADMIN`, `itensDoPainel`) e do item ativo (`itemAtivo`). `SEGMENTOS_RESERVADOS` lista os primeiros segmentos de rota (`painel`, `admin`, `entrar`, …, `api`, `_next`). **E1.1/E2.5 devem recusar ou desviar slugs de salão que colidam com eles.** Toda pasta nova de primeiro nível em `src/app` precisa entrar em `ROTAS` (um teste confere).
+
+### Vitrine `/dev/componentes` e E2E de acessibilidade
+
+- A vitrine mostra todos os componentes, variantes e estados, com dados fictícios. O layout é escolhido por `?layout=publico|publico-salao|painel|admin&papel=gestor|profissional&caminho=/painel/…`.
+- Ela só responde com `VITRINE_COMPONENTES=true` no processo do servidor, lido na requisição, ou em `next dev`. Sem isso, inclusive na imagem Docker e no `next start` padrão, responde **404**. O mesmo build serve os dois casos. Valores diferentes de `true`/`false` (`TRUE`, `1`) fazem o `check-env` recusar o ambiente na inicialização. Nunca ligue a variável em produção.
+- O `playwright.config.ts` liga a variável no `webServer`. Se um `next start` sem a variável já estiver na porta 3000 (o `reuseExistingServer`, fora da CI), o teste falha com a mensagem "ligue VITRINE_COMPONENTES=true no servidor ou libere a porta 3000".
+- `e2e/a11y-base.spec.ts` cobre: o menu móvel só pelo teclado; o diálogo com Tab, Shift+Tab, Esc e Enter, e o fundo inerte; as larguras de 320, 375 e 1280 px sem rolagem horizontal; o foco visível e o alcance por Tab de todos os interativos; alvos de 44 × 44 px; o texto a 200%; o movimento reduzido; as fontes aplicadas; e o axe (`@axe-core/playwright` e `axe-core` fixados em 4.14.0, etiquetas WCAG 2.0/2.1 A e AA, zero violações, nenhuma regra desligada).
+
+```bash
+npm run build && npx playwright test e2e/a11y-base.spec.ts   # porta 3000 livre
+```
 
 ## CI
 

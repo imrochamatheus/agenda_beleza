@@ -1,0 +1,25 @@
+.estado {
+  margin-block: var(--espaco-4);
+  padding: var(--espaco-6) var(--espaco-4);
+  border: 1px dashed var(--cor-borda-controle);
+  border-radius: var(--raio-grande);
+  background: var(--cor-superficie);
+  text-align: center;
+}
+
+.titulo {
+  font-size: var(--texto-xl);
+  margin-block-end: var(--espaco-2);
+}
+
+.descricao {
+  color: var(--cor-texto-suave);
+}
+
+.descricao > :last-child {
+  margin-block-end: 0;
+}
+
+.acao {
+  margin-block-start: var(--espaco-4);
+}

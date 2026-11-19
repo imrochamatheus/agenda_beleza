@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { POST, dynamic as dinamicaDecisao } from '@/app/dev/mp-checkout/decisao/route';
-import CheckoutSimulado, { dynamic as dinamicaPagina, metadata } from '@/app/dev/mp-checkout/page';
+import CheckoutSimulado, { dynamic as dinamicaPagina, generateMetadata } from '@/app/dev/mp-checkout/page';
 import { DIAS_TESTE, PRECO_MENSAL_CENTAVOS } from '@/config/plano';
 import {
   carregarCheckoutSimulado,
@@ -170,7 +170,8 @@ describe('CA-19: página /dev/mp-checkout', () => {
   it('RN-20: rota dinâmica e fora dos buscadores', () => {
     expect(dinamicaPagina).toBe('force-dynamic');
     expect(dinamicaDecisao).toBe('force-dynamic');
-    expect(metadata.robots).toEqual({ index: false, follow: false });
+    vi.stubEnv('MP_ADAPTER', 'simulado');
+    expect(generateMetadata().robots).toEqual({ index: false, follow: false });
   });
 });
 

@@ -1,0 +1,27 @@
+.vitrine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-8);
+}
+
+.intro {
+  color: var(--cor-texto-suave);
+  max-width: 40rem;
+}
+
+.secao {
+  padding-block-start: var(--espaco-4);
+  border-block-start: 1px solid var(--cor-borda-sutil);
+}
+
+.linha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-3);
+  margin-block-end: var(--espaco-4);
+}
+
+.nota {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}

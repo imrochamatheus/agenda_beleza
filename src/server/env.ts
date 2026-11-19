@@ -38,6 +38,9 @@ export const esquemaEnv = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  // Vitrine /dev/componentes (D-009 D-1). Só valida o formato (falha cedo com TRUE, 1, sim...);
+  // a página lê a variável na requisição por `vitrineHabilitada`. Não entra no Env.
+  VITRINE_COMPONENTES: z.enum(['true', 'false']).default('false'),
 });
 
 export type ConfigIntegracao<C> = { modo: 'simulado' } | { modo: 'real'; config: C };
@@ -186,4 +189,13 @@ export function modosAtivos(env: Env): ModosAtivos {
     turnstile: turnstile.modo,
     whatsapp: whatsapp.modo,
   };
+}
+
+/**
+ * D-009 D-1: a vitrine /dev/componentes responde só com o texto exato
+ * `VITRINE_COMPONENTES=true` ou com `NODE_ENV=development` (next dev). Não valida o resto do
+ * ambiente: é lida na requisição pela página, sem depender de banco nem de adaptadores.
+ */
+export function vitrineHabilitada(fonte: Record<string, string | undefined>): boolean {
+  return fonte.VITRINE_COMPONENTES === 'true' || fonte.NODE_ENV === 'development';
 }

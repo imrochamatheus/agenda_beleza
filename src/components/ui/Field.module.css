@@ -1,0 +1,50 @@
+/* Estilos comuns de Field, Select e Checkbox. */
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+  margin-block-end: var(--espaco-4);
+  max-width: 32rem;
+}
+
+.rotulo {
+  font-weight: 600;
+}
+
+.obrigatorio {
+  font-weight: 400;
+  color: var(--cor-texto-suave);
+}
+
+.ajuda {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.controle {
+  width: 100%;
+  min-height: var(--alvo-minimo);
+  padding: var(--espaco-2) var(--espaco-3);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+}
+
+.controle[aria-invalid='true'] {
+  border-color: var(--cor-erro-texto);
+  border-width: 2px;
+}
+
+.erro {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--espaco-2);
+  margin: 0;
+  color: var(--cor-erro-texto);
+}
+
+.icone {
+  flex: none;
+  margin-block-start: 0.3em;
+}

@@ -1,0 +1,4 @@
+/* Base em Field.module.css (rótulo, ajuda, erro, borda do controle); aqui só o próprio do select. */
+.select {
+  cursor: pointer;
+}
