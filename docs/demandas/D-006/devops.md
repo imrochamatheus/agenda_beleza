@@ -1,6 +1,6 @@
-# D-006: DevOps (T-2, T-3; T-4 pendente de autorização)
+# D-006: DevOps (T-2, T-3, T-4)
 
-Autor: devops. Entradas: `docs/demandas/D-006/{issue-5,spec,design}.md`. Branch `feat/d-006-ci` (base `bc163e7`). Nada foi commitado, publicado ou aberto como PR.
+Autor: devops. Entradas: `docs/demandas/D-006/{issue-5,spec,design}.md`. Branch `feat/d-006-ci` (base `bc163e7`). Push e PR autorizados pelo usuário (via líder) para a T-4; merge **não** autorizado.
 
 ## 1. O que mudou e por quê
 
@@ -78,8 +78,46 @@ Logs completos no scratchpad da sessão (`ci-sim/../log-*.txt`), fora do reposit
 
 ## 5. Riscos e pendências
 
-- **T-4 (execução real no GitHub):** depende da autorização do usuário para push e PR. Passos: commit dos arquivos da D-006 (incluindo o `smoke-db.test.ts` e o `dev.md` do desenvolvedor), `git push -u origin feat/d-006-ci`, `gh pr create --base main`, acompanhar `gh pr checks <n> --watch` até os 6 checks `pass`, conferir os artefatos `cobertura` e `playwright-report` (`gh run view <id> --json artifacts` ou `gh run download <id> -D <scratchpad>`), registrar aqui o número do PR, o ID e o SHA do run verde.
-- Não verificado localmente (só no run real): `--with-deps` do Playwright (apt no runner), o `job.services.postgres.id` do `docker exec` e o cache do npm/Playwright (hit no segundo run).
+- Cache do npm e do Playwright: no primeiro run houve miss (`npm cache is not found`, `Cache not found for input keys: playwright-Linux-1.65.1`) e o cache foi salvo (`Cache saved with key: playwright-Linux-1.65.1`). O hit só aparece a partir do segundo run.
 - **K-1:** proteção de `main` indisponível no plano atual; decisão do usuário (registrada no README).
 - **K-7:** limite de pull anônimo do Docker Hub (`toomanyrequests`) é transitório: reexecutar o job.
-- Observação para o líder: o item "Sessão de superusuário aberta numa base de worker" do README ("Banco de teste") ainda cita "(CI, por exemplo)" como caso de papel não superusuário. Na CI desta demanda o papel é superusuário, então o exemplo ficou impreciso. Não alterei porque o design restringe a T-3 ao item "Privilégio"; sugiro trocar o exemplo numa próxima edição do README (ou autorizar o ajuste de uma linha agora).
+- O item "Sessão de superusuário aberta numa base de worker" do README deixou de citar a CI como exemplo de papel sem superusuário (ajuste autorizado pelo líder na T-4).
+
+## 6. T-4: execução real no GitHub (2026-11-18/19)
+
+Antes do commit, na árvore real (com o `smoke-db.test.ts` final do desenvolvedor e o PostgreSQL do compose):
+
+| Comando | Exit |
+|---|---|
+| `npm run lint` | 0 |
+| `npm run typecheck` | 0 |
+| `DATABASE_URL=… TEST_DATABASE_URL=…/agenda_beleza_test npx vitest run --project integration tests/integration/smoke-db.test.ts` | 0 (`1 passed`, `2 passed`) |
+
+Sem `.env` na árvore, o mesmo comando falha com `TEST_DATABASE_URL não definida` (comportamento esperado do harness).
+
+- Commit `cbe89686293945f47bf274d4c7831a4c9f7b40d8` (`ci(E0.3): workflow de CI no GitHub Actions com gates, Postgres, cobertura e E2E`), `git push -u origin feat/d-006-ci`.
+- PR: https://github.com/imrochamatheus/agenda_beleza/pull/61 (`feat/d-006-ci` → `main`, "Closes #5"). Não mesclado.
+- Run `CI` **44442523728**, evento `pull_request`, SHA `cbe89686293945f47bf274d4c7831a4c9f7b40d8`: `completed` / `success`.
+
+`gh api repos/{owner}/{repo}/actions/runs/44442523728/jobs --jq '.jobs[]|{name,conclusion}'` (o `gh` local é 2.4.0, sem `pr checks --watch` nem `run list --branch`; usei a API):
+
+| Job | Conclusão | Duração |
+|---|---|---|
+| `lint` | success | 27 s |
+| `typecheck` | success | 26 s |
+| `build` | success | 37 s |
+| `testes` | success | 1 min 27 s |
+| `e2e` | success | 1 min 7 s |
+| `docker` | success | 1 min 38 s |
+
+Trechos de log (baixados com `gh api …/actions/jobs/<id>/logs`):
+- `testes`: `docker exec "<id do service>" createdb -U agenda agenda_beleza_test` OK; `All migrations have been successfully applied.`; `✓ integration tests/integration/smoke-db.test.ts (2 tests)`; `Test Files 47 passed (47)`; `Tests 411 passed (411)`.
+- `e2e`: `✓ 1 [mobile-chromium] › e2e/smoke.spec.ts:3:1 › a página inicial abre no viewport móvel com o título da marca`; `Cache saved with key: playwright-Linux-1.65.1`.
+- `docker`: `naming to docker.io/library/agenda-beleza:ci done` (sem push).
+
+Artefatos (`gh api …/runs/44442523728/artifacts`; baixados com `gh run download 44442523728 -D <scratchpad>/r-44442523728`, fora do repositório):
+- `cobertura` (271.661 bytes): `index.html`, `lcov.info`, `coverage-summary.json` com `total.lines` = 297/297 (100%).
+- `playwright-report` (194.527 bytes): `index.html`.
+- `playwright-traces`: não gerado, como esperado (`test-results/` só existe com falha; `if-no-files-found: ignore`).
+
+Próximo: T-5 (tester) com o PR 61 e o run 44442523728; T-6 (líder) registra o run de `push` em `main` depois do merge autorizado.
