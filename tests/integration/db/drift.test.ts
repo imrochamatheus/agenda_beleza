@@ -9,7 +9,8 @@ import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { executarPrisma, urlDoWorker } from '../../support/db';
 import { conectar } from '../../support/sql';
 
-// CA-1 (RN-11), CA-15 (RN-3) e CA-22 (RN-13). Os nomes vêm do contrato de docs/demandas/D-004/dba.md §3.
+// CA-1 (RN-11), CA-15 (RN-3) e CA-22 (RN-13) da D-004, e CA-24 da D-007. Os nomes vêm dos contratos de
+// docs/demandas/D-004/dba.md §3 e docs/demandas/D-007/dba.md §3.
 // O `migrate diff` é cego aos objetos de SQL bruto (design §0), por isso o catálogo os confere pelo nome.
 let c: pg.Client;
 
@@ -50,7 +51,16 @@ const TABELAS = [
   'token',
   'usuario',
   'webhook_evento',
+  // D-007: estado dos adaptadores simulados (tabelas de plataforma, vazias em produção).
+  'sim_mp_assinatura',
+  'sim_mp_pagamento',
+  'sim_mp_adiamento',
+  'sim_mp_erro_forcado',
+  'sim_whatsapp_chamada',
+  'sim_whatsapp_falha_forcada',
 ];
+
+const TABELAS_SIMULADOS = TABELAS.filter((t) => t.startsWith('sim_'));
 
 const ENUMS: Record<string, string[]> = {
   papel_usuario: ['gestor', 'profissional', 'super_admin'],
@@ -64,6 +74,10 @@ const ENUMS: Record<string, string[]> = {
   estado_mensagem: ['pendente', 'enviando', 'enviada', 'falhou', 'nao_enviada', 'substituida', 'cancelada_anonimizacao'],
   resultado_tentativa: ['sucesso', 'falha'],
   resultado_auditoria: ['sucesso', 'falha'],
+  sim_mp_estado_assinatura: ['pendente', 'autorizada', 'cancelada'],
+  sim_mp_status_pagamento: ['aprovado', 'recusado'],
+  sim_mp_operacao: ['criarAssinatura', 'consultarAssinatura', 'consultarPagamento', 'cancelarAssinatura', 'adiarProximaCobranca'],
+  sim_whatsapp_tipo_falha: ['temporaria', 'permanente'],
 };
 
 // [nome, tabela, contype]
@@ -86,6 +100,11 @@ const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
   ['reserva_item_duracao_chk', 'reserva_item', 'c'],
   ['assinatura_pagamento_valor_chk', 'assinatura_pagamento', 'c'],
   ['bloqueio_ordem_chk', 'bloqueio', 'c'],
+  // D-007 (migração 20261119000000_simuladores_integracao, parte 2)
+  ['sim_mp_assinatura_estado_chk', 'sim_mp_assinatura', 'c'],
+  ['sim_mp_assinatura_valor_chk', 'sim_mp_assinatura', 'c'],
+  ['sim_mp_pagamento_valor_chk', 'sim_mp_pagamento', 'c'],
+  ['sim_whatsapp_chamada_resultado_chk', 'sim_whatsapp_chamada', 'c'],
 ];
 
 // [nome, tabela, único]
@@ -123,7 +142,7 @@ const FKS_COMPOSTAS = [
 ];
 
 describe('CA-1: catálogo depois do migrate deploy', () => {
-  it('CA-1: existem exatamente as 24 tabelas do contrato em public (fora _prisma_migrations)', async () => {
+  it('CA-1: existem exatamente as 30 tabelas do contrato em public (fora _prisma_migrations)', async () => {
     const r = await linhas<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> '_prisma_migrations'
@@ -251,12 +270,12 @@ describe('CA-1: o Prisma não acusa drift', () => {
 });
 
 describe('CA-15: integridade referencial e identificadores', () => {
-  it('CA-15: as 35 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
+  it('CA-15: as 37 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
     const r = await linhas<{ nome: string; del: string; upd: string }>(
       `SELECT conname AS nome, confdeltype::text AS del, confupdtype::text AS upd
        FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace`,
     );
-    expect(r).toHaveLength(35);
+    expect(r).toHaveLength(37);
     expect(r.filter((f) => f.del !== 'r' || f.upd !== 'r')).toEqual([]);
   });
 
@@ -320,10 +339,67 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261118000000_init', antes: false, ok: true },
       { migration_name: '20261118000100_reserva_exclusion', antes: false, ok: true },
       { migration_name: '20261118000200_restricoes_sql', antes: false, ok: true },
+      { migration_name: '20261119000000_simuladores_integracao', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,
     ]);
     expect(velhas.n).toBe(0);
+  });
+});
+
+describe('CA-24 (D-007): tabelas dos simuladores', () => {
+  it('CA-24: as 6 tabelas sim_* existem, vazias, e cada uma tem o COMMENT de "somente adaptador simulado"', async () => {
+    const r = await linhas<{ tabela: string; comentario: string | null }>(
+      `SELECT c.relname AS tabela, obj_description(c.oid, 'pg_class') AS comentario
+       FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'r' AND c.relname LIKE 'sim\\_%'
+       ORDER BY c.relname`,
+    );
+    expect(r.map((x) => x.tabela)).toEqual([...TABELAS_SIMULADOS].sort());
+    for (const x of r) {
+      expect(x.comentario).toMatch(/^Somente adaptador simulado do (Mercado Pago|WhatsApp) \(D-007\)\. Vazia em produção\.$/);
+      // Nomes vindos da lista fixa do contrato (não de entrada externa).
+      const [n] = await linhas<{ n: number }>(`SELECT count(*)::int AS n FROM ${x.tabela}`);
+      expect(n.n).toBe(0);
+    }
+  });
+
+  it('CA-24 (D-2): nenhuma FK liga uma tabela sim_* a uma tabela de domínio (nos dois sentidos)', async () => {
+    const r = await linhas<{ nome: string; origem: string; alvo: string }>(
+      `SELECT conname AS nome, conrelid::regclass::text AS origem, confrelid::regclass::text AS alvo
+       FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace
+         AND (conrelid::regclass::text LIKE 'sim\\_%' OR confrelid::regclass::text LIKE 'sim\\_%')
+       ORDER BY conname`,
+    );
+    expect(r).toEqual([
+      { nome: 'sim_mp_adiamento_assinatura_id_fkey', origem: 'sim_mp_adiamento', alvo: 'sim_mp_assinatura' },
+      { nome: 'sim_mp_pagamento_assinatura_id_fkey', origem: 'sim_mp_pagamento', alvo: 'sim_mp_assinatura' },
+    ]);
+  });
+
+  it('CA-24: as colunas das tabelas sim_* são exatamente as do contrato (nenhuma de cartão, segredo ou token)', async () => {
+    const r = await linhas<{ tabela: string; coluna: string; tipo: string; nulo: string; padrao: string | null }>(
+      `SELECT table_name AS tabela, column_name AS coluna, udt_name AS tipo, is_nullable AS nulo, column_default AS padrao
+       FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'sim\\_%'
+       ORDER BY table_name, ordinal_position`,
+    );
+    const colunas = (t: string) => r.filter((x) => x.tabela === t).map((x) => x.coluna);
+    expect(colunas('sim_mp_assinatura')).toEqual([
+      'id', 'referencia_externa', 'email_pagador', 'url_retorno', 'estado', 'valor_centavos',
+      'autorizada_em', 'proxima_cobranca_em', 'cancelada_em', 'criado_em', 'atualizado_em',
+    ]);
+    expect(colunas('sim_mp_pagamento')).toEqual(['id', 'assinatura_id', 'status', 'valor_centavos', 'cobrado_em', 'criado_em']);
+    expect(colunas('sim_mp_adiamento')).toEqual(['id', 'assinatura_id', 'data_anterior', 'nova_data', 'criado_em']);
+    expect(colunas('sim_mp_erro_forcado')).toEqual(['id', 'operacao', 'criado_em']);
+    expect(colunas('sim_whatsapp_chamada')).toEqual([
+      'id', 'destinatario', 'modelo', 'parametros', 'chave_idempotencia', 'resultado', 'tipo_falha',
+      'provedor_mensagem_id', 'criado_em',
+    ]);
+    expect(colunas('sim_whatsapp_falha_forcada')).toEqual(['id', 'tipo', 'criado_em']);
+    expect(r.filter((x) => /cart|card|cvv|pan|token|secret|segredo|senha|password|access|chave_api/i.test(x.coluna))).toEqual([]);
+    // modelo é text (chamada inválida também é registrada, RN-19); cobrado_em não tem default (instante do disparo).
+    const coluna = (t: string, c: string) => r.find((x) => x.tabela === t && x.coluna === c);
+    expect(coluna('sim_whatsapp_chamada', 'modelo')).toMatchObject({ tipo: 'text', nulo: 'NO' });
+    expect(coluna('sim_mp_pagamento', 'cobrado_em')).toMatchObject({ tipo: 'timestamptz', nulo: 'NO', padrao: null });
   });
 });

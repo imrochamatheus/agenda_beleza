@@ -29,7 +29,13 @@ async function estadoDaBase(): Promise<{ base: string; saloes: number; migracoes
   }
 }
 
-const MIGRACOES = ['20261118000000_init', '20261118000100_reserva_exclusion', '20261118000200_restricoes_sql'];
+// Contrato de migrações: D-004 (3) e D-007 (simuladores). Ver docs/demandas/D-007/dba.md.
+const MIGRACOES = [
+  '20261118000000_init',
+  '20261118000100_reserva_exclusion',
+  '20261118000200_restricoes_sql',
+  '20261119000000_simuladores_integracao',
+];
 
 describe('CA-17: a guarda roda antes de qualquer conexão (prepararExecucao)', () => {
   it('CA-17: TEST_DATABASE_URL ausente falha com a mensagem da guarda, sem tentar conectar', async () => {
@@ -67,7 +73,7 @@ describe('CA-17: a guarda roda antes de qualquer conexão (prepararExecucao)', (
 });
 
 describe('CA-15: base do worker recriada a partir do template', () => {
-  it('CA-15: no início do arquivo a base é a deste worker, sem dados, com as 3 migrações e o schema do inicializador', async () => {
+  it('CA-15: no início do arquivo a base é a deste worker, sem dados, com todas as migrações e o schema do inicializador', async () => {
     const plano = inject('bancoDeTeste');
     const id = Number(process.env.VITEST_POOL_ID);
     // R-3: o maxWorkers do projeto vale (VITEST_POOL_ID entre 1 e maxWorkers).
