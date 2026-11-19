@@ -641,3 +641,139 @@ model Auditoria {
   @@index([atorId, ocorridoEm(sort: Desc)])
   @@map("auditoria")
 }
+
+// ---------------------------------------------------------------------------
+// Adaptadores simulados (D-007, E0.6). Parecer e contrato: docs/demandas/D-007/dba.md.
+// Estado do Mercado Pago e do WhatsApp simulados, compartilhado entre app, worker e testes.
+// - Tabelas de PLATAFORMA: sem salao_id e sem FK para o domínio (imitam um sistema externo).
+// - Lidas e escritas só por src/server/repos/sim-*.ts. Ficam vazias em produção.
+// - Guardam e-mail e telefone como o provedor guardaria; fora da anonimização (D-4).
+// - CHECKs sim_*_chk e COMMENT ON TABLE ficam no SQL da migração 20261119000000_simuladores_integracao.
+// ---------------------------------------------------------------------------
+
+enum SimMpEstadoAssinatura {
+  pendente
+  autorizada
+  cancelada
+
+  @@map("sim_mp_estado_assinatura")
+}
+
+enum SimMpStatusPagamento {
+  aprovado
+  recusado
+
+  @@map("sim_mp_status_pagamento")
+}
+
+/// Mesmos nomes de OPERACOES_MP (src/server/integrations/mercadopago/port.ts).
+enum SimMpOperacao {
+  criarAssinatura
+  consultarAssinatura
+  consultarPagamento
+  cancelarAssinatura
+  adiarProximaCobranca
+
+  @@map("sim_mp_operacao")
+}
+
+enum SimWhatsappTipoFalha {
+  temporaria
+  permanente
+
+  @@map("sim_whatsapp_tipo_falha")
+}
+
+/// Somente adaptador simulado. CHECK sim_mp_assinatura_estado_chk e sim_mp_assinatura_valor_chk (SQL).
+model SimMpAssinatura {
+  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// salaoId informado em criarAssinatura. Texto e sem FK, como o external_reference do MP.
+  referenciaExterna String                @map("referencia_externa")
+  emailPagador      String                @map("email_pagador")
+  urlRetorno        String                @map("url_retorno")
+  estado            SimMpEstadoAssinatura @default(pendente)
+  /// Sem default: o valor vem de src/config/plano.ts (fonte única, RN-21).
+  valorCentavos     Int                   @map("valor_centavos")
+  autorizadaEm      DateTime?             @map("autorizada_em") @db.Timestamptz(6)
+  proximaCobrancaEm DateTime?             @map("proxima_cobranca_em") @db.Timestamptz(6)
+  canceladaEm       DateTime?             @map("cancelada_em") @db.Timestamptz(6)
+  criadoEm          DateTime              @default(now()) @map("criado_em") @db.Timestamptz(6)
+  /// SQL bruto precisa gravar atualizado_em = now() (não há trigger).
+  atualizadoEm      DateTime              @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
+
+  pagamentos SimMpPagamento[]
+  adiamentos SimMpAdiamento[]
+
+  @@index([referenciaExterna])
+  @@map("sim_mp_assinatura")
+}
+
+/// Somente adaptador simulado. CHECK sim_mp_pagamento_valor_chk (SQL).
+model SimMpPagamento {
+  id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assinaturaId  String               @map("assinatura_id") @db.Uuid
+  status        SimMpStatusPagamento
+  valorCentavos Int                  @map("valor_centavos")
+  /// Instante do disparo (relógio controlado nos testes): sem default. A porta o expõe como ocorridoEm.
+  cobradoEm     DateTime             @map("cobrado_em") @db.Timestamptz(6)
+  criadoEm      DateTime             @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  assinatura SimMpAssinatura @relation(fields: [assinaturaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([assinaturaId, cobradoEm])
+  @@map("sim_mp_pagamento")
+}
+
+/// Somente adaptador simulado.
+model SimMpAdiamento {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assinaturaId String    @map("assinatura_id") @db.Uuid
+  dataAnterior DateTime? @map("data_anterior") @db.Timestamptz(6)
+  novaData     DateTime  @map("nova_data") @db.Timestamptz(6)
+  criadoEm     DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  assinatura SimMpAssinatura @relation(fields: [assinaturaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([assinaturaId, criadoEm])
+  @@map("sim_mp_adiamento")
+}
+
+/// Somente adaptador simulado. Fila de erros forçados: cada linha falha UMA chamada da operação.
+model SimMpErroForcado {
+  id       String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  operacao SimMpOperacao
+  criadoEm DateTime      @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  @@index([operacao, criadoEm, id])
+  @@map("sim_mp_erro_forcado")
+}
+
+/// Somente adaptador simulado. Uma linha por chamada a enviarModelo, inclusive as que falham.
+/// Sem UNIQUE em chave_idempotencia: o simulado não deduplica (RN-19). CHECK sim_whatsapp_chamada_resultado_chk (SQL).
+model SimWhatsappChamada {
+  id                 String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Telefone como o provedor guardaria; pode não ser E.164 (chamada inválida registrada como falha).
+  destinatario       String
+  /// Texto livre (não o enum tipo_mensagem): a chamada com modelo inválido também é registrada (RN-19).
+  modelo             String
+  parametros         Json                  @db.JsonB
+  chaveIdempotencia  String                @map("chave_idempotencia")
+  resultado          ResultadoTentativa
+  tipoFalha          SimWhatsappTipoFalha? @map("tipo_falha")
+  provedorMensagemId String?               @map("provedor_mensagem_id")
+  criadoEm           DateTime              @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  @@index([chaveIdempotencia])
+  @@index([criadoEm])
+  @@map("sim_whatsapp_chamada")
+}
+
+/// Somente adaptador simulado. Fila de falhas forçadas: cada linha falha UMA chamada.
+model SimWhatsappFalhaForcada {
+  id       String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tipo     SimWhatsappTipoFalha
+  criadoEm DateTime             @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  @@index([criadoEm, id])
+  @@map("sim_whatsapp_falha_forcada")
+}

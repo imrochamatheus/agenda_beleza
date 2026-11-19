@@ -2,49 +2,127 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
 
+// Arquivos de código verificados pelas regras de arquitetura abaixo.
+const CODIGO = '**/*.{ts,tsx,mts,js,mjs}';
+// Testes ficam fora das regras de arquitetura: montam cenários com o banco e os adaptadores reais.
+const TESTES = ['tests/**', '**/*.test.{ts,tsx}'];
+
+// Pastas com permissões próprias. Cada arquivo de código casa com UM só bloco que configura
+// `no-restricted-imports`: no flat config, dois blocos que configuram a mesma regra para o mesmo
+// arquivo não se somam (o último substitui o anterior). Por isso os blocos têm `files` disjuntos e
+// cada um lista a soma das restrições que lhe cabem (D-007 §3.8, R-1).
+const INTEGRACOES = ['src/server/integrations/**'];
+const ACESSO_AO_BANCO = ['src/server/repos/**', 'src/worker/**', 'prisma/seed.ts'];
+const DEV = ['src/app/dev/**'];
+// Restringe uma pasta (`x/**`) ou um arquivo aos arquivos de código.
+const comExtensao = (padroes) =>
+  padroes.map((p) => (p.endsWith('/**') ? `${p}/*.{ts,tsx,mts,js,mjs}` : p));
+
+// RN-10 (D-005): o acesso ao banco passa pelos repositórios. Fora das pastas liberadas, é proibido
+// importar o cliente Prisma gerado, @prisma/client, @prisma/adapter-pg, pg e o módulo da instância
+// (src/server/repos/db), inclusive por caminho relativo. `import type` é permitido (S-6): não abre
+// conexão nem permite consultar.
+const PRISMA = [
+  {
+    regex: '(^|/)generated/prisma(/|$)',
+    allowTypeImports: true,
+    message: 'Acesse o banco pelos repositórios de src/server/repos (RN-10).',
+  },
+  {
+    regex: '^@prisma/(client|adapter-pg)(/|$)',
+    allowTypeImports: true,
+    message: 'Acesse o banco pelos repositórios de src/server/repos (RN-10).',
+  },
+  {
+    regex: '^pg(/|$)',
+    allowTypeImports: true,
+    message: 'Acesse o banco pelos repositórios de src/server/repos (RN-10).',
+  },
+  {
+    regex: '(^|/)repos/db(\\.[cm]?[jt]s)?$',
+    allowTypeImports: true,
+    message: 'A instância do Prisma só é usada dentro de src/server/repos (RN-10).',
+  },
+];
+
+// RN-16 (a) (D-007): nodemailer e SDKs de provedor só dentro de src/server/integrations.
+const MENSAGEM_SDK = 'RN-16: use a porta ou o registro de src/server/integrations.';
+const SDK_PROVEDOR = [
+  '^nodemailer(/|$)',
+  '^mercadopago(/|$)',
+  '^@mercadopago/',
+  '^@cloudflare/',
+  '^cloudflare(/|$)',
+  '^(whatsapp|@whatsapp|@meta)',
+].map((regex) => ({ regex, message: MENSAGEM_SDK }));
+
+// RN-16 (b): os módulos de adaptador (integrations/*/real e integrations/*/simulado) e o checkout
+// simulado do MP não são importados diretamente; use a porta ou o registro. `import type` também é
+// barrado: os tipos ficam na porta.
+const MENSAGEM_ADAPTADOR =
+  'RN-16: não importe o adaptador diretamente; use a porta ou o registro de src/server/integrations.';
+const SUFIXO = '(\\.[cm]?[jt]s)?$';
+const ADAPTADORES = [
+  { regex: `(^|/)integrations/[^/]+/(real|simulado)${SUFIXO}`, message: MENSAGEM_ADAPTADOR },
+  { regex: `(^|/)integrations/mercadopago/checkout-simulado${SUFIXO}`, message: MENSAGEM_ADAPTADOR },
+];
+// Exceção da RN-16 (b) para src/app/dev/**: as telas de desenvolvimento usam as funções específicas
+// do MP simulado (mercadopago/simulado e mercadopago/checkout-simulado). Os demais adaptadores,
+// inclusive o MP real, continuam proibidos.
+const ADAPTADORES_EXCETO_MP_SIMULADO = [
+  {
+    regex: `(^|/)integrations/(?!mercadopago/)[^/]+/(real|simulado)${SUFIXO}`,
+    message: MENSAGEM_ADAPTADOR,
+  },
+  { regex: `(^|/)integrations/mercadopago/real${SUFIXO}`, message: MENSAGEM_ADAPTADOR },
+];
+
+const restringirImports = (...grupos) => ({
+  'no-restricted-imports': ['error', { patterns: grupos.flat() }],
+});
+
+// RN-16 (c): hosts de provedor só aparecem dentro de src/server/integrations (defesa contra
+// chamadas HTTP diretas com o fetch global).
+const HOSTS_PROVEDOR = '/challenges\\.cloudflare\\.com|api\\.mercadopago\\.com|graph\\.facebook\\.com/';
+const MENSAGEM_HOST = 'RN-16: chamadas a provedores ficam nos adaptadores de src/server/integrations.';
+
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
-  // RN-10 (D-005): o acesso ao banco passa pelos repositórios. Fora das pastas liberadas, é proibido
-  // importar o cliente Prisma gerado, @prisma/client, @prisma/adapter-pg, pg e o módulo da instância
-  // (src/server/repos/db), inclusive por caminho relativo. `import type` é permitido (S-6): não abre
-  // conexão nem permite consultar.
+  // Geral: tudo que não está nas pastas com permissões próprias nem é teste.
   {
-    files: ['**/*.{ts,tsx,mts,js,mjs}'],
-    ignores: [
-      'src/server/repos/**',
-      'src/worker/**',
-      'prisma/seed.ts',
-      'tests/**',
-      '**/*.test.{ts,tsx}',
-    ],
+    files: [CODIGO],
+    ignores: [...INTEGRACOES, ...ACESSO_AO_BANCO, ...DEV, ...TESTES],
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES),
+  },
+  // Integrações: podem usar SDKs e os próprios adaptadores, mas acessam o banco só via repos.
+  {
+    files: comExtensao(INTEGRACOES),
+    ignores: TESTES,
+    rules: restringirImports(PRISMA),
+  },
+  // Repositórios, worker e seed: acessam o banco, mas não os SDKs nem os adaptadores.
+  {
+    files: comExtensao(ACESSO_AO_BANCO),
+    ignores: TESTES,
+    rules: restringirImports(SDK_PROVEDOR, ADAPTADORES),
+  },
+  // Telas de desenvolvimento: como o geral, com a exceção do MP simulado.
+  {
+    files: comExtensao(DEV),
+    ignores: TESTES,
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES_EXCETO_MP_SIMULADO),
+  },
+  // RN-16 (c). O eslint-config-next não configura no-restricted-syntax; se passar a configurar,
+  // mesclar aqui (este bloco substituiria o dele).
+  {
+    files: [CODIGO],
+    ignores: [...INTEGRACOES, ...TESTES, 'eslint.config.mjs'],
     rules: {
-      'no-restricted-imports': [
+      'no-restricted-syntax': [
         'error',
-        {
-          patterns: [
-            {
-              regex: '(^|/)generated/prisma(/|$)',
-              allowTypeImports: true,
-              message: 'Acesse o banco pelos repositórios de src/server/repos (RN-10).',
-            },
-            {
-              regex: '^@prisma/(client|adapter-pg)(/|$)',
-              allowTypeImports: true,
-              message: 'Acesse o banco pelos repositórios de src/server/repos (RN-10).',
-            },
-            {
-              regex: '^pg(/|$)',
-              allowTypeImports: true,
-              message: 'Acesse o banco pelos repositórios de src/server/repos (RN-10).',
-            },
-            {
-              regex: '(^|/)repos/db(\\.[cm]?[jt]s)?$',
-              allowTypeImports: true,
-              message: 'A instância do Prisma só é usada dentro de src/server/repos (RN-10).',
-            },
-          ],
-        },
+        { selector: `Literal[value=${HOSTS_PROVEDOR}]`, message: MENSAGEM_HOST },
+        { selector: `TemplateElement[value.raw=${HOSTS_PROVEDOR}]`, message: MENSAGEM_HOST },
       ],
     },
   },
