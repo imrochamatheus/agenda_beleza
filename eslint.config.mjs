@@ -12,7 +12,11 @@ const TESTES = ['tests/**', '**/*.test.{ts,tsx}'];
 // arquivo não se somam (o último substitui o anterior). Por isso os blocos têm `files` disjuntos e
 // cada um lista a soma das restrições que lhe cabem (D-007 §3.8, R-1).
 const INTEGRACOES = ['src/server/integrations/**'];
-const ACESSO_AO_BANCO = ['src/server/repos/**', 'src/worker/**', 'prisma/seed.ts'];
+const ACESSO_AO_BANCO = ['src/server/repos/**', 'prisma/seed.ts'];
+// D-008 (D-8): o worker continua com as permissões de antes (banco, sem SDKs nem adaptadores) e
+// passa a poder importar o pg-boss; a fila (src/server/queue) importa o pg-boss, mas não o Prisma.
+const WORKER = ['src/worker/**'];
+const FILA = ['src/server/queue/**'];
 const DEV = ['src/app/dev/**'];
 // Restringe uma pasta (`x/**`) ou um arquivo aos arquivos de código.
 const comExtensao = (padroes) =>
@@ -77,6 +81,16 @@ const ADAPTADORES_EXCETO_MP_SIMULADO = [
   { regex: `(^|/)integrations/mercadopago/real${SUFIXO}`, message: MENSAGEM_ADAPTADOR },
 ];
 
+// D-8 (D-008): o pg-boss só é importado em src/server/queue e src/worker. Assim todo enfileiramento
+// passa pelo cliente, que valida o payload (RN-5) e não participa de transação (uso pós-commit).
+// `import type` também é barrado: os tipos ficam em src/server/queue.
+const PG_BOSS = [
+  {
+    regex: '^pg-boss(/|$)',
+    message: 'D-8: enfileire pelo cliente de src/server/queue (pg-boss só em src/server/queue e src/worker).',
+  },
+];
+
 const restringirImports = (...grupos) => ({
   'no-restricted-imports': ['error', { patterns: grupos.flat() }],
 });
@@ -92,26 +106,38 @@ export default defineConfig([
   // Geral: tudo que não está nas pastas com permissões próprias nem é teste.
   {
     files: [CODIGO],
-    ignores: [...INTEGRACOES, ...ACESSO_AO_BANCO, ...DEV, ...TESTES],
-    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES),
+    ignores: [...INTEGRACOES, ...ACESSO_AO_BANCO, ...WORKER, ...FILA, ...DEV, ...TESTES],
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES, PG_BOSS),
   },
   // Integrações: podem usar SDKs e os próprios adaptadores, mas acessam o banco só via repos.
   {
     files: comExtensao(INTEGRACOES),
     ignores: TESTES,
-    rules: restringirImports(PRISMA),
+    rules: restringirImports(PRISMA, PG_BOSS),
   },
-  // Repositórios, worker e seed: acessam o banco, mas não os SDKs nem os adaptadores.
+  // Repositórios e seed: acessam o banco, mas não os SDKs, os adaptadores nem o pg-boss.
   {
     files: comExtensao(ACESSO_AO_BANCO),
     ignores: TESTES,
+    rules: restringirImports(SDK_PROVEDOR, ADAPTADORES, PG_BOSS),
+  },
+  // Worker: acessa o banco e o pg-boss, mas não os SDKs nem os adaptadores.
+  {
+    files: comExtensao(WORKER),
+    ignores: TESTES,
     rules: restringirImports(SDK_PROVEDOR, ADAPTADORES),
+  },
+  // Fila: usa o pg-boss, mas acessa o banco de domínio só via repos e não usa SDKs nem adaptadores.
+  {
+    files: comExtensao(FILA),
+    ignores: TESTES,
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES),
   },
   // Telas de desenvolvimento: como o geral, com a exceção do MP simulado.
   {
     files: comExtensao(DEV),
     ignores: TESTES,
-    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES_EXCETO_MP_SIMULADO),
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES_EXCETO_MP_SIMULADO, PG_BOSS),
   },
   // RN-16 (c). O eslint-config-next não configura no-restricted-syntax; se passar a configurar,
   // mesclar aqui (este bloco substituiria o dele).

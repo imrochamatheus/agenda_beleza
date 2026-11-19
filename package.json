@@ -19,14 +19,17 @@
     "test:e2e": "next build && playwright test",
     "db:generate": "prisma generate",
     "db:migrate:deploy": "prisma migrate deploy",
-    "build:node": "esbuild src/worker/main.ts src/scripts/check-env.ts --bundle --platform=node --format=esm --target=node24 --packages=external --outbase=src --outdir=dist",
-    "worker": "npm run build:node && node --env-file-if-exists=.env dist/worker/main.js"
+    "build:node": "esbuild src/worker/main.ts src/scripts/check-env.ts src/scripts/enfileirar-exemplo.ts --bundle --platform=node --format=esm --target=node24 --packages=external --outbase=src --outdir=dist",
+    "worker": "npm run build:node && node --env-file-if-exists=.env dist/worker/main.js",
+    "fila:exemplo": "npm run build:node && node --env-file-if-exists=.env dist/scripts/enfileirar-exemplo.js"
   },
   "dependencies": {
+    "@opentelemetry/api": "1.10.0",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
     "next": "16.4.6",
     "nodemailer": "10.3.1",
+    "pg-boss": "12.38.0",
     "prisma": "7.10.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",

@@ -56,6 +56,9 @@ services:
     image: agenda-beleza:dev
     command: ["worker"]
     init: true
+    # O worker espera até 25 s pelos jobs em andamento após o SIGTERM (TIMEOUT_ENCERRAMENTO_MS);
+    # 30 s dá folga antes do SIGKILL do Docker (padrão: 10 s). D-008, CA-14.
+    stop_grace_period: 30s
     <<: *env-app
     depends_on:
       app:

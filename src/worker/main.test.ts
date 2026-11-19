@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { iniciarWorker } from './stub';
+import { iniciarWorker } from './iniciar';
 
-// Substitui o módulo de lógica (não é mock de banco: o stub não acessa o banco)
+// Substitui o módulo de lógica (não é mock de banco: só o ponto de entrada é testado aqui)
 // para conferir que o ponto de entrada liga as dependências reais do processo.
-vi.mock('./stub', () => ({ iniciarWorker: vi.fn() }));
+vi.mock('./iniciar', () => ({ iniciarWorker: vi.fn() }));
 
 describe('src/worker/main.ts', () => {
   afterEach(() => {
