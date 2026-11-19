@@ -1,3 +1,4 @@
+import { gerarHashSenha } from '@/server/auth/senha';
 import { obterPrisma } from '@/server/repos/db';
 
 import { emailNovo, slugNovo, telefoneNovo } from './sql';
@@ -22,9 +23,12 @@ export type SalaoCompleto = {
   nome: string;
   slugAtual: string;
   slugHistorico: string;
-  /** Gestor confirmado. `profissionalId` é null quando criado com `gestor.comPerfil: false`. */
+  /**
+   * Gestor (confirmado por padrão), com senha SENHA_DE_TESTE. `profissionalId` é null quando criado
+   * com `gestor.comPerfil: false`.
+   */
   gestor: { usuarioId: string; profissionalId: string | null; nome: string; email: string };
-  /** Usuário de papel `profissional` com perfil vinculado. */
+  /** Usuário de papel `profissional` com perfil vinculado (ativo por padrão), senha SENHA_DE_TESTE. */
   profissional: { usuarioId: string; profissionalId: string; nome: string; email: string };
   profissionalInativoId: string;
   servicos: { ativos: [string, string]; inativoId: string; nomes: string[] };
@@ -39,8 +43,10 @@ export type SobrescritasSalao = {
   salao?: { nome?: string; fuso?: string; gradeMin?: number; intervaloMin?: number };
   slugAtual?: string;
   slugHistorico?: string;
-  gestor?: { nome?: string; email?: string; comPerfil?: boolean };
-  profissional?: { nome?: string; email?: string };
+  /** `emailConfirmado` padrão true (D-010 CA-15). */
+  gestor?: { nome?: string; email?: string; comPerfil?: boolean; emailConfirmado?: boolean };
+  /** `ativo` (padrão true) é o do perfil do USUÁRIO profissional (D-010 CA-5). */
+  profissional?: { nome?: string; email?: string; emailConfirmado?: boolean; ativo?: boolean };
   servicos?: {
     ativos?: [ServicoNovo?, ServicoNovo?];
     inativo?: ServicoNovo;
@@ -57,12 +63,21 @@ const SERVICOS_PADRAO: Required<ServicoNovo>[] = [
   { nome: 'Coloração (descontinuada)', precoCentavos: 18000, duracaoMin: 120 },
 ];
 
-/** Senha fictícia: o login (e o hash real) são da E1.2. */
-const SENHA_HASH_FICTICIA = 'hash-de-teste-sem-uso';
+/** Senha de todos os usuários das fábricas (D-010 §3.13). Hash argon2id real, via senha.ts. */
+export const SENHA_DE_TESTE = 'Senha de teste 123';
+
+let hashMemoizado: Promise<string> | undefined;
+
+/** Hash argon2id de SENHA_DE_TESTE, gerado uma vez por processo (R-8, R-11). */
+export function hashDaSenhaDeTeste(): Promise<string> {
+  hashMemoizado ??= gerarHashSenha(SENHA_DE_TESTE);
+  return hashMemoizado;
+}
 
 /** Cria um salão completo (CA-3). Os campos sobrescritos substituem os padrões; os IDs são devolvidos. */
 export async function criarSalaoCompleto(s: SobrescritasSalao = {}): Promise<SalaoCompleto> {
   const db = obterPrisma();
+  const senhaHash = await hashDaSenhaDeTeste();
   const sufixo = slugNovo().slice('salao-'.length);
   const nome = s.salao?.nome ?? `Salão ${sufixo}`;
 
@@ -95,8 +110,8 @@ export async function criarSalaoCompleto(s: SobrescritasSalao = {}): Promise<Sal
       papel: 'gestor',
       email: gestorEmail,
       nome: gestorNome,
-      senhaHash: SENHA_HASH_FICTICIA,
-      emailConfirmadoEm: new Date(),
+      senhaHash,
+      emailConfirmadoEm: s.gestor?.emailConfirmado === false ? null : new Date(),
     },
     select: { id: true },
   });
@@ -119,13 +134,19 @@ export async function criarSalaoCompleto(s: SobrescritasSalao = {}): Promise<Sal
       papel: 'profissional',
       email: profEmail,
       nome: profNome,
-      senhaHash: SENHA_HASH_FICTICIA,
-      emailConfirmadoEm: new Date(),
+      senhaHash,
+      emailConfirmadoEm: s.profissional?.emailConfirmado === false ? null : new Date(),
     },
     select: { id: true },
   });
   const profissional = await db.profissional.create({
-    data: { salaoId, usuarioId: profUsuario.id, nome: profNome, email: profEmail },
+    data: {
+      salaoId,
+      usuarioId: profUsuario.id,
+      nome: profNome,
+      email: profEmail,
+      ativo: s.profissional?.ativo !== false,
+    },
     select: { id: true },
   });
 
