@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { criarPrisma } from './db';
+import { criarPrisma } from './repos/db';
 import { TIMEOUT_HEALTH_MS, verificarBanco } from './health';
 
 // O caso "banco respondeu" com PostgreSQL real está em tests/integration/health.test.ts (CA-9).

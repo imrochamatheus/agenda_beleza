@@ -11,7 +11,7 @@ import {
   erroSql,
   inserirReserva,
   slugNovo,
-} from '../support/sql';
+} from '../../support/sql';
 
 // CA-11 (RN-9), CA-17 (RN-8) e CA-18 (RN-12).
 let c: pg.Client;

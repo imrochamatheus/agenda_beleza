@@ -6,9 +6,8 @@ import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
-import { urlBancoDeTeste } from '../support/banco';
-import { executarPrisma } from '../support/db';
-import { conectar } from '../support/sql';
+import { executarPrisma, urlDoWorker } from '../../support/db';
+import { conectar } from '../../support/sql';
 
 // CA-1 (RN-11), CA-15 (RN-3) e CA-22 (RN-13). Os nomes vêm do contrato de docs/demandas/D-004/dba.md §3.
 // O `migrate diff` é cego aos objetos de SQL bruto (design §0), por isso o catálogo os confere pelo nome.
@@ -188,8 +187,10 @@ describe('CA-1: catálogo depois do migrate deploy', () => {
 
   it('CA-1 (RN-10): os triggers append-only existem com o tgtype do contrato e chamam a função', async () => {
     const r = await linhas<{ nome: string; tabela: string; tgtype: number; funcao: string }>(
-      `SELECT tgname AS nome, tgrelid::regclass::text AS tabela, tgtype::int AS tgtype, tgfoid::regproc::text AS funcao
-       FROM pg_trigger WHERE NOT tgisinternal ORDER BY tgname`,
+      // A-10 (D-005): só triggers de public; schemas dos inicializadores (harness_extensao, pgboss) ficam fora.
+      `SELECT t.tgname AS nome, t.tgrelid::regclass::text AS tabela, t.tgtype::int AS tgtype, t.tgfoid::regproc::text AS funcao
+       FROM pg_trigger t JOIN pg_class cl ON cl.oid = t.tgrelid
+       WHERE NOT t.tgisinternal AND cl.relnamespace = 'public'::regnamespace ORDER BY t.tgname`,
     );
     expect(r).toEqual(
       TRIGGERS.map(([nome, tabela, tgtype]) => ({
@@ -216,7 +217,7 @@ describe('CA-1: o Prisma não acusa drift', () => {
     () => {
       const r = executarPrisma(
         ['migrate', 'diff', '--from-config-datasource', '--to-schema', 'prisma/schema.prisma', '--exit-code'],
-        urlBancoDeTeste(),
+        urlDoWorker(),
       );
       expect(r.stderr).not.toMatch(/error/i);
       expect(r.status).toBe(0);
@@ -237,7 +238,7 @@ describe('CA-1: o Prisma não acusa drift', () => {
         );
         const r = executarPrisma(
           ['migrate', 'diff', '--from-config-datasource', '--to-schema', schema, '--exit-code'],
-          urlBancoDeTeste(),
+          urlDoWorker(),
         );
         expect(r.status).toBe(2);
         expect(r.stdout).toContain('ControleDrift');

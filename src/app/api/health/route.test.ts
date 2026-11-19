@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { encerrarPrisma } from '@/server/db';
+import { encerrarPrisma } from '@/server/repos/db';
 
 import { dynamic, GET } from './route';
 

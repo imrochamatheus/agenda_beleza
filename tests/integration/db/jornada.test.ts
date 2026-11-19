@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { conectar, criarProfissional, criarSalao, erroSql } from '../support/sql';
+import { conectar, criarProfissional, criarSalao, erroSql } from '../../support/sql';
 
 // CA-13 e CA-19 (RN-1): jornada em minutos locais, sem sobreposição por profissional e dia.
 let c: pg.Client;

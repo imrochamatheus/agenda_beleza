@@ -2,17 +2,31 @@ import { randomInt, randomUUID } from 'node:crypto';
 
 import pg from 'pg';
 
-import { urlBancoDeTeste } from './banco';
+import { urlDoWorker } from './db';
 
 // Helpers mínimos dos testes de banco da D-004 (SQL direto pelo driver pg: err.code e
-// err.constraint chegam sem embrulho). As fábricas completas de dois salões são da E0.5.
+// err.constraint chegam sem embrulho). As fábricas completas de dois salões são da T-5 (E0.5).
 // Cada chamada gera UUIDs e telefones novos: nenhuma asserção depende de contagem global.
 
-/** Abre uma conexão com a base de TEST_DATABASE_URL (validada pela guarda). */
+/** Abre uma conexão com a base deste worker (recriada no início do arquivo). Feche com `end()`. */
 export async function conectar(): Promise<pg.Client> {
-  const c = new pg.Client({ connectionString: urlBancoDeTeste() });
+  const c = new pg.Client({ connectionString: urlDoWorker() });
   await c.connect();
   return c;
+}
+
+/** Tamanho padrão de `criarPoolPg`: as 12 requisições paralelas do CA-6 (A-7 do DBA). */
+export const POOL_PG_PADRAO = 12;
+
+/**
+ * Pool `pg` na base deste worker, para testes de concorrência que precisam de `err.code`/`err.constraint`
+ * sem embrulho. Feche com `end()`.
+ *
+ * Regra do orçamento de conexões (dba.md §2.4, A-7): um arquivo não satura o pool do Prisma
+ * (POOL_MAX_TESTES) e este pool ao mesmo tempo. Prepare os dados antes do disparo concorrente.
+ */
+export function criarPoolPg(max = POOL_PG_PADRAO): pg.Pool {
+  return new pg.Pool({ connectionString: urlDoWorker(), max });
 }
 
 export type ErroSql = { code: string; constraint?: string };

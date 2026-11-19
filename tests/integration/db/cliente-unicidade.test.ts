@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { conectar, criarCliente, criarSalao, erroSql, telefoneNovo } from '../support/sql';
+import { conectar, criarCliente, criarSalao, erroSql, telefoneNovo } from '../../support/sql';
 
 // CA-10 e CA-16 (RN-6): unicidade por salão + telefone, anonimização coerente e E.164 BR.
 let c: pg.Client;
