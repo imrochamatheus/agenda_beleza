@@ -4,7 +4,15 @@ import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { criarDoisSaloes, criarSalaoCompleto, instanteFuturo } from '../../support/factories';
+import { verificarSenha } from '@/server/auth/senha';
+
+import {
+  SENHA_DE_TESTE,
+  criarDoisSaloes,
+  criarSalaoCompleto,
+  hashDaSenhaDeTeste,
+  instanteFuturo,
+} from '../../support/factories';
 import type { SalaoCompleto } from '../../support/factories';
 import { conectar } from '../../support/sql';
 
@@ -209,5 +217,38 @@ describe('CA-3: os dois salões são distintos e as fábricas aceitam sobrescrit
     const fonte = readFileSync(fileURLToPath(new URL('./isolamento.test.ts', import.meta.url)), 'utf8');
     expect(fonte).toMatch(/criarDoisSaloes/);
     expect(fonte).not.toMatch(/INSERT|\$executeRaw|\$queryRaw/i);
+  });
+});
+
+describe('D-010 §3.13: senha real e opções de login nas fábricas', () => {
+  it('usuários com hash argon2id real de SENHA_DE_TESTE (um hash por processo)', async () => {
+    const r = await c.query<{ senha_hash: string }>('SELECT senha_hash FROM usuario WHERE id = ANY($1::uuid[])', [
+      [a.gestor.usuarioId, a.profissional.usuarioId, b.gestor.usuarioId],
+    ]);
+    expect(r.rowCount).toBe(3);
+    const hash = await hashDaSenhaDeTeste();
+    expect(await hashDaSenhaDeTeste()).toBe(hash);
+    for (const { senha_hash } of r.rows) {
+      expect(senha_hash).toBe(hash);
+      expect(senha_hash.startsWith('$argon2id$v=19$m=19456,t=2,p=1$')).toBe(true);
+    }
+    expect(await verificarSenha(hash, SENHA_DE_TESTE)).toBe(true);
+  });
+
+  it('e-mail não confirmado e profissional (com usuário) inativo por sobrescrita', async () => {
+    const s = await criarSalaoCompleto({
+      gestor: { emailConfirmado: false },
+      profissional: { emailConfirmado: false, ativo: false },
+    });
+    const u = await c.query<{ id: string; confirmado: boolean }>(
+      'SELECT id, email_confirmado_em IS NOT NULL AS confirmado FROM usuario WHERE id = ANY($1::uuid[])',
+      [[s.gestor.usuarioId, s.profissional.usuarioId]],
+    );
+    expect(u.rows.map((r) => r.confirmado)).toEqual([false, false]);
+    const p = await c.query('SELECT id, ativo FROM profissional WHERE usuario_id = $1', [s.profissional.usuarioId]);
+    expect(p.rows).toEqual([{ id: s.profissional.profissionalId, ativo: false }]);
+    // O perfil do gestor e o ex-profissional sem usuário continuam como antes.
+    const g = await c.query('SELECT ativo FROM profissional WHERE usuario_id = $1', [s.gestor.usuarioId]);
+    expect(g.rows).toEqual([{ ativo: true }]);
   });
 });

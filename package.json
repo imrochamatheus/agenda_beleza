@@ -24,6 +24,7 @@
     "fila:exemplo": "npm run build:node && node --env-file-if-exists=.env dist/scripts/enfileirar-exemplo.js"
   },
   "dependencies": {
+    "@node-rs/argon2": "2.2.2",
     "@opentelemetry/api": "1.10.0",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",

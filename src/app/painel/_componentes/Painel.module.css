@@ -1,0 +1,12 @@
+/* Área do usuário no cabeçalho do painel (D-010 RN-21). Só tokens do tema. */
+.areaUsuario {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-2) var(--espaco-4);
+}
+
+.nomeUsuario {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

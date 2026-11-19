@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { NOME_COOKIE_SESSAO as NOME_EM_AUTH } from '@/server/auth/cookie';
 import { encerrarPrisma } from '@/server/repos/db';
 
 import { NaoAutenticado } from './erros';
@@ -19,6 +20,10 @@ describe('sessão', () => {
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
     );
     expect(hashDoToken('abc')).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('D-010 DD-1: o nome do cookie é o mesmo de auth/cookie.ts (reexportado)', () => {
+    expect(NOME_COOKIE_SESSAO).toBe(NOME_EM_AUTH);
   });
 
   it('responde NaoAutenticado sem credencial ou com token vazio, sem consultar o banco', async () => {

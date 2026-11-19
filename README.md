@@ -53,6 +53,7 @@ npm test                       # unidade + integração
 npm run test:coverage          # o mesmo, com o gate de 90% de linhas (relatório em coverage/)
 npm run test:e2e               # build + Playwright (viewport de celular); libere a porta 3000 antes
 npx playwright test e2e/a11y-base.spec.ts  # só o E2E de acessibilidade (exige build prévio)
+npx playwright test e2e/entrar.spec.ts     # só o E2E de /entrar e do proxy (exige build prévio; sem banco)
 ```
 
 - Os testes de integração usam **somente** `TEST_DATABASE_URL`, nunca `DATABASE_URL`, e recusam rodar se as duas forem iguais. Sem `TEST_DATABASE_URL`, eles falham com uma mensagem que nomeia a variável.
@@ -96,6 +97,18 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
   3. **Migrações são congeladas depois do merge:** nunca edite uma migração já aplicada. Mudanças futuras criam migração nova.
   4. O teste `tests/integration/db/drift.test.ts` confere que o Prisma não acusa drift e que cada objeto de SQL bruto existe no catálogo pelo nome.
 - Outros gates: `npm run lint`, `npm run typecheck`, `npm run build`.
+
+## Entrar no painel (login e sessão)
+
+- **Fluxo:** a equipe (gestor e profissional) entra em `/entrar` com e-mail e senha e vai para `/painel` (ou para o caminho de `?proximo=`, aceito só se for `/painel` ou estiver abaixo dele). "Sair", no cabeçalho do painel, é um formulário POST (ação de servidor) que revoga a sessão, apaga o cookie e volta para `/entrar`. O super admin **não** entra por `/entrar` (recebe a mensagem genérica); o login dele, com TOTP, é `/admin/entrar` (E1.5).
+- **Mensagens:** e-mail inexistente, senha errada e super admin recebem a mesma resposta, "E-mail ou senha incorretos.", com o mesmo custo de verificação (argon2id contra um hash fictício quando o e-mail não existe). Só depois da senha correta aparecem "Confirme seu e-mail antes de entrar." (e-mail não confirmado) e "Seu acesso está desativado. Fale com a gestão do salão." (profissional desativado ou sem perfil).
+- **Sessão:** guardada na tabela `sessao` (só o SHA-256 do token; o token vai no cookie `ab_sessao`, `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age` de 30 dias). Ela expira após **7 dias sem uso**, é renovada no uso (no máximo uma escrita por hora) e tem **teto de 30 dias** desde o login. Logout, `revogarSessoesDoUsuario` (redefinição de senha, desativação) e profissional desativado invalidam a sessão no servidor.
+- **Limite de tentativas:** 10 falhas por e-mail numa janela fixa de 15 minutos (tabela `rate_limit_janela`, chave com o SHA-256 do e-mail). A 11ª tentativa recebe "Muitas tentativas. Aguarde alguns minutos e tente de novo.", mesmo com a senha certa ou com e-mail inexistente. Sucesso não conta como falha.
+- **`Secure` só em produção:** o cookie sai com `Secure` quando `NODE_ENV=production` (inclusive `next start` e a imagem Docker). Chromium e Firefox aceitam cookie `Secure` em `http://localhost` e `http://127.0.0.1`; o **Safari não**. Para entrar pelo Safari sem HTTPS, use `npm run dev`.
+- **Usuário de exemplo:** ainda não há. O cadastro do salão é da E1.1 e o seed da E9.2. Até lá, os testes criam usuários pelas fábricas (`tests/support/factories.ts`, senha `SENHA_DE_TESTE`) e fazem login real por `entrarDeVerdade` (`tests/support/auth.ts`).
+- **Atrás de proxy reverso:** as ações de servidor do Next recusam POST cujo `Origin` não bate com o `Host`. Se a implantação reescrever o `Host`, configure `experimental.serverActions.allowedOrigins` no `next.config.ts` (ajuste de implantação, E9.x).
+- **Permissões:** a matriz por papel fica em `src/server/auth/permissoes.ts` (`pode`, `exigirPermissao`, `filtroDeProfissional`). Páginas do painel usam `exigirAcessoAoPainel(caminho)` (`src/server/auth/pagina.ts`): sem sessão, redireciona para `/entrar?proximo=…`; sessão sem permissão mostra "Acesso negado". O `src/proxy.ts` só confere a presença do cookie em `/painel/**` (não autoriza nada).
+- **Nenhuma credencial externa nova:** o hash de senha usa `@node-rs/argon2` (binário pré-compilado, sem script de instalação).
 
 ## Integrações (adaptadores)
 

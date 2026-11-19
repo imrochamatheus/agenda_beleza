@@ -1,0 +1,16 @@
+/* Formulário de /entrar (D-010 RN-20). Só tokens do tema (globals.css). */
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 28rem;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-2) var(--espaco-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--texto-sm);
+}
