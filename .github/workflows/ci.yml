@@ -1,0 +1,175 @@
+# CI da Agenda Beleza (D-006, E0.3): os gates da definição de pronto em todo PR e em todo push em main.
+# Seis jobs independentes (sem needs): cada gate tem um check próprio e a falha de um não esconde os outros.
+# Os nomes dos jobs (lint, typecheck, build, testes, e2e, docker) são os nomes dos checks: não renomeie
+# sem atualizar o README (seção "CI") e, quando existir, a proteção da branch main.
+# Nenhum segredo: os adaptadores ficam no padrão "simulado" de src/server/env.ts.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Um run novo na mesma PR (ou no mesmo ref) cancela o anterior, inclusive em main (D-006 design §1.2).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  TZ: UTC
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run lint
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run typecheck
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run build
+
+  testes:
+    name: testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        # Mesma imagem de docker-compose.yml (services.postgres.image): mudar uma exige mudar a outra.
+        image: postgres:17
+        env:
+          # Credenciais de desenvolvimento do .env.example, num container efêmero do job: não são segredo.
+          POSTGRES_USER: agenda
+          POSTGRES_PASSWORD: agenda_dev
+          POSTGRES_DB: agenda_beleza
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U agenda -d agenda_beleza"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgresql://agenda:agenda_dev@localhost:5432/agenda_beleza
+      TEST_DATABASE_URL: postgresql://agenda:agenda_dev@localhost:5432/agenda_beleza_test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      # No compose quem cria esta base é o initdb; o service sobe antes do checkout e não o executa.
+      # O createdb roda dentro do container do service (mesma versão do servidor), com o superusuário.
+      - name: Criar a base administrativa de teste
+        run: docker exec "${{ job.services.postgres.id }}" createdb -U agenda agenda_beleza_test
+      - run: npm run db:migrate:deploy
+      - run: npm run test:coverage
+      - name: Publicar a cobertura
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: cobertura
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - name: Versão do Playwright
+        id: pw
+        run: echo "versao=$(jq -r '.packages["node_modules/@playwright/test"].version' package-lock.json)" >> "$GITHUB_OUTPUT"
+      - name: Cache dos navegadores do Playwright
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.versao }}
+      # Num cache hit, só instala as bibliotecas do sistema (apt); o Chromium já está no cache.
+      - run: npx playwright install --with-deps chromium
+      # Uma única compilação no job: o script faz next build e roda o Playwright (CI=true sobe npm run start).
+      - run: npm run test:e2e
+      - name: Publicar o relatório do Playwright
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Publicar os traces do Playwright
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-traces
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: docker compose config
+      # Só valida que a imagem compila; não há login nem push.
+      - run: docker build --target final --tag agenda-beleza:ci .

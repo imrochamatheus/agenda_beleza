@@ -68,10 +68,10 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 
 - **Execuções simultâneas** (dois terminais, o laço do tester enquanto você trabalha) são permitidas: cada execução tem nomes próprios (`exec` = instante + 2 caracteres aleatórios).
 - **Até 4 workers** no projeto `integration` (`maxWorkers: 4` em `vitest.config.ts`).
-- **Privilégio:** o papel de `TEST_DATABASE_URL` precisa de `CREATEDB`, e não de superusuário. No compose, o `POSTGRES_USER` já é superusuário. Na CI (E0.3), use um papel com `CREATEDB` e garanta que a base de `TEST_DATABASE_URL` exista (por exemplo, `POSTGRES_DB=<base de teste>` no service).
+- **Privilégio:** o papel de `TEST_DATABASE_URL` precisa de `CREATEDB`, e não de superusuário. No compose, o `POSTGRES_USER` já é superusuário. Na CI (job `testes`), o papel é o `POSTGRES_USER` do service `postgres` (`agenda`, superusuário). O service cria só a base de `DATABASE_URL` (`POSTGRES_DB=agenda_beleza`), e um passo cria a base de `TEST_DATABASE_URL` com `createdb` dentro do container do service (`docker exec <service> createdb -U agenda agenda_beleza_test`), porque o initdb do compose não roda lá.
 - **Nome da base de teste:** no máximo **46 caracteres** em `[a-z0-9_]`, porque os sufixos `_r<10>_w999` precisam caber nos 63 do PostgreSQL. Um nome maior é recusado com uma mensagem que nomeia `TEST_DATABASE_URL`. O initdb do compose aceita até 63 caracteres, mas o harness exige até 46.
 - **Orçamento de conexões:** cada execução usa até `maxWorkers × (POOL_MAX_TESTES + 2)` = 4 × 18 = 72 conexões. Mantenha `execuções × 72 + compose (≈ 3) + psql/IDE (≈ 5) ≤ max_connections` (100 no compose). Duas execuções simultâneas cabem, mas sem folga quando os picos coincidem. Se aparecer `53300 too many clients already`, pare app e worker durante o teste (`docker compose stop app worker`). Nos testes, um arquivo não satura o pool do Prisma e um `pg.Pool` ao mesmo tempo, e `criarPoolPg()` usa 12 conexões por padrão.
-- **Sessão de superusuário aberta numa base de worker:** quando o papel de teste **não** é superusuário (CI, por exemplo), um `psql` de superusuário conectado a uma base `…_w<N>` faz o `DROP … WITH (FORCE)` do reset falhar (`42501`). Feche essas sessões antes de rodar. Localmente o papel é superusuário, e esse caso não ocorre.
+- **Sessão de superusuário aberta numa base de worker:** quando o papel de teste **não** é superusuário (por exemplo, um papel só com `CREATEDB`), um `psql` de superusuário conectado a uma base `…_w<N>` faz o `DROP … WITH (FORCE)` do reset falhar (`42501`). Feche essas sessões antes de rodar. No compose e na CI o papel é superusuário, e esse caso não ocorre.
 - **Depuração:** os dados de um arquivo ficam na base `…_w<N>` só enquanto a execução dura, porque o teardown apaga tudo no final. Para inspecionar, rode o arquivo isolado e pause dentro do teste (ou consulte a base durante a execução). Uma execução interrompida deixa bases órfãs, que a varredura da próxima execução apaga quando tiverem **mais de 6 h**. Por isso, uma depuração parada por mais de 6 h pode perder a base para a varredura de outra execução. Limpeza manual: `psql "$TEST_DATABASE_URL" -Atc "SELECT datname FROM pg_database WHERE datname ~ '^agenda_beleza_test_r[0-9a-z]{10}_(tpl|w[0-9]{1,3})$'"` e, para cada nome, `DROP DATABASE IF EXISTS "<nome>" WITH (FORCE)`.
 - **Teste único:** `npx vitest run --project integration tests/integration/db/reserva-exclusion.test.ts`. O template é criado e a base do worker é recriada do mesmo jeito.
 - **Concorrência (CA-6 da D-005):** `for i in $(seq 10); do npx vitest run --project integration tests/integration/concorrencia --maxWorkers=2 --silent=false || break; done`. Com `--silent=false`, cada arquivo imprime `[CA-6] arquivo=… VITEST_POOL_ID=… base=…`.
@@ -93,6 +93,26 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
   3. **Migrações são congeladas depois do merge:** nunca edite uma migração já aplicada. Mudanças futuras criam migração nova.
   4. O teste `tests/integration/db/drift.test.ts` confere que o Prisma não acusa drift e que cada objeto de SQL bruto existe no catálogo pelo nome.
 - Outros gates: `npm run lint`, `npm run typecheck`, `npm run build`.
+
+## CI
+
+O workflow `CI` (`.github/workflows/ci.yml`, GitHub Actions) roda em todo pull request e em todo push em `main`. São seis jobs independentes e paralelos: a falha de um não esconde o resultado dos outros, e qualquer falha deixa o workflow vermelho. Cada job de Node usa o Node do `.nvmrc` (com cache do npm) e roda `npm ci` → `npm run db:generate` → gate, ou seja, os mesmos comandos da seção "Testes".
+
+| Job (nome do check) | Comando local equivalente | Artefato |
+|---|---|---|
+| `lint` | `npm run lint` | n/a |
+| `typecheck` | `npm run typecheck` | n/a |
+| `build` | `npm run build` | n/a |
+| `testes` | `docker compose up -d postgres`, `npm run db:migrate:deploy` e `npm run test:coverage` (falha abaixo de 90% de linhas) | `cobertura` (`coverage/`: `index.html`, `lcov.info`, `coverage-summary.json`) |
+| `e2e` | `npx playwright install chromium` e `npm run test:e2e` (uma compilação no job; cache dos navegadores pela versão do `@playwright/test`) | `playwright-report` (relatório HTML) e `playwright-traces` (`test-results/`, só quando um teste falha) |
+| `docker` | `docker compose config` e `docker build --target final .` (sem push) | n/a |
+
+- **Nomes dos checks:** na interface do PR aparecem como `CI / <job> (pull_request)` ou `(push)`. Os seis nomes (`lint`, `typecheck`, `build`, `testes`, `e2e`, `docker`) são os que a proteção de `main` vai exigir. Não os renomeie sem atualizar esta seção e a proteção.
+- **Artefatos:** ficam 14 dias no run. Baixe pela aba *Summary* do run, na seção *Artifacts*, ou com `gh run download <id-do-run> -n cobertura -D <pasta fora do repositório>` (ou `-n playwright-report`, `-n playwright-traces`). Os uploads rodam também quando o gate falha.
+- **Nenhum segredo necessário:** o workflow não usa `secrets.` e não define nenhum `*_ADAPTER`, então todas as integrações ficam nos adaptadores simulados. A senha `agenda_dev` do service é a de desenvolvimento do `.env.example`, num container descartado ao fim do job. O token do workflow só tem `contents: read`.
+- **PostgreSQL da CI:** o service usa `postgres:17`, a mesma imagem de `docker-compose.yml`. Mudar uma exige mudar a outra.
+- **Concorrência:** um push novo no mesmo PR (ou em `main`) cancela o run anterior ainda em andamento.
+- **Pendência manual (proteção de `main`):** o plano atual do repositório (privado, sem GitHub Pro/Team) não oferece proteção de branch nem rulesets, então um check vermelho **não** impede o merge. A decisão é do responsável pelo repositório: (a) assinar GitHub Pro/Team e exigir os seis checks acima em `main`; (b) tornar o repositório público e exigir os mesmos checks; ou (c) manter a disciplina manual de nunca mesclar com check vermelho.
 
 ## Credenciais para os serviços reais
 
