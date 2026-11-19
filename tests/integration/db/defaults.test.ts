@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { conectar, criarCenario, criarProfissional, criarSalao, criarServico, erroSql, inserirReserva } from '../support/sql';
+import { conectar, criarCenario, criarProfissional, criarSalao, criarServico, erroSql, inserirReserva } from '../../support/sql';
 
 // CA-20 (RN-4, RN-5) e os defaults de configuração do salão (spec §3 item 2).
 let c: pg.Client;

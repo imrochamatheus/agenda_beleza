@@ -52,9 +52,18 @@ export default defineConfig({
           name: 'integration',
           environment: 'node',
           include: ['tests/integration/**/*.test.ts'],
-          // Só aqui (não no projeto unit): recria o schema da base de TEST_DATABASE_URL e aplica
-          // `prisma migrate deploy` uma vez por execução. `npm run test:unit` segue sem banco.
-          globalSetup: ['./tests/integration/support/global-setup.ts'],
+          // Só aqui (não no projeto unit, que segue sem banco). Harness da D-005 (tests/support/):
+          // o globalSetup cria o template da execução (migrate deploy + inicializadores de schema) e o
+          // teardown apaga as bases da execução; o setupFiles recria a base do worker no início de cada
+          // arquivo e aponta DATABASE_URL do processo de teste para ela.
+          globalSetup: ['./tests/support/global-setup.ts'],
+          setupFiles: ['./tests/support/setup-arquivo.ts'],
+          // 4 workers × (pool 16 + 2) ≈ 72 conexões de 100 (docs/demandas/D-005/dba.md §2.4).
+          maxWorkers: 4,
+          fileParallelism: true,
+          // maxWorkers diferente do projeto unit exige um grupo próprio (o Vitest recusa projetos com
+          // maxWorkers distintos no mesmo groupOrder): o unit roda primeiro, depois o integration.
+          sequence: { groupOrder: 1 },
         },
       },
     ],

@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { conectar, criarCenario, criarProfissional, erroSql, inserirReserva } from '../support/sql';
+import { conectar, criarCenario, criarProfissional, erroSql, inserirReserva } from '../../support/sql';
 
 // CA-2..CA-8 (RN-7): reserva_sem_sobreposicao e reserva_ordem_chk, com PostgreSQL real.
 let c: pg.Client;

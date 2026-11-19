@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project is scaffolded (D-002): Next.js 16 (App Router) + TypeScript, ESLint, Vitest with coverage and Playwright, with a placeholder home page. D-003 (E0.2) added Prisma 7 (no models yet), the env schema, `GET /api/health`, a worker stub and `docker-compose` (app, worker, postgres). There is no domain schema, queue or CI yet (E0.3, E0.4, E0.7). `PLAN.md` (in Portuguese) is the authoritative spec for the first version of **Agenda Beleza**, a multi-tenant SaaS for scheduling at Brazilian beauty salons. Read it before you implement anything. The real commands are listed in "Comandos e cobertura" below. Keep them up to date when you add scripts.
+The project is scaffolded (D-002): Next.js 16 (App Router) + TypeScript, ESLint, Vitest with coverage and Playwright, with a placeholder home page. D-003 (E0.2) added Prisma 7 (no models yet), the env schema, `GET /api/health`, a worker stub and `docker-compose` (app, worker, postgres). D-004 (E0.4) added the domain schema and migrations, including the `reserva_sem_sobreposicao` exclusion constraint. D-005 (E0.5) added server-side salon scoping: `src/server/tenant/` (contexts, `defineAcao`, session, operation policy), tenant-scoped repositories in `src/server/repos/` (the only place allowed to import the Prisma client, enforced by lint), and the integration harness in `tests/support/` (a template database plus one database per Vitest worker, and factories for two salons). There is no queue or CI yet (E0.3, E0.7). `PLAN.md` (in Portuguese) is the authoritative spec for the first version of **Agenda Beleza**, a multi-tenant SaaS for scheduling at Brazilian beauty salons. Read it before you implement anything. The real commands are listed in "Comandos e cobertura" below. Keep them up to date when you add scripts.
 
 ## Required stack (from PLAN.md)
 
@@ -55,7 +55,7 @@ Pré-requisito: Node 24 (`.nvmrc` é a fonte única; `package.json#engines` exig
 | Gerar o cliente Prisma | `npm run db:generate` | **obrigatório depois de todo `npm ci`**: typecheck, lint, build e testes dependem de `src/generated/prisma` (não versionado, sem `postinstall`). Funciona sem `DATABASE_URL` |
 | Ambiente | `cp .env.example .env` | o `.env` é lido pelo Vitest, pelo `prisma.config.ts` e por `npm run worker`; variáveis já definidas no ambiente prevalecem |
 | Subir tudo (Docker) | `docker compose up -d --wait` | postgres, app (http://localhost:3000, aplica `migrate deploy` ao iniciar) e worker. Derrubar: `docker compose down` (mantém dados) ou `down -v` (apaga o volume) |
-| Só o PostgreSQL | `docker compose up -d postgres` | pré-requisito de `npm test`, `test:integration` e `test:coverage`. O initdb cria a base de `TEST_DATABASE_URL`; volume antigo: `docker compose exec postgres createdb -U agenda agenda_beleza_test` |
+| Só o PostgreSQL | `docker compose up -d postgres` | pré-requisito de `npm test`, `test:integration` e `test:coverage`. O initdb cria a base de `TEST_DATABASE_URL` (só administrativa: o harness cria nela as bases de teste e não grava nada nela); volume antigo: `docker compose exec postgres createdb -U agenda agenda_beleza_test` |
 | Navegador do E2E | `npx playwright install chromium` | uma vez por máquina. `--with-deps` instala bibliotecas do sistema e exige sudo; só use se o Chromium não abrir |
 | Desenvolvimento | `npm run dev` | http://localhost:3000 |
 | Build | `npm run build` | `next build` (Turbopack); não precisa de `DATABASE_URL` |
@@ -66,12 +66,13 @@ Pré-requisito: Node 24 (`.nvmrc` é a fonte única; `package.json#engines` exig
 | Typecheck | `npm run typecheck` | `tsc --noEmit`; não depende de build |
 | Testes (todos) | `npm test` | Vitest, projetos `unit` e `integration`; exige o PostgreSQL no ar (`docker compose up -d postgres`) e `TEST_DATABASE_URL` |
 | Só unidade | `npm run test:unit` | `src/**/*.test.ts(x)`; ambiente `node`. Todo `*.test.tsx` deve começar com `/** @vitest-environment jsdom */` |
-| Só integração | `npm run test:integration` | `tests/integration/**/*.test.ts`, contra PostgreSQL real; usa só `TEST_DATABASE_URL` (nunca `DATABASE_URL`) e falha nomeando a variável se ela faltar |
-| Teste único (Vitest) | `npx vitest run src/lib/site.test.ts -t "define a marca"` | `-t` filtra pelo nome (substring) |
+| Só integração | `npm run test:integration` | `tests/integration/**/*.test.ts`, contra PostgreSQL real, até 4 workers. Parte só de `TEST_DATABASE_URL` (nunca `DATABASE_URL`; falha nomeando a variável se faltar ou se o nome da base passar de 46 caracteres): template por execução (`<base>_r<exec>_tpl`) e uma base por worker, recriada no início de cada arquivo e apagada no fim; o papel precisa de `CREATEDB`. Execuções simultâneas são permitidas (README, "Banco de teste") |
+| Teste único (Vitest) | `npx vitest run src/lib/site.test.ts -t "define a marca"` | `-t` filtra pelo nome (substring). Integração: `npx vitest run --project integration tests/integration/tenant/isolamento.test.ts` (o harness roda do mesmo jeito) |
+| Concorrência (CA-6 da D-005) | `for i in $(seq 10); do npx vitest run --project integration tests/integration/concorrencia --maxWorkers=2 --silent=false \|\| break; done` | `--silent=false` mostra `[CA-6] arquivo=… VITEST_POOL_ID=… base=…` de cada arquivo |
 | Teste único (Playwright) | `npx playwright test e2e/smoke.spec.ts -g "viewport móvel"` | exige build prévio e porta 3000 livre |
 | Cobertura (gate) | `npm run test:coverage` | exige o PostgreSQL no ar; falha abaixo de 90% de linhas; relatório em `coverage/` (`text`, `html`, `lcov`, `json-summary`) |
 | E2E | `npm run test:e2e` | faz `next build` e roda o Playwright (Chromium, viewport 375×812). Libere a porta 3000 antes (inclusive `docker compose stop app`): fora da CI, um servidor já rodando nela é reaproveitado |
-| Migrações | `npm run db:migrate:deploy` | `prisma migrate deploy` com a `DATABASE_URL`; ainda não há migrações (E0.4). No Docker, só a app as aplica, ao iniciar |
+| Migrações | `npm run db:migrate:deploy` | `prisma migrate deploy` com a `DATABASE_URL`; migrações em `prisma/migrations/` (SQL bruto revisado pelo DBA). No Docker, só a app as aplica, ao iniciar |
 
 Na CI (E0.3), quando o build já tiver rodado, use `npx playwright install --with-deps chromium` e `npx playwright test` direto, para não compilar duas vezes. Opcional: `npx next telemetry disable` desliga a telemetria anônima do Next nesta máquina.
 

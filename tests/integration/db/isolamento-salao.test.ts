@@ -8,7 +8,7 @@ import {
   erroSql,
   inserirReserva,
   type ErroSql,
-} from '../support/sql';
+} from '../../support/sql';
 
 // CA-9 (RN-2, CLAUDE.md "Tenant isolation"): FKs compostas (salao_id, x_id) rejeitam a
 // referência a uma linha de outro salão com 23503.

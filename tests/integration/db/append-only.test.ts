@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { conectar, criarSalao, erroSql } from '../support/sql';
+import { conectar, criarSalao, erroSql } from '../../support/sql';
 
 // CA-12 e CA-14 (RN-10): auditoria e assinatura_transicao são somente inserção.
 let c: pg.Client;
