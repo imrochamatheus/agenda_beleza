@@ -104,3 +104,18 @@ Linhas da tabela "Comandos e cobertura":
 | E2E de bloqueios (D-016) | `npx playwright test e2e/bloqueios.spec.ts e2e/bloqueios-sem-js.spec.ts` | exige build prévio e porta 3000 livre; sem banco (`/dev/bloqueios`, ligada pela `VITRINE_COMPONENTES=true` do `webServer`); axe 4.14.0, zero violações |
 | Estabilidade dos bloqueios (D-016) | `for i in $(seq 10); do npx vitest run --project integration tests/integration/bloqueios/concorrencia.test.ts \|\| break; done` | CA-20: remoção × remoção, criação × desativação e edição × remoção, sem 5xx nem impasse |
 | Fuso dos bloqueios (D-016) | `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/tempo src/server/bloqueios src/lib/format.test.ts \|\| break; done` | o resultado não pode depender do fuso do processo |
+
+## 6. Correção pós-CI (DEF-CI-1, PR #73)
+
+Falha: run 44787745419, job `testes` (`npm run test:coverage`): `tests/integration/harness/db.test.ts > executarPrisma > sobrescreve DATABASE_URL do ambiente e do .env pela URL recebida` estourou o timeout padrão de 5 s (5038 ms). O teste sobe o Prisma CLI num processo filho; com a suíte inteira e a cobertura ligada, passou de 5 s no runner.
+
+Correção (só testes; asserções inalteradas; sem `testTimeout` global): timeout explícito de `30_000` por `it` nos testes de integração que sobem processo filho e ainda usavam o padrão:
+- `tests/integration/harness/db.test.ts`: "sobrescreve DATABASE_URL do ambiente e do .env pela URL recebida" (`executarPrisma`, Prisma CLI).
+- `tests/integration/auth/recuperacao-senha.test.ts`: "profissional desativado entre a busca e a trava…" (`execFileSync` do node).
+
+Já tinham timeout explícito (sem mudança): `tests/integration/db/drift.test.ts` (60 s, `executarPrisma`), `tests/integration/worker/sigterm.test.ts` (30 s e 60 s), `tests/integration/worker/schema.test.ts` (30 s e 120 s), demais casos de `prepararTemplate` em `harness/db.test.ts` (60 s).
+
+Evidências:
+- `npm run lint` e `npm run typecheck`: passaram.
+- `npx vitest run --project integration tests/integration/harness` 5×: 4 arquivos, 72/72 testes nas 5.
+- `npm run test:coverage` 3× seguidas: exit 0 nas 3; 198/198 arquivos, 2606/2606 testes; linhas 99,9%.

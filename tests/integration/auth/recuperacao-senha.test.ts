@@ -508,7 +508,8 @@ describe('corrida busca × emissão', () => {
     expect(json()).toEqual([{ evento: 'auth.recuperacao_senha', resultado: 'ignorado', usuarioId: s.profissional.usuarioId, em: T0.toISOString() }]);
     expect(await tokensDe(s.profissional.usuarioId)).toEqual([]);
     expect(await emails(s.profissional.email)).toEqual([]);
-  });
+    // O gancho sobe um processo filho do node (DEF-CI-1 da D-016): timeout explícito e folgado.
+  }, 30_000);
 });
 
 describe('D-4 (a): adiamento da tarefa', () => {
