@@ -109,7 +109,7 @@ export type ReservaDTO = {
   itens: ReservaItemDTO[];
 };
 
-/** Período semiaberto [de, ate) sobre `reserva.inicio`. */
+/** Período semiaberto [de, ate) (sobre `reserva.inicio` em listarPorPeriodo; intersecção nos demais usos). */
 export type Periodo = { de: Date; ate: Date };
 
 /** Linha de `jornada` (D-015 §3.2): hora local de parede em minutos do dia, 0 = domingo. */
@@ -117,3 +117,33 @@ export type JornadaLinhaDTO = { id: string; diaSemana: number; inicioMin: number
 
 /** Profissional travado/buscado para a jornada (D-015 §3.2). Não filtra `ativo` (RN-13). */
 export type TravaJornada = { id: string; nome: string; ativo: boolean };
+
+/** Linha de `bloqueio` (D-016 §3.3) com o profissional (null = salão inteiro). */
+export type BloqueioDTO = {
+  id: string;
+  profissionalId: string | null;
+  inicio: Date;
+  fim: Date;
+  motivo: string | null;
+  profissional: { id: string; nome: string; ativo: boolean } | null;
+};
+
+/** Profissional como alvo de bloqueio (ativo ou inativo, D-016 RN-14). */
+export type ProfissionalAlvoDTO = { id: string; nome: string; ativo: boolean };
+
+/** Reserva confirmada sob um bloqueio (D-016 RN-8). O telefone nunca é lido. */
+export type ReservaCobertaDTO = {
+  id: string;
+  profissionalId: string;
+  profissionalNome: string;
+  inicio: Date;
+  fim: Date;
+  /** null = cliente anonimizada. */
+  clienteNome: string | null;
+};
+
+/** Dados de um bloqueio já validados e convertidos para UTC. */
+export type DadosBloqueio = { profissionalId: string | null; inicio: Date; fim: Date; motivo: string | null };
+
+/** `todos` → salão inteiro + todos os profissionais; `profissionalId` → os dele + os do salão inteiro. */
+export type FiltroBloqueios = { todos: true } | { profissionalId: string };

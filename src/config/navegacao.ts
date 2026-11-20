@@ -30,6 +30,7 @@ export const ROTAS = {
   profissional: (id: string) => `/painel/profissionais/${seg(id)}`,
   jornada: (id: string) => `/painel/profissionais/${seg(id)}/jornada`,
   bloqueios: '/painel/bloqueios',
+  bloqueio: (id: string) => `/painel/bloqueios/${seg(id)}`,
   configuracoes: '/painel/configuracoes',
   assinatura: '/painel/assinatura',
   assinaturaRetorno: '/painel/assinatura/retorno',
@@ -45,6 +46,7 @@ export const ROTAS = {
   devComponentes: '/dev/componentes',
   devMpCheckout: '/dev/mp-checkout',
   devJornada: '/dev/jornada',
+  devBloqueios: '/dev/bloqueios',
 } as const;
 
 export type ItemNavegacao = {
