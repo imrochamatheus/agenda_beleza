@@ -111,3 +111,9 @@ export type ReservaDTO = {
 
 /** Período semiaberto [de, ate) sobre `reserva.inicio`. */
 export type Periodo = { de: Date; ate: Date };
+
+/** Linha de `jornada` (D-015 §3.2): hora local de parede em minutos do dia, 0 = domingo. */
+export type JornadaLinhaDTO = { id: string; diaSemana: number; inicioMin: number; fimMin: number };
+
+/** Profissional travado/buscado para a jornada (D-015 §3.2). Não filtra `ativo` (RN-13). */
+export type TravaJornada = { id: string; nome: string; ativo: boolean };

@@ -53,6 +53,59 @@ export function formatarDuracao(minutos: number): string {
   return resto === 0 ? `${horas} h` : `${horas} h ${resto} min`;
 }
 
+/** Último minuto representável do dia local (24:00, só como fim de intervalo; D-015 RN-3). */
+const MINUTOS_NO_DIA = 1440;
+
+function validarMinutosDoDia(min: number, nome: string): void {
+  if (typeof min !== 'number') {
+    throw new TypeError(`${nome}: o valor deve ser um número inteiro de minutos`);
+  }
+  if (!Number.isInteger(min) || min < 0 || min > MINUTOS_NO_DIA) {
+    throw new RangeError(`${nome}: minutos do dia devem ser inteiros de 0 a 1440 (recebido: ${String(min)})`);
+  }
+}
+
+/**
+ * Minutos do dia em hora local de parede (D-015 CA-20): 0 → '00:00'; 545 → '09:05'; 1440 → '24:00'.
+ * Sem fuso: a jornada já é hora local (RN-10). Não número → TypeError; não inteiro, NaN, < 0 ou
+ * > 1440 → RangeError.
+ */
+export function formatarMinutosDoDia(min: number): string {
+  validarMinutosDoDia(min, 'formatarMinutosDoDia');
+  const h = String(Math.floor(min / 60)).padStart(2, '0');
+  const m = String(min % 60).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+/** (720, 780) → '12:00–13:00' (meia-risca U+2013). As duas pontas válidas e inicio < fim. */
+export function formatarFaixaDeMinutos(inicioMin: number, fimMin: number): string {
+  validarMinutosDoDia(inicioMin, 'formatarFaixaDeMinutos');
+  validarMinutosDoDia(fimMin, 'formatarFaixaDeMinutos');
+  if (inicioMin >= fimMin) {
+    throw new RangeError(`formatarFaixaDeMinutos: o início deve ser antes do fim (${inicioMin} ≥ ${fimMin})`);
+  }
+  return `${formatarMinutosDoDia(inicioMin)}–${formatarMinutosDoDia(fimMin)}`;
+}
+
+/** Tabela fixa (sem Intl): índice = dia da semana, 0 = domingo (D-015 RN-15). */
+const DIAS_DA_SEMANA = Object.freeze([
+  'Domingo',
+  'Segunda-feira',
+  'Terça-feira',
+  'Quarta-feira',
+  'Quinta-feira',
+  'Sexta-feira',
+  'Sábado',
+]);
+
+/** 0 → 'Domingo', 1 → 'Segunda-feira' … 6 → 'Sábado'; fora de 0..6 inteiro → RangeError. */
+export function formatarDiaDaSemana(dia: number): string {
+  if (typeof dia !== 'number' || !Number.isInteger(dia) || dia < 0 || dia > 6) {
+    throw new RangeError(`formatarDiaDaSemana: o dia deve ser inteiro de 0 a 6 (recebido: ${String(dia)})`);
+  }
+  return DIAS_DA_SEMANA[dia];
+}
+
 type Partes = { day: string; month: string; year: string; hour: string; minute: string };
 
 const formatadores = new Map<string, Intl.DateTimeFormat>();

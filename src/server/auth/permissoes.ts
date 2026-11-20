@@ -14,6 +14,7 @@ export const OPERACOES = [
   'reserva.alterar',
   'bloqueio_profissional.gerir',
   'bloqueio_salao.gerir',
+  'jornada.ver',
   'jornada.editar',
   'servico.gerir',
   'profissional.gerir',
@@ -39,6 +40,8 @@ export const MATRIZ: Readonly<Record<Operacao, Linha>> = Object.freeze({
   'reserva.alterar': linha('salao', 'proprio', 'negado'),
   'bloqueio_profissional.gerir': linha('salao', 'proprio', 'negado'),
   'bloqueio_salao.gerir': linha('salao', 'negado', 'negado'),
+  // D-015 D-8: o profissional só vê a própria jornada; editar é só do gestor (RN-1).
+  'jornada.ver': linha('salao', 'proprio', 'negado'),
   'jornada.editar': linha('salao', 'negado', 'negado'),
   'servico.gerir': linha('salao', 'negado', 'negado'),
   'profissional.gerir': linha('salao', 'negado', 'negado'),

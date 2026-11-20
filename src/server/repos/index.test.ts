@@ -53,6 +53,10 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.clientes.renomear(ctx, id, 'x'),
         r.reservas.buscarPorId(ctx, id),
         r.reservas.atualizarStatus(ctx, id, { de: 'confirmado', para: 'cancelado' }),
+        r.jornadas.listarDoProfissional(ctx, id),
+        r.jornadas.travarProfissional(ctx, id),
+        r.jornadas.buscarProfissional(ctx, id),
+        r.jornadas.aplicarDiferenca(ctx, id, { remover: [], inserir: [] }),
       ];
       for (const chamada of chamadas) {
         await expect(chamada).rejects.toBeInstanceOf(NaoEncontrado);
@@ -101,6 +105,10 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.reservas.buscarPorId(c, ID),
         r.reservas.listarPorPeriodo(c, { de: new Date(0), ate: new Date() }),
         r.reservas.atualizarStatus(c, ID, { de: 'confirmado', para: 'cancelado' }),
+        r.jornadas.listarDoProfissional(c, ID),
+        r.jornadas.travarProfissional(c, ID),
+        r.jornadas.buscarProfissional(c, ID),
+        r.jornadas.aplicarDiferenca(c, ID, { remover: [], inserir: [] }),
       ];
       for (const chamada of chamadas) {
         await expect(chamada).rejects.toThrow(
@@ -114,6 +122,11 @@ describe('repositórios de tenant sem consultar o banco', () => {
     const r = repos();
     expect(await r.servicos.travarProfissionaisParaVinculo(ctx, [])).toEqual([]);
     expect(await r.servicos.travarProfissionaisParaVinculo(ctx, ['abc', '', "1' OR '1'='1"])).toEqual([]);
+  });
+
+  it('D-015: aplicarDiferenca com listas vazias (ou só ids malformados) não consulta', async () => {
+    expect(await repos().jornadas.aplicarDiferenca(ctx, ID, { remover: [], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
+    expect(await repos().jornadas.aplicarDiferenca(ctx, ID, { remover: ['abc'], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
   });
 
   it('garantirPerfilDoGestor exige TenantContext: SistemaContext → Error antes da consulta (D-013)', async () => {

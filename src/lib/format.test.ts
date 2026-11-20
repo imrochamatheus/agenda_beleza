@@ -7,9 +7,12 @@ import {
   formatarData,
   formatarDataHora,
   formatarDeslocamentoUtc,
+  formatarDiaDaSemana,
+  formatarFaixaDeMinutos,
   formatarHora,
   formatarDuracao,
   formatarMoeda,
+  formatarMinutosDoDia,
   formatarMoedaSemSimbolo,
   FUSO_PADRAO,
 } from './format';
@@ -250,5 +253,59 @@ describe('FUSO_PADRAO (D-14)', () => {
     const casado = /^\s*fuso\s+String\s+@default\("([^"]+)"\)/m.exec(schema);
     expect(casado?.[1]).toBe('America/Sao_Paulo');
     expect(FUSO_PADRAO).toBe(casado?.[1]);
+  });
+});
+
+describe('formatarMinutosDoDia (D-015 CA-20)', () => {
+  it('0 → 00:00, 5 → 00:05, 545 → 09:05, 1435 → 23:55, 1440 → 24:00', () => {
+    expect(formatarMinutosDoDia(0)).toBe('00:00');
+    expect(formatarMinutosDoDia(5)).toBe('00:05');
+    expect(formatarMinutosDoDia(545)).toBe('09:05');
+    expect(formatarMinutosDoDia(1435)).toBe('23:55');
+    expect(formatarMinutosDoDia(1440)).toBe('24:00');
+  });
+
+  it('fora de 0..1440, não inteiro ou NaN → RangeError; texto → TypeError', () => {
+    for (const v of [-5, -1, 1441, 1445, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => formatarMinutosDoDia(v)).toThrow(RangeError);
+    }
+    expect(() => formatarMinutosDoDia('540' as unknown as number)).toThrow(TypeError);
+    expect(() => formatarMinutosDoDia(undefined as unknown as number)).toThrow(TypeError);
+  });
+});
+
+describe('formatarFaixaDeMinutos (D-015 §3.4)', () => {
+  it('(720, 780) → 12:00–13:00 com meia-risca U+2013; (1320, 1440) → 22:00–24:00', () => {
+    expect(formatarFaixaDeMinutos(720, 780)).toBe('12:00\u201313:00');
+    expect(formatarFaixaDeMinutos(1320, 1440)).toBe('22:00–24:00');
+    expect(formatarFaixaDeMinutos(0, 5)).toBe('00:00–00:05');
+  });
+
+  it('início ≥ fim ou ponta inválida → RangeError', () => {
+    expect(() => formatarFaixaDeMinutos(600, 600)).toThrow(RangeError);
+    expect(() => formatarFaixaDeMinutos(1320, 120)).toThrow(RangeError);
+    expect(() => formatarFaixaDeMinutos(-5, 60)).toThrow(RangeError);
+    expect(() => formatarFaixaDeMinutos(0, 1445)).toThrow(RangeError);
+    expect(() => formatarFaixaDeMinutos('0' as unknown as number, 60)).toThrow(TypeError);
+  });
+});
+
+describe('formatarDiaDaSemana (D-015 RN-15)', () => {
+  it('0 = domingo … 6 = sábado', () => {
+    expect([0, 1, 2, 3, 4, 5, 6].map(formatarDiaDaSemana)).toEqual([
+      'Domingo',
+      'Segunda-feira',
+      'Terça-feira',
+      'Quarta-feira',
+      'Quinta-feira',
+      'Sexta-feira',
+      'Sábado',
+    ]);
+  });
+
+  it('fora de 0..6 inteiro → RangeError', () => {
+    for (const v of [7, -1, 1.5, Number.NaN, '1' as unknown as number]) {
+      expect(() => formatarDiaDaSemana(v)).toThrow(RangeError);
+    }
   });
 });

@@ -18,6 +18,7 @@ const ESPERADO: Record<Operacao, [Escopo, Escopo, Escopo]> = {
   'reserva.alterar': ['salao', 'proprio', 'negado'],
   'bloqueio_profissional.gerir': ['salao', 'proprio', 'negado'],
   'bloqueio_salao.gerir': ['salao', 'negado', 'negado'],
+  'jornada.ver': ['salao', 'proprio', 'negado'],
   'jornada.editar': ['salao', 'negado', 'negado'],
   'servico.gerir': ['salao', 'negado', 'negado'],
   'profissional.gerir': ['salao', 'negado', 'negado'],
@@ -106,6 +107,18 @@ describe('CA-11: exigirPermissao', () => {
       expect(erro).toBeInstanceOf(AcessoNegado);
       expect((erro as AcessoNegado).status).toBe(403);
     }
+  });
+
+  it('D-015 CA-12: jornada.ver — gestor qualquer; profissional só a própria; sem perfil negado', () => {
+    expect(() => exigirPermissao(ctx('gestor', null), 'jornada.ver', { profissionalId: PROF_OUTRO })).not.toThrow();
+    const p = ctx('profissional', PROF_PROPRIO);
+    expect(() => exigirPermissao(p, 'jornada.ver')).not.toThrow();
+    expect(() => exigirPermissao(p, 'jornada.ver', { profissionalId: PROF_PROPRIO })).not.toThrow();
+    expect(() => exigirPermissao(p, 'jornada.ver', { profissionalId: PROF_OUTRO })).toThrow(AcessoNegado);
+    expect(() => exigirPermissao(ctx('profissional', null), 'jornada.ver')).toThrow(AcessoNegado);
+    expect(pode('super_admin', 'jornada.ver')).toBe('negado');
+    // Ver não dá editar.
+    expect(() => exigirPermissao(p, 'jornada.editar', { profissionalId: PROF_PROPRIO })).toThrow(AcessoNegado);
   });
 
   it('CA-11: plataforma.administrar nunca vale para contexto de salão', () => {

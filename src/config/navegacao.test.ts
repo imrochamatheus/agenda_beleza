@@ -156,6 +156,7 @@ describe('CA-12: rotas e segmentos reservados', () => {
         '/admin/auditoria',
         '/dev/componentes',
         '/dev/mp-checkout',
+        '/dev/jornada',
       ]),
     );
   });
@@ -174,6 +175,9 @@ describe('CA-12: rotas e segmentos reservados', () => {
     expect(ROTAS.servico('../x?y#z')).toBe('/painel/servicos/..%2Fx%3Fy%23z');
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.novoServico)).toBe(ROTAS.servicos);
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.servico('abc'))).toBe(ROTAS.servicos);
+    // D-015: a jornada ativa "Profissionais"; a demonstração fica sob o segmento reservado "dev".
+    expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.jornada('abc'))).toBe(ROTAS.profissionais);
+    expect(ROTAS.devJornada).toBe('/dev/jornada');
     expect(ROTAS.salaoPublico('a b/c')).toBe('/a%20b%2Fc');
     expect(ROTAS.adminSalao('a b/c')).toBe('/admin/saloes/a%20b%2Fc');
     expect(ROTAS.adminSalaoAssinatura('a b/c')).toBe('/admin/saloes/a%20b%2Fc/assinatura');
