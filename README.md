@@ -25,6 +25,9 @@ App e worker rodam como usuário não root. Só a app aplica migrações.
 - **Porta 3000 ocupada:** libere-a antes de subir (ela é fixa no compose).
 - **Parar:** `docker compose down` (mantém os dados) ou `docker compose down -v` (apaga o volume do banco).
 - **Logs:** `docker compose logs app`, `docker compose logs worker`.
+- **Depois de mudar o código:** `docker compose up -d --build --wait` reconstrói a imagem (sem `--build`, o compose reaproveita a imagem `agenda-beleza:dev` já existente).
+- **Smoke da imagem:** `sh docker/smoke.sh` faz esse `up --build --wait` e confere `/api/health` e os cabeçalhos das páginas com token; é o mesmo comando do job `docker` da CI. Não derruba nada ao terminar.
+- **`next.config.ts` na imagem:** o estágio final não tem `src/`. O build compila o `next.config.ts` com esbuild num `next.config.mjs` autocontido (o que ele importa de `src/` entra no arquivo; pacotes ficam em `node_modules`), então imports novos no config não exigem mexer no `Dockerfile`.
 
 A publicação em servidor (VPS) ainda não está definida: este compose é só para desenvolvimento e testes locais.
 
@@ -54,6 +57,7 @@ npm run test:coverage          # o mesmo, com o gate de 90% de linhas (relatóri
 npm run test:e2e               # build + Playwright (viewport de celular); libere a porta 3000 antes
 npx playwright test e2e/a11y-base.spec.ts  # só o E2E de acessibilidade (exige build prévio)
 npx playwright test e2e/entrar.spec.ts     # só o E2E de /entrar e do proxy (exige build prévio; sem banco)
+npx playwright test e2e/recuperar-senha.spec.ts  # só o E2E da recuperação de senha (exige build prévio; sem banco)
 ```
 
 - Os testes de integração usam **somente** `TEST_DATABASE_URL`, nunca `DATABASE_URL`, e recusam rodar se as duas forem iguais. Sem `TEST_DATABASE_URL`, eles falham com uma mensagem que nomeia a variável.
@@ -120,6 +124,17 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Falha no envio:** se o adaptador de e-mail falhar, o cadastro continua gravado e a tela avisa "Não conseguimos enviar o e-mail agora. Use 'Reenviar link' em alguns minutos.".
 - **Ler o link no modo simulado** (`EMAIL_ADAPTER=simulado`): o texto do e-mail fica em `email_log`. Com o Docker: `docker compose exec postgres psql -U agenda agenda_beleza -c "select corpo from email_log order by criado_em desc limit 1"`. Copie a URL do corpo e abra no navegador.
 - **Produção:** `APP_URL` precisa ser a URL pública da aplicação, porque é ela que monta o link do e-mail (o cabeçalho `Host` da requisição nunca é usado). Nenhuma credencial nova: o envio real usa o SMTP já descrito em "Credenciais para os serviços reais".
+
+## Recuperação de senha
+
+- **Fluxo:** em `/recuperar-senha` (link "Esqueci minha senha" em `/entrar`) a pessoa informa o e-mail e recebe um link `APP_URL/redefinir-senha?token=…`. Abrir o link só **verifica** o token (não o consome: scanners de e-mail e pré-carregamento não o queimam) e mostra o formulário "Definir nova senha" (mínimo de 8 caracteres, sem campo de confirmação). Ao salvar, a tela mostra "Senha alterada" e o link para `/entrar` (sem login automático). Funciona com e sem JavaScript.
+- **Quem pode:** gestor (com o e-mail confirmado ou não) e profissional com perfil ativo. Super admin, profissional desativado ou sem perfil e e-mail inexistente recebem a mesma resposta e nada é gravado nem enviado.
+- **Resposta uniforme:** a tela sempre diz "Se houver uma conta com este e-mail, enviamos um link para redefinir a senha. Ele vale por 1 hora.", inclusive quando o envio falha (a falha só vai para o log). **Envio depois da resposta:** a busca do usuário, a gravação do token e o envio do e-mail rodam em `after()` (Next), depois que a resposta sai; o tempo de resposta não depende de o e-mail existir. `next start` (e a imagem Docker) executa os `after()` pendentes ao receber SIGTERM.
+- **Link:** vale **1 hora** e é de **uso único** (o banco guarda só o SHA-256 do token). Um novo pedido invalida os links anteriores. Link usado, vencido, substituído, malformado ou de quem deixou de poder recuperar mostra uma única mensagem: "Este link de redefinição é inválido, expirou ou já foi usado. Peça um novo link.". A página envia `Referrer-Policy: strict-origin` (cabeçalho HTTP em `next.config.ts`), para o token não vazar no `Referer`.
+- **Ao redefinir:** **todas as sessões** do usuário são encerradas (inclusive a do navegador em uso); um login com a senha antiga em andamento no mesmo instante não gera sessão válida. O link também **confirma o e-mail** de um gestor ainda não confirmado (invalidando os links de confirmação pendentes) e zera as falhas de login da janela atual, então quem se bloqueou com 10 tentativas entra logo com a nova senha.
+- **Limite:** **3 pedidos por e-mail a cada 15 minutos** (janela fixa em UTC, tabela `rate_limit_janela`, chave `recuperacao-senha:` + SHA-256 do e-mail, independente do login e do reenvio de confirmação), contando também e-mails inexistentes. O 4º recebe "Muitas solicitações. Aguarde alguns minutos e tente de novo.".
+- **Ler o link no modo simulado** (`EMAIL_ADAPTER=simulado`): o mesmo comando do cadastro (`select corpo from email_log …`); o assunto é "Redefinição de senha no Agenda Beleza". O e-mail aparece em `email_log` logo depois da resposta da tela (não antes dela).
+- **Produção:** `APP_URL` monta o link (como no cadastro). Nenhuma variável nem credencial nova.
 
 ## Integrações (adaptadores)
 
@@ -348,7 +363,7 @@ O workflow `CI` (`.github/workflows/ci.yml`, GitHub Actions) roda em todo pull r
 | `build` | `npm run build` | n/a |
 | `testes` | `docker compose up -d postgres`, `npm run db:migrate:deploy` e `npm run test:coverage` (falha abaixo de 90% de linhas) | `cobertura` (`coverage/`: `index.html`, `lcov.info`, `coverage-summary.json`) |
 | `e2e` | `npx playwright install chromium` e `npm run test:e2e` (uma compilação no job; cache dos navegadores pela versão do `@playwright/test`) | `playwright-report` (relatório HTML) e `playwright-traces` (`test-results/`, só quando um teste falha) |
-| `docker` | `docker compose config` e `docker build --target final .` (sem push) | n/a |
+| `docker` | `docker compose config`, `docker build --target final .` (sem push) e `sh docker/smoke.sh` (sobe o compose do zero com `--build --wait`, exige `GET /api/health` 200 e `Referrer-Policy: strict-origin` em `/confirmar-email` e `/redefinir-senha`; porta 3000 livre). Na CI o job termina com `docker compose down -v` | n/a |
 
 - **Nomes dos checks:** na interface do PR aparecem como `CI / <job> (pull_request)` ou `(push)`. Os seis nomes (`lint`, `typecheck`, `build`, `testes`, `e2e`, `docker`) são os que a proteção de `main` vai exigir. Não os renomeie sem atualizar esta seção e a proteção.
 - **Artefatos:** ficam 14 dias no run. Baixe pela aba *Summary* do run, na seção *Artifacts*, ou com `gh run download <id-do-run> -n cobertura -D <pasta fora do repositório>` (ou `-n playwright-report`, `-n playwright-traces`). Os uploads rodam também quando o gate falha.

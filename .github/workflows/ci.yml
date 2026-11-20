@@ -171,5 +171,15 @@ jobs:
         with:
           persist-credentials: false
       - run: docker compose config
-      # Só valida que a imagem compila; não há login nem push.
+      # Valida que a imagem compila; não há login nem push.
       - run: docker build --target final --tag agenda-beleza:ci .
+      # Compilar a imagem não basta (D-012, correção R-A: a app compilava e saía com código 1 ao
+      # iniciar). O smoke sobe postgres, app e worker do zero com --wait, exige /api/health 200 e
+      # o Referrer-Policy das páginas com token; em falha, imprime `ps` e os logs. Sem .env: os
+      # padrões de src/server/env.ts (adaptadores simulados) e do compose bastam. O mesmo comando
+      # roda localmente (README, seção "CI").
+      - name: Smoke do compose (build, up --wait, health)
+        run: sh docker/smoke.sh
+      - name: Derrubar o compose
+        if: ${{ always() }}
+        run: docker compose down -v --remove-orphans

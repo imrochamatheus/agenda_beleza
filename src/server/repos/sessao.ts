@@ -1,3 +1,4 @@
+import { Prisma } from '@/generated/prisma/client';
 import type { Papel } from '@/server/tenant/context';
 
 import { obterPrisma } from './db';
@@ -79,6 +80,43 @@ export async function criarSessao(d: {
     },
     select: { id: true },
   });
+}
+
+/**
+ * Cria a sessão SOMENTE se `usuario.senha_hash` ainda é `senhaHash` (o hash verificado pelo login;
+ * D-012 RN-13, D-11). Uma transação: `SELECT … FOR SHARE` na linha do usuário com a condição no
+ * hash (conflita com o UPDATE da redefinição de senha, ao contrário do FOR KEY SHARE da FK) e, se a
+ * linha vier, o INSERT da sessão com os mesmos campos de `criarSessao`. false = a senha mudou desde a
+ * verificação (nada gravado). A transação toca só `usuario` (compartilhada) e `sessao` (sem impasse).
+ */
+export async function criarSessaoSeSenhaVigente(d: {
+  usuarioId: string;
+  tokenHash: string;
+  agora: Date;
+  expiraEm: Date;
+  senhaHash: string;
+}): Promise<boolean> {
+  return obterPrisma().$transaction(
+    async (tx) => {
+      const vigente = await tx.$queryRaw<{ ok: number }[]>`
+        SELECT 1 AS ok FROM usuario WHERE id = ${d.usuarioId}::uuid AND senha_hash = ${d.senhaHash}::text FOR SHARE`;
+      if (vigente.length === 0) {
+        return false;
+      }
+      await tx.sessao.create({
+        data: {
+          usuarioId: d.usuarioId,
+          tokenHash: d.tokenHash,
+          expiraEm: d.expiraEm,
+          criadoEm: d.agora,
+          ultimoUsoEm: d.agora,
+        },
+        select: { id: true },
+      });
+      return true;
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+  );
 }
 
 /**

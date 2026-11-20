@@ -8,8 +8,14 @@ const nextConfig: NextConfig = {
   // links) leva só a origem, sem caminho nem token, inclusive em mesma origem. Ao contrário de
   // `no-referrer`, o cabeçalho Origin dos POSTs continua normal, então o reenvio sem JS (Server
   // Action) passa pela checagem CSRF do Next. Cabeçalho HTTP (não meta): vale antes do <head>.
+  // D-012 RN-14: o mesmo vale para o link de redefinição de senha (/redefinir-senha?token=…), cujo
+  // formulário também precisa funcionar sem JS. /recuperar-senha não tem token na URL.
   async headers() {
-    return [{ source: ROTAS.confirmarEmail, headers: [{ key: 'Referrer-Policy', value: 'strict-origin' }] }];
+    const referrer = [{ key: 'Referrer-Policy', value: 'strict-origin' }];
+    return [
+      { source: ROTAS.confirmarEmail, headers: referrer },
+      { source: ROTAS.redefinirSenha, headers: referrer },
+    ];
   },
 };
 
