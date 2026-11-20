@@ -12,7 +12,7 @@ The project is scaffolded (D-002): Next.js 16 (App Router) + TypeScript, ESLint,
 - Message queue in PostgreSQL (e.g. `pg-boss`), processed by a **separate worker process**.
 - Tests: Vitest for unit and integration tests against a **real PostgreSQL** (no DB mocks); Playwright for the public booking flow in a mobile viewport.
 - `docker-compose` with three services: app, worker and postgres. Also ship `.env.example` and seed data with two distinct salons and one super admin.
-- The README must document how to run and test the project. It must also list, separately, the credentials needed to enable the real services: Mercado Pago, WhatsApp Business Platform (account, number and 3 approved templates), transactional email, and Cloudflare Turnstile.
+- The README must document how to run and test the project. It must also list, separately, the credentials needed to enable the real services: Mercado Pago, WhatsApp Business Platform (account, number and 4 approved templates, including the review invite), transactional email, Cloudflare Turnstile, and S3-compatible storage for salon photos.
 
 ## Architectural invariants
 
@@ -38,7 +38,11 @@ There are four roles: gestor (salon owner, one per salon, may also have a linked
 - The UI language is pt-BR and the currency is BRL.
 - Visual direction: elegant and warm, with earthy and nude tones, serif headings and sans-serif body text, and plenty of whitespace. Avoid generic pink.
 - The UI must be responsive and usable with the keyboard alone.
-- Use AppBarber and AppBeleza only as references for features and flows. Do not copy their visuals or text.
+- Use AppBarber, AppBeleza and Trinks only as references for features and flows. Do not copy their visuals or text, and do not integrate with the Trinks API.
+
+## Trinks alignment
+
+`docs/trinks-alinhamento.md` (D-019) records the product decisions of the current stage (public salon profile with opening hours, photos and verified reviews; moderation; subscription unchanged at R$ 79/month with a 30-day trial), the 55-item Project matrix and the execution order. It takes precedence over conflicting older text in `PLAN.md`, the issues and `docs/demandas/D-001/spec.md`.
 
 ## Out of scope for v1
 
