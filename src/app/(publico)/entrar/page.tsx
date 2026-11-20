@@ -5,6 +5,8 @@ import { PublicLayout } from '@/components/layout/PublicLayout';
 import { destinoAposLogin } from '@/server/auth/destino';
 import { destinoSeJaAutenticado } from '@/server/auth/pagina';
 
+import { reenviarConfirmacaoAcao } from '../confirmar-email/acoes';
+
 import { entrarAcao } from './acoes';
 import { FormularioEntrar } from './FormularioEntrar';
 
@@ -28,7 +30,7 @@ export default async function PaginaEntrar({ searchParams }: PaginaEntrarProps) 
   return (
     <PublicLayout>
       <h1>Entrar</h1>
-      <FormularioEntrar acao={entrarAcao} proximo={proximoValido} />
+      <FormularioEntrar acao={entrarAcao} proximo={proximoValido} acaoReenvio={reenviarConfirmacaoAcao} />
     </PublicLayout>
   );
 }

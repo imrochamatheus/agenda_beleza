@@ -130,7 +130,7 @@ describe('CA-1 (casca): entrarAcao grava o cookie httpOnly e redireciona', () =>
 
   it('falha: devolve o estado com a mensagem e o e-mail aparado, sem senha e sem cookie', async () => {
     const r = await entrarAcao(ESTADO_INICIAL_ENTRAR, formulario({ email: `  ${a.gestor.email} `, senha: 'errada' }));
-    expect(r).toEqual({ mensagem: MENSAGENS_LOGIN.credenciais, erros: {}, email: a.gestor.email });
+    expect(r).toEqual({ mensagem: MENSAGENS_LOGIN.credenciais, erros: {}, email: a.gestor.email, reenvioDisponivel: false });
     expect(JSON.stringify(r)).not.toContain('errada');
     expect(jar.gravacoes).toEqual([]);
   });
@@ -144,6 +144,7 @@ describe('CA-1 (casca): entrarAcao grava o cookie httpOnly e redireciona', () =>
       mensagem: null,
       erros: { email: MENSAGENS_LOGIN.emailVazio, senha: MENSAGENS_LOGIN.senhaVazia },
       email: '',
+      reenvioDisponivel: false,
     });
     const longo = `${'a'.repeat(300)}@exemplo.com`;
     const r2 = await entrarAcao(ESTADO_INICIAL_ENTRAR, formulario({ email: longo, senha: 'x' }));
