@@ -1,0 +1,88 @@
+/* Editor de semana compartilhado (D-020 §3.7; movido de Jornada.module.css, D-015 RN-14). Só tokens
+   do tema (globals.css); breakpoint único 48rem. */
+.resumoErros {
+  padding: var(--espaco-4);
+  border: 2px solid var(--cor-erro-texto);
+  border-radius: var(--raio);
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro-texto);
+}
+
+.resumoErros:focus-visible,
+.resumoErros:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.resumoTitulo {
+  margin: 0 0 var(--espaco-2);
+  font-weight: 600;
+}
+
+.resumoErros ul {
+  margin: 0;
+  padding-left: var(--espaco-4);
+}
+
+.resumoErros a {
+  color: inherit;
+}
+
+.dias {
+  display: grid;
+  gap: var(--espaco-2);
+}
+
+.dia {
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+}
+
+.resumoDia {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-1) var(--espaco-3);
+  align-items: baseline;
+  min-height: var(--alvo-minimo);
+  padding: var(--espaco-3) var(--espaco-4);
+  cursor: pointer;
+}
+
+.resumoDia:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.nomeDia {
+  font-weight: 600;
+}
+
+.textoDia {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.intervalos {
+  display: grid;
+  gap: var(--espaco-3);
+  margin: 0;
+  padding: var(--espaco-2) var(--espaco-4) var(--espaco-4);
+  border: 0;
+}
+
+.intervalos legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.linha {
+  display: grid;
+  gap: var(--espaco-1);
+}
+
+.campos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--espaco-3);
+}

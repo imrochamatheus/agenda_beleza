@@ -10,11 +10,14 @@ import {
   formatarDiaDaSemana,
   formatarFaixaDeMinutos,
   formatarHora,
+  formatarInteiro,
   formatarDuracao,
   formatarMoeda,
   formatarMinutosDoDia,
   formatarMoedaSemSimbolo,
+  formatarCep,
   formatarPeriodoBloqueio,
+  formatarTelefone,
   FUSO_PADRAO,
 } from './format';
 
@@ -343,5 +346,41 @@ describe('formatarPeriodoBloqueio (D-016 CA-23, CA-3, CA-5, R-2)', () => {
     expect(() => formatarPeriodoBloqueio(new Date('x'), a, SP, false)).toThrow(RangeError);
     expect(() => formatarPeriodoBloqueio(a, d('2026-12-26T03:00:00Z'), '', true)).toThrow(RangeError);
     expect(() => formatarPeriodoBloqueio(a, d('2026-12-26T03:00:00Z'), 'Foo/Bar', true)).toThrow(RangeError);
+  });
+});
+
+describe('formatarTelefone e formatarCep (D-020 CA-18)', () => {
+  it('fixo e celular gravados em E.164', () => {
+    expect(formatarTelefone('+551134567890')).toBe('(11) 3456-7890');
+    expect(formatarTelefone('+5511987654321')).toBe('(11) 98765-4321');
+    expect(formatarTelefone('+559932345678')).toBe('(99) 3234-5678');
+  });
+
+  it.each(['11987654321', '+1123456789', '+550034567890', '+5511887654321', '+551194567890', '+55119876543210', '', 42 as unknown as string])(
+    'telefone fora do formato gravado (%s) → RangeError',
+    (v) => {
+      expect(() => formatarTelefone(v)).toThrow(RangeError);
+    },
+  );
+
+  it('CEP com 8 dígitos', () => {
+    expect(formatarCep('01310100')).toBe('01310-100');
+  });
+
+  it.each(['01310-100', '1310100', '013101000', 'abcdefgh', '', null as unknown as string])('CEP fora do formato (%s) → RangeError', (v) => {
+    expect(() => formatarCep(v)).toThrow(RangeError);
+  });
+});
+
+describe('formatarInteiro (D-020)', () => {
+  it('milhar com ponto', () => {
+    expect(formatarInteiro(0)).toBe('0');
+    expect(formatarInteiro(999)).toBe('999');
+    expect(formatarInteiro(1000)).toBe('1.000');
+    expect(formatarInteiro(1234567)).toBe('1.234.567');
+  });
+
+  it.each([-1, 1.5, Number.NaN, '1' as unknown as number])('inválido (%s) → RangeError', (v) => {
+    expect(() => formatarInteiro(v)).toThrow(RangeError);
   });
 });

@@ -10,10 +10,13 @@ import type { Executor } from './transacao';
 // não é UUID → NaoEncontrado sem consultar. A jornada é hora local de parede em minutos do dia
 // (RN-10); 0 = domingo (RN-15).
 //
-// ORDEM CANÔNICA DE TRAVAS (D-014 §3.2, estendida pela D-015 D-12):
-//   profissional (FOR UPDATE | FOR NO KEY UPDATE | FOR SHARE, por id)
-//     → servico(s)
-//       → servico_profissional / jornada / reserva / reserva_item
+// ORDEM CANÔNICA DE TRAVAS (D-014 D-14, estendida pela D-015 D-12 e pela D-020 §3.5; obrigação para
+// E3.1/E3.2/E3.4/E3.5):
+//   salao (FOR NO KEY UPDATE: regras, slug, perfil por UPDATE, funcionamento; ver repos/funcionamento.ts)
+//     → profissional(is) (FOR UPDATE | FOR NO KEY UPDATE | FOR SHARE, por id)
+//       → servico(s) (FOR SHARE / FOR NO KEY UPDATE, por id)
+//         → servico_profissional / jornada / salao_funcionamento / reserva / reserva_item
+// Os INSERT com FK para salao só tomam FOR KEY SHARE, que não conflita com FOR NO KEY UPDATE.
 // - Salvar a jornada: profissional FOR NO KEY UPDATE OF pj → leitura de jornada → DELETE/INSERT.
 //   Não toca servico, reserva, sessao nem convite. O INSERT em jornada toma FOR KEY SHARE na mesma
 //   linha de profissional, compatível com a trava que a transação já tem.

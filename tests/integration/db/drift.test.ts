@@ -9,8 +9,8 @@ import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 import { executarPrisma, urlDoWorker } from '../../support/db';
 import { conectar } from '../../support/sql';
 
-// CA-1 (RN-11), CA-15 (RN-3) e CA-22 (RN-13) da D-004, e CA-24 da D-007. Os nomes vêm dos contratos de
-// docs/demandas/D-004/dba.md §3 e docs/demandas/D-007/dba.md §3.
+// CA-1 (RN-11), CA-15 (RN-3) e CA-22 (RN-13) da D-004, CA-24 da D-007 e a migração da D-020. Os nomes vêm
+// dos contratos de docs/demandas/D-004/dba.md §3, docs/demandas/D-007/dba.md §3 e docs/demandas/D-020/dba.md §2.
 // O `migrate diff` é cego aos objetos de SQL bruto (design §0), por isso o catálogo os confere pelo nome.
 let c: pg.Client;
 
@@ -45,6 +45,8 @@ const TABELAS = [
   'reserva_item',
   'salao',
   'salao_slug',
+  // D-020: horário de funcionamento do salão.
+  'salao_funcionamento',
   'servico',
   'servico_profissional',
   'sessao',
@@ -105,6 +107,24 @@ const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
   ['sim_mp_assinatura_valor_chk', 'sim_mp_assinatura', 'c'],
   ['sim_mp_pagamento_valor_chk', 'sim_mp_pagamento', 'c'],
   ['sim_whatsapp_chamada_resultado_chk', 'sim_whatsapp_chamada', 'c'],
+  // D-020 (migração 20261120000000_perfil_funcionamento, parte 2)
+  ['salao_funcionamento_sem_sobreposicao', 'salao_funcionamento', 'x'],
+  ['salao_funcionamento_dia_semana_chk', 'salao_funcionamento', 'c'],
+  ['salao_funcionamento_faixa_chk', 'salao_funcionamento', 'c'],
+  ['salao_meios_pagamento_chk', 'salao', 'c'],
+  ['salao_comodidades_chk', 'salao', 'c'],
+  ['salao_descricao_chk', 'salao', 'c'],
+  ['salao_endereco_logradouro_chk', 'salao', 'c'],
+  ['salao_endereco_numero_chk', 'salao', 'c'],
+  ['salao_endereco_complemento_chk', 'salao', 'c'],
+  ['salao_endereco_bairro_chk', 'salao', 'c'],
+  ['salao_endereco_cidade_chk', 'salao', 'c'],
+  ['salao_endereco_uf_chk', 'salao', 'c'],
+  ['salao_endereco_cep_chk', 'salao', 'c'],
+  ['salao_endereco_completo_chk', 'salao', 'c'],
+  ['salao_telefone_e164_chk', 'salao', 'c'],
+  ['salao_whatsapp_e164_chk', 'salao', 'c'],
+  ['salao_instagram_chk', 'salao', 'c'],
 ];
 
 // [nome, tabela, único]
@@ -142,7 +162,7 @@ const FKS_COMPOSTAS = [
 ];
 
 describe('CA-1: catálogo depois do migrate deploy', () => {
-  it('CA-1: existem exatamente as 30 tabelas do contrato em public (fora _prisma_migrations)', async () => {
+  it('CA-1: existem exatamente as 31 tabelas do contrato em public (fora _prisma_migrations)', async () => {
     const r = await linhas<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> '_prisma_migrations'
@@ -177,6 +197,26 @@ describe('CA-1: catálogo depois do migrate deploy', () => {
         a.nome.localeCompare(b.nome),
       ),
     );
+  });
+
+  it('D-020: salao_funcionamento_sem_sobreposicao usa (salao_id, dia_semana, int4range) sem predicado', async () => {
+    const [r] = await linhas<{ def: string }>(
+      "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'salao_funcionamento_sem_sobreposicao'",
+    );
+    expect(r.def).toBe('EXCLUDE USING gist (salao_id WITH =, dia_semana WITH =, int4range(inicio_min, fim_min) WITH &&)');
+  });
+
+  it('D-020: as listas do perfil são text[] NOT NULL com default vazio (o diff do Prisma não confere a nulidade)', async () => {
+    const r = await linhas<{ coluna: string; tipo: string; nulo: string; padrao: string | null }>(
+      `SELECT column_name AS coluna, udt_name AS tipo, is_nullable AS nulo, column_default AS padrao
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'salao' AND column_name IN ('meios_pagamento', 'comodidades')
+       ORDER BY column_name`,
+    );
+    expect(r).toEqual([
+      { coluna: 'comodidades', tipo: '_text', nulo: 'NO', padrao: 'ARRAY[]::text[]' },
+      { coluna: 'meios_pagamento', tipo: '_text', nulo: 'NO', padrao: 'ARRAY[]::text[]' },
+    ]);
   });
 
   it('CA-1 (RN-7): reserva_sem_sobreposicao usa tstzrange(inicio, ocupado_ate) e só os status ativos', async () => {
@@ -270,12 +310,12 @@ describe('CA-1: o Prisma não acusa drift', () => {
 });
 
 describe('CA-15: integridade referencial e identificadores', () => {
-  it('CA-15: as 37 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
+  it('CA-15: as 38 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
     const r = await linhas<{ nome: string; del: string; upd: string }>(
       `SELECT conname AS nome, confdeltype::text AS del, confupdtype::text AS upd
        FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace`,
     );
-    expect(r).toHaveLength(37);
+    expect(r).toHaveLength(38); // 37 até a D-007 + salao_funcionamento_salao_id_fkey (D-020)
     expect(r.filter((f) => f.del !== 'r' || f.upd !== 'r')).toEqual([]);
   });
 
@@ -340,6 +380,7 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261118000100_reserva_exclusion', antes: false, ok: true },
       { migration_name: '20261118000200_restricoes_sql', antes: false, ok: true },
       { migration_name: '20261119000000_simuladores_integracao', antes: false, ok: true },
+      { migration_name: '20261120000000_perfil_funcionamento', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,

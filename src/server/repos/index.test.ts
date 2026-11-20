@@ -15,6 +15,21 @@ import { repos } from './index';
 const SALAO = '0b0c5f6e-4a7d-4f0a-9a43-1f7f3c1e2d10';
 const ID = '5d2a9b1c-3e4f-4a5b-8c6d-7e8f9a0b1c2d';
 const DADOS = { nome: 'Corte', precoCentavos: 8000, duracaoMin: 45 };
+const PERFIL_VAZIO = {
+  descricao: null,
+  enderecoLogradouro: null,
+  enderecoNumero: null,
+  enderecoComplemento: null,
+  enderecoBairro: null,
+  enderecoCidade: null,
+  enderecoUf: null,
+  enderecoCep: null,
+  telefoneE164: null,
+  whatsappE164: null,
+  instagram: null,
+  meiosPagamento: [],
+  comodidades: [],
+};
 const ctx = criarTenantContext({ usuarioId: ID, papel: 'gestor', salaoId: SALAO, profissionalId: null });
 
 // Banco inacessível (porta fechada): os casos abaixo têm de responder ANTES de qualquer consulta;
@@ -143,6 +158,13 @@ describe('repositórios de tenant sem consultar o banco', () => {
           intervaloMin: 0,
         }),
         r.saloes.trocarSlug(c, 'novo-slug'),
+        r.saloes.obterPerfil(c),
+        r.saloes.atualizarPerfil(c, PERFIL_VAZIO),
+        r.funcionamento.travar(c),
+        r.funcionamento.listar(c),
+        r.funcionamento.aplicarDiferenca(c, { remover: [ID], inserir: [] }),
+        r.funcionamento.definirEstado(c, true),
+        r.funcionamento.ler(c),
       ];
       for (const chamada of chamadas) {
         await expect(chamada).rejects.toThrow(
@@ -161,6 +183,11 @@ describe('repositórios de tenant sem consultar o banco', () => {
   it('D-015: aplicarDiferenca com listas vazias (ou só ids malformados) não consulta', async () => {
     expect(await repos().jornadas.aplicarDiferenca(ctx, ID, { remover: [], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
     expect(await repos().jornadas.aplicarDiferenca(ctx, ID, { remover: ['abc'], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
+  });
+
+  it('D-020: funcionamento.aplicarDiferenca com listas vazias (ou só ids malformados) não consulta', async () => {
+    expect(await repos().funcionamento.aplicarDiferenca(ctx, { remover: [], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
+    expect(await repos().funcionamento.aplicarDiferenca(ctx, { remover: ['abc'], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
   });
 
   it('D-016: listarConfirmadasQueCruzam com limite inválido → RangeError sem consulta', async () => {

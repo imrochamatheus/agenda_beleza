@@ -1,6 +1,9 @@
 // Formatadores de exibição em pt-BR (D-009 RN-11). Fonte única: nenhum outro arquivo de src/
-// formata moeda, data ou hora para exibição (CA-10). Puro e sem imports: usável no servidor e em
-// componentes cliente, com o mesmo resultado nos dois (sem divergência de hidratação).
+// formata moeda, data ou hora para exibição (CA-10). Puro: usável no servidor e em componentes
+// cliente, com o mesmo resultado nos dois (sem divergência de hidratação). O único import é
+// ./telefone (também puro), para validar o telefone gravado (D-020).
+
+import { ehTelefoneBrE164 } from './telefone';
 
 /** Igual ao @default de salao.fuso (prisma/schema.prisma); um teste compara os dois (D-14). */
 export const FUSO_PADRAO = 'America/Sao_Paulo';
@@ -227,4 +230,34 @@ export function formatarPeriodoBloqueio(inicio: Date, fim: Date, fuso: string, d
   const primeira = formatarData(inicio, fuso);
   const ultima = formatarData(new Date(fim.getTime() - 1), fuso);
   return primeira === ultima ? `${primeira} (dia inteiro)` : `${primeira} a ${ultima}`;
+}
+
+/**
+ * Telefone gravado em E.164 brasileiro (D-020 RN-7): '+551134567890' → '(11) 3456-7890';
+ * '+5511987654321' → '(11) 98765-4321'. Fora do formato gravado (ehTelefoneBrE164) → RangeError.
+ */
+export function formatarTelefone(e164: string): string {
+  if (!ehTelefoneBrE164(e164)) {
+    throw new RangeError(`formatarTelefone: telefone fora do formato gravado (${String(e164)})`);
+  }
+  const ddd = e164.slice(3, 5);
+  const numero = e164.slice(5);
+  const corte = numero.length - 4;
+  return `(${ddd}) ${numero.slice(0, corte)}-${numero.slice(corte)}`;
+}
+
+/** CEP gravado com 8 dígitos (D-020 RN-6): '01310100' → '01310-100'. Fora de /^\d{8}$/ → RangeError. */
+export function formatarCep(cep: string): string {
+  if (typeof cep !== 'string' || !/^\d{8}$/.test(cep)) {
+    throw new RangeError(`formatarCep: CEP fora do formato gravado (${String(cep)})`);
+  }
+  return `${cep.slice(0, 5)}-${cep.slice(5)}`;
+}
+
+/** Inteiro não negativo com milhar por '.' (D-020: contador da descrição): 1000 → '1.000'. Sem Intl. */
+export function formatarInteiro(n: number): string {
+  if (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0) {
+    throw new RangeError(`formatarInteiro: inteiro não negativo esperado (recebido: ${String(n)})`);
+  }
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }

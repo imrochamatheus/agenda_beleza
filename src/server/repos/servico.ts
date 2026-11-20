@@ -9,10 +9,13 @@ import type { Executor } from './transacao';
 // Repositório de serviços e dos vínculos serviço × profissional (D-005; D-014 §3.2). Todo método
 // filtra pelo salão do contexto; id que não é UUID → NaoEncontrado sem consultar.
 //
-// ORDEM CANÔNICA DE TRAVAS (D-014 D-14; obrigação para E3.1/E3.2/E3.4/E3.5):
-//   profissional(is) (FOR SHARE ou FOR UPDATE, por id)
-//     → servico(s) (FOR SHARE / FOR NO KEY UPDATE, por id)
-//       → servico_profissional / reserva / reserva_item
+// ORDEM CANÔNICA DE TRAVAS (D-014 D-14, estendida pela D-015 D-12 e pela D-020 §3.5; obrigação para
+// E3.1/E3.2/E3.4/E3.5):
+//   salao (FOR NO KEY UPDATE: regras, slug, perfil por UPDATE, funcionamento; ver repos/funcionamento.ts)
+//     → profissional(is) (FOR UPDATE | FOR NO KEY UPDATE | FOR SHARE, por id)
+//       → servico(s) (FOR SHARE / FOR NO KEY UPDATE, por id)
+//         → servico_profissional / jornada / salao_funcionamento / reserva / reserva_item
+// Os INSERT com FK para salao só tomam FOR KEY SHARE, que não conflita com FOR NO KEY UPDATE.
 // - Editar serviço: profissionais escolhidos FOR SHARE → serviço FOR NO KEY UPDATE → UPDATE do
 //   serviço → DELETE/INSERT de vínculos.
 // - Criar serviço: profissionais escolhidos FOR SHARE → INSERT do serviço → INSERT de vínculos.

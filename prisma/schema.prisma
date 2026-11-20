@@ -136,6 +136,31 @@ model Salao {
   criadoEm         DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
   atualizadoEm     DateTime  @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
 
+  // Perfil público (D-020, E2.6). Tudo opcional: vazio = NULL, nunca ''. Formatos garantidos pelos
+  // CHECKs salao_*_chk da migração 20261120000000_perfil_funcionamento (parecer: docs/demandas/D-020/dba.md).
+  // Endereço: os 6 obrigatórios todos NULL ou todos preenchidos (salao_endereco_completo_chk).
+  descricao             String?
+  enderecoLogradouro    String?  @map("endereco_logradouro")
+  enderecoNumero        String?  @map("endereco_numero")
+  enderecoComplemento   String?  @map("endereco_complemento")
+  enderecoBairro        String?  @map("endereco_bairro")
+  enderecoCidade        String?  @map("endereco_cidade")
+  /// Sigla da UF (27 valores, salao_uf_chk).
+  enderecoUf            String?  @map("endereco_uf")
+  /// 8 dígitos, sem hífen.
+  enderecoCep           String?  @map("endereco_cep")
+  telefoneE164          String?  @map("telefone_e164")
+  whatsappE164          String?  @map("whatsapp_e164")
+  /// Nome de usuário, minúsculo e sem @.
+  instagram             String?
+  /// Chaves estáveis de MEIOS_PAGAMENTO/COMODIDADES (src/server/salao/perfil-tipos.ts); valores SEM CHECK
+  /// (lista nova = mudança de código). NOT NULL, sem elemento NULL e até 20 itens por CHECK.
+  meiosPagamento        String[] @default([]) @map("meios_pagamento")
+  comodidades           String[] @default([])
+  /// false = "não informado" (a disponibilidade segue só a jornada). Com false, salao_funcionamento
+  /// fica vazio (garantia da aplicação, sob a trava do salão) e a leitura ignora as linhas.
+  funcionamentoDefinido Boolean  @default(false) @map("funcionamento_definido")
+
   slugs                SalaoSlug[]
   usuarios             Usuario[]
   profissionais        Profissional[]
@@ -152,6 +177,7 @@ model Salao {
   mensagens            Mensagem[]
   convites             Convite[]
   auditorias           Auditoria[]
+  funcionamento        SalaoFuncionamento[]
 
   @@map("salao")
 }
@@ -313,6 +339,23 @@ model Jornada {
 
   @@index([salaoId, profissionalId, diaSemana])
   @@map("jornada")
+}
+
+/// Horário de funcionamento do salão (D-020): mesma forma da jornada, em minutos de parede no salao.fuso.
+/// Faixa, dia e não sobreposição por (salão, dia) só no SQL bruto: salao_funcionamento_dia_semana_chk,
+/// salao_funcionamento_faixa_chk e salao_funcionamento_sem_sobreposicao (EXCLUDE; seu índice GiST,
+/// que começa por salao_id, atende as leituras por salão: sem btree próprio, ver dba.md).
+model SalaoFuncionamento {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId   String   @map("salao_id") @db.Uuid
+  diaSemana Int      @map("dia_semana") @db.SmallInt
+  inicioMin Int      @map("inicio_min")
+  fimMin    Int      @map("fim_min")
+  criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao Salao @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("salao_funcionamento")
 }
 
 /// profissional_id nulo = bloqueio do salão inteiro. Removível (não é histórico protegido).

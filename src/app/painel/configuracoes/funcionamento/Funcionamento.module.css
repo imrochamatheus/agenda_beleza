@@ -1,0 +1,78 @@
+/* Horário de funcionamento do salão (D-020 RN-19). Só tokens do tema (globals.css); breakpoint único 48rem.
+   Os dias e as linhas usam o editor compartilhado (src/app/painel/_componentes/semana/Semana.module.css). */
+.pagina {
+  display: grid;
+  gap: var(--espaco-6);
+  min-width: 0;
+}
+
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.ajuda {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.grupo {
+  display: grid;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  min-width: 0;
+}
+
+.grupo > legend {
+  padding: 0 var(--espaco-1);
+  font-weight: 600;
+}
+
+.opcao {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--espaco-2);
+  min-height: var(--alvo-minimo);
+  padding-block: var(--espaco-2);
+  cursor: pointer;
+}
+
+.radio {
+  flex: none;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  margin: 0.125rem 0 0;
+  accent-color: var(--cor-primaria);
+}
+
+.radio:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.sucesso {
+  border-radius: var(--raio);
+}
+
+.sucesso:focus-visible,
+.sucesso:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-3) var(--espaco-6);
+}
+
+.voltar {
+  margin: 0;
+}

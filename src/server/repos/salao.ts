@@ -2,10 +2,10 @@ import type { ContextoEscopado } from '@/server/tenant/context';
 import { exigirEscopo } from '@/server/tenant/context';
 import { NaoEncontrado } from '@/server/tenant/erros';
 
-import type { ConfiguracoesDTO, ResultadoTrocaSlugDTO, SlugsDoSalaoDTO } from './tipos';
+import type { ConfiguracoesDTO, PerfilDTO, ResultadoTrocaSlugDTO, SlugsDoSalaoDTO } from './tipos';
 import type { Executor } from './transacao';
 
-// Repositório das configurações do salão (D-017 §3.3). Todo método chama exigirEscopo(ctx): o salao_id
+// Repositório das configurações e do perfil do salão (D-017 §3.3; D-020 §3.5). Todo método chama exigirEscopo(ctx): o salao_id
 // vem só do contexto. Sem DDL nova: a PK de salao_slug (unicidade global entre atuais e históricos),
 // salao_slug_formato_chk e o índice único PARCIAL salao_slug_atual_uniq (um atual por salão; índice,
 // não constraint, então NÃO pode ser adiado: é conferido a cada comando) garantem RN-3/RN-4.
@@ -44,7 +44,31 @@ export interface RepoSalao {
   atualizarConfiguracoes(ctx: ContextoEscopado, d: ConfiguracoesDTO): Promise<void>;
   /** Passos 1–3 acima. Não toca a linha de salao. */
   trocarSlug(ctx: ContextoEscopado, novo: string): Promise<ResultadoTrocaSlugDTO>;
+  /** D-020: as 13 colunas do perfil (select explícito); sem linha → NaoEncontrado. */
+  obterPerfil(ctx: ContextoEscopado): Promise<PerfilDTO>;
+  /**
+   * D-020 (A-3): um UPDATE SÓ com as 13 colunas do perfil (atualizado_em por @updatedAt); 0 linhas →
+   * NaoEncontrado. Sem trava explícita: o UPDATE toma FOR NO KEY UPDATE e serializa com regras, slug e
+   * funcionamento, sem sobrescrever as colunas deles.
+   */
+  atualizarPerfil(ctx: ContextoEscopado, d: PerfilDTO): Promise<void>;
 }
+
+const CAMPOS_PERFIL = {
+  descricao: true,
+  enderecoLogradouro: true,
+  enderecoNumero: true,
+  enderecoComplemento: true,
+  enderecoBairro: true,
+  enderecoCidade: true,
+  enderecoUf: true,
+  enderecoCep: true,
+  telefoneE164: true,
+  whatsappE164: true,
+  instagram: true,
+  meiosPagamento: true,
+  comodidades: true,
+} as const;
 
 const CAMPOS = {
   nome: true,
@@ -146,6 +170,40 @@ export function criarRepoSalao(db: Executor): RepoSalao {
         throw new Error(`troca de slug: ${promovidos} slug(s) promovido(s); esperado 1`);
       }
       return 'trocado';
+    },
+
+    async obterPerfil(ctx) {
+      const salaoId = exigirEscopo(ctx);
+      const linha = await db.salao.findUnique({ where: { id: salaoId }, select: CAMPOS_PERFIL });
+      if (!linha) {
+        throw new NaoEncontrado();
+      }
+      return linha;
+    },
+
+    async atualizarPerfil(ctx, d) {
+      const salaoId = exigirEscopo(ctx);
+      const { count } = await db.salao.updateMany({
+        where: { id: salaoId },
+        data: {
+          descricao: d.descricao,
+          enderecoLogradouro: d.enderecoLogradouro,
+          enderecoNumero: d.enderecoNumero,
+          enderecoComplemento: d.enderecoComplemento,
+          enderecoBairro: d.enderecoBairro,
+          enderecoCidade: d.enderecoCidade,
+          enderecoUf: d.enderecoUf,
+          enderecoCep: d.enderecoCep,
+          telefoneE164: d.telefoneE164,
+          whatsappE164: d.whatsappE164,
+          instagram: d.instagram,
+          meiosPagamento: [...d.meiosPagamento],
+          comodidades: [...d.comodidades],
+        },
+      });
+      if (count === 0) {
+        throw new NaoEncontrado();
+      }
     },
   };
 }

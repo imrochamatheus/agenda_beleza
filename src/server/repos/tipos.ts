@@ -163,3 +163,26 @@ export type SlugsDoSalaoDTO = { atual: string; anteriores: { slug: string; criad
 
 /** Resultado da troca de slug no banco: `em_uso` = de outro salão, nada gravado. */
 export type ResultadoTrocaSlugDTO = 'trocado' | 'em_uso';
+
+/** Colunas do perfil público do salão (D-020 §3.5). Listas cruas do banco (podem ter chave fora da lista). */
+export type PerfilDTO = {
+  descricao: string | null;
+  enderecoLogradouro: string | null;
+  enderecoNumero: string | null;
+  enderecoComplemento: string | null;
+  enderecoBairro: string | null;
+  enderecoCidade: string | null;
+  enderecoUf: string | null;
+  enderecoCep: string | null;
+  telefoneE164: string | null;
+  whatsappE164: string | null;
+  instagram: string | null;
+  meiosPagamento: string[];
+  comodidades: string[];
+};
+
+/** Linha de `salao_funcionamento` (D-020 §3.5): hora local de parede em minutos do dia, 0 = domingo. */
+export type FuncionamentoLinhaDTO = { id: string; diaSemana: number; inicioMin: number; fimMin: number };
+
+/** Leitura consistente do funcionamento (um comando). `linhas` é sempre [] quando definido = false (RN-13). */
+export type FuncionamentoDTO = { definido: boolean; linhas: { diaSemana: number; inicioMin: number; fimMin: number }[] };
