@@ -174,6 +174,16 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Demonstração para o E2E:** `/dev/bloqueios` (`?modo=gestor|profissional|edicao`), ligada pela mesma `VITRINE_COMPONENTES=true` da vitrine, com os mesmos componentes e ações que só validam (não grava nada; 404 com a variável desligada).
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/bloqueios/concorrencia.test.ts || break; done`.
 
+## Configurações do salão
+
+- **Onde:** `/painel/configuracoes` (item "Configurações" do menu), só para o **gestor**; o profissional vê "Acesso negado". São dois formulários independentes, e ambos funcionam sem JavaScript.
+- **Dados e regras de horário** (gravados juntos, ou nenhum): nome do salão (de 2 a 80 caracteres; trocar o nome não muda o endereço); fuso horário, escolhido da lista (o grupo "Brasil" primeiro; a lista é a de fusos canônicos do Node, `Intl.supportedValuesOf('timeZone')`, e não aceita `UTC`, offsets como `+03:00` nem aliases como `Brazil/East`, exceto o valor já gravado no salão); grade de horários de **5, 10, 15, 20, 30 ou 60 minutos**; antecedência mínima de **0 a 72 horas** inteiras; janela máxima de **1 a 365 dias**; intervalo entre atendimentos de **0 a 120 minutos**. A antecedência precisa ser menor que a janela. Os padrões de um salão novo são `America/Sao_Paulo`, 15 min, 2 h, 60 dias e 0 min.
+- **Efeito:** as regras valem para os próximos horários oferecidos; reservas, jornadas e bloqueios existentes não mudam. Ao trocar o fuso, a jornada continua com os mesmos horários de relógio (agora no novo fuso), e bloqueios e reservas mantêm o instante e passam a ser exibidos no novo fuso.
+- **Endereço público (slug):** letras minúsculas sem acento, números e hífens entre eles, de 3 a 60 caracteres (o texto é aparado e posto em minúsculas, sem outra conversão). Segmentos reservados das rotas (`painel`, `admin`, `entrar`…) são recusados. O endereço anterior vira **histórico permanente** do salão: continua levando ao salão (o redirecionamento é da página pública, E4.1) e nunca pode ser usado por outro salão; o salão pode voltar a um endereço anterior dele. Um endereço em uso por outro salão (atual ou histórico) é recusado sem revelar o dono.
+- **Concorrência:** a troca de endereço e a gravação das regras travam a linha do salão (`FOR NO KEY UPDATE`, que não bloqueia novas reservas); dois salões pedindo o mesmo endereço ao mesmo tempo: um vence e o outro recebe "em uso".
+- **Demonstração para o E2E:** `/dev/configuracoes` (`?fuso=alias` mostra um fuso gravado fora da lista), ligada pela mesma `VITRINE_COMPONENTES=true` da vitrine, com os mesmos componentes e ações que só validam (não grava nada; 404 com a variável desligada).
+- **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/salao/concorrencia.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.

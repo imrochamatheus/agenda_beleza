@@ -48,6 +48,35 @@ function formatador(fuso: string): Intl.DateTimeFormat {
   return f;
 }
 
+// Duas validações de fuso, com papéis diferentes (D-017 D-20):
+// - validarFuso: "o Intl conhece" (CÁLCULO). Aceita aliases, UTC e offsets; usada nas conversões e com
+//   dados já gravados (inclusive antigos). Não muda.
+// - ehFusoCanonico: "aceito como ENTRADA nova" (D-017 RN-9). Só os nomes canônicos do runtime.
+// Todo canônico passa em validarFuso (teste).
+
+let canonicos: { lista: readonly string[]; conjunto: ReadonlySet<string> } | null = null;
+
+function obterCanonicos(): { lista: readonly string[]; conjunto: ReadonlySet<string> } {
+  if (canonicos === null) {
+    const lista = Object.freeze([...Intl.supportedValuesOf('timeZone')]);
+    canonicos = { lista, conjunto: new Set(lista) };
+  }
+  return canonicos;
+}
+
+/**
+ * Nomes de fuso aceitos como ENTRADA (D-017 RN-9): Intl.supportedValuesOf('timeZone') do runtime
+ * (nomes canônicos do CLDR/ICU; não inclui UTC, offsets nem aliases). Calculado uma vez e congelado.
+ */
+export function fusosCanonicos(): readonly string[] {
+  return obterCanonicos().lista;
+}
+
+/** true só se `v` é string e pertence EXATAMENTE (mesma caixa, sem aparar) a fusosCanonicos(). Nunca lança. */
+export function ehFusoCanonico(v: unknown): v is string {
+  return typeof v === 'string' && obterCanonicos().conjunto.has(v);
+}
+
 /** '' , não-string ou zona desconhecida pelo Intl → RangeError('Fuso horário inválido: "<x>"'). Devolve o próprio fuso. */
 export function validarFuso(fuso: unknown): string {
   if (typeof fuso !== 'string' || fuso === '') {

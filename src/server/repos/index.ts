@@ -9,11 +9,13 @@ import { criarRepoProfissional } from './profissional';
 import type { RepoProfissional } from './profissional';
 import { criarRepoReserva } from './reserva';
 import type { RepoReserva } from './reserva';
+import { criarRepoSalao } from './salao';
+import type { RepoSalao } from './salao';
 import { criarRepoServico } from './servico';
 import type { RepoServico } from './servico';
 import type { Executor } from './transacao';
 
-export type { RepoBloqueio, RepoCliente, RepoJornada, RepoProfissional, RepoReserva, RepoServico };
+export type { RepoBloqueio, RepoCliente, RepoJornada, RepoProfissional, RepoReserva, RepoSalao, RepoServico };
 
 /** Repositórios de tenant: toda operação recebe ContextoEscopado e filtra salao_id (RN-8). */
 export interface Repos {
@@ -23,6 +25,8 @@ export interface Repos {
   reservas: RepoReserva;
   jornadas: RepoJornada;
   bloqueios: RepoBloqueio;
+  /** Configurações e slugs do próprio salão (D-017). */
+  saloes: RepoSalao;
 }
 
 /** Conjunto ligado a um executor (cliente ou transação). Uso interno: emTransacao e repos(). */
@@ -34,6 +38,7 @@ export function criarRepos(db: Executor): Repos {
     reservas: criarRepoReserva(db),
     jornadas: criarRepoJornada(db),
     bloqueios: criarRepoBloqueio(db),
+    saloes: criarRepoSalao(db),
   };
 }
 

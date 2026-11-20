@@ -47,6 +47,7 @@ export const ROTAS = {
   devMpCheckout: '/dev/mp-checkout',
   devJornada: '/dev/jornada',
   devBloqueios: '/dev/bloqueios',
+  devConfiguracoes: '/dev/configuracoes',
 } as const;
 
 export type ItemNavegacao = {
