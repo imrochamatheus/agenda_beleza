@@ -12,7 +12,8 @@ export const metadata: Metadata = { title: 'Painel', robots: { index: false } };
 
 /**
  * /painel mínimo (D-010 RN-21): papel e salão vêm da sessão no servidor. Sem redirecionar para a
- * agenda enquanto a E3.3 não existir.
+ * agenda enquanto a E3.3 não existir. Quem tem perfil de profissional (inclusive o gestor que atende)
+ * vê o link "Minha jornada" (D-015 D-9).
  */
 export default async function PaginaPainel() {
   const acesso = await exigirAcessoAoPainel(ROTAS.painel);
@@ -28,6 +29,11 @@ export default async function PaginaPainel() {
       areaUsuario={<AreaUsuario nome={nomeUsuario} />}
     >
       <h1>Olá, {nomeUsuario}</h1>
+      {acesso.ctx.profissionalId !== null ? (
+        <p>
+          <a href={ROTAS.jornada(acesso.ctx.profissionalId)}>Minha jornada</a>
+        </p>
+      ) : null}
     </PanelLayout>
   );
 }

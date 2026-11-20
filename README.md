@@ -155,6 +155,15 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Desativar e reativar** (um botão, sem confirmação; funciona sem JavaScript): o serviço nunca é apagado. Desativar o tira da página pública e de novas reservas; reservas já feitas, com o preço e a duração da época (snapshot), e os vínculos não mudam. Alterar preço ou duração também não altera reservas existentes.
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/servicos/concorrencia.test.ts || break; done`.
 
+## Jornada
+
+- **Onde:** `/painel/profissionais/<id>/jornada`, pelo link "Ver e editar a jornada" na página do profissional. Só o **gestor** edita, a jornada de qualquer profissional do salão (inclusive a do próprio perfil e a de um profissional inativo, que só passa a valer quando ele for reativado). O profissional vê a **própria** jornada, somente leitura, pelo link "Minha jornada" em `/painel`; a de outro profissional do salão mostra "Acesso negado", e a de outro salão, 404.
+- **Formato:** para cada dia (de segunda a domingo), até **6 intervalos** de trabalho; as pausas são as lacunas entre eles, e um dia sem intervalos é folga. Os horários são **hora local do salão** (sem conversão de fuso), no formato `HH:MM` (aceita `9:00`), em **múltiplos de 5 minutos**. O fim precisa ser depois do início e a jornada não atravessa a meia-noite: use `24:00` como fim (ex.: `22:00`–`24:00`) e continue no dia seguinte a partir de `00:00`. Intervalos sobrepostos são recusados; intervalos **contíguos** (`09:00`–`12:00` e `12:00`–`13:00`) são **unidos** ao salvar. Linhas vazias são ignoradas.
+- **Salvar:** a semana inteira de uma vez, numa transação. Qualquer erro recusa tudo e mostra os erros por dia e por intervalo, com o que foi digitado; salvar a mesma semana não grava nada. Funciona sem JavaScript.
+- **Reservas:** alterar a jornada não altera nem cancela reservas existentes (que podem ficar fora da nova jornada) e não envia mensagens.
+- **Demonstração para o E2E:** `/dev/jornada` (`?modo=edicao|leitura|vazia`), ligada pela mesma `VITRINE_COMPONENTES=true` da vitrine, com os mesmos componentes e uma ação que só valida (não grava nada; 404 com a variável desligada).
+- **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/jornadas/concorrencia.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.

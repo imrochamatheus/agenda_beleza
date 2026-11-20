@@ -71,6 +71,12 @@ export default async function PaginaProfissional({ params }: { params: Promise<{
         <h1>{profissional.nome}</h1>
         <FormularioProfissional modo="editar" acao={editarProfissionalAcao} profissional={profissional} />
         <Acesso p={profissional} />
+        <section className={estilos.secao} aria-labelledby="jornada-profissional">
+          <h2 id="jornada-profissional">Jornada</h2>
+          <p>
+            <a href={ROTAS.jornada(profissional.id)}>Ver e editar a jornada</a>
+          </p>
+        </section>
         <ControleAtivacao
           id={profissional.id}
           nome={profissional.nome}
