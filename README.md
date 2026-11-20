@@ -136,6 +136,16 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Ler o link no modo simulado** (`EMAIL_ADAPTER=simulado`): o mesmo comando do cadastro (`select corpo from email_log …`); o assunto é "Redefinição de senha no Agenda Beleza". O e-mail aparece em `email_log` logo depois da resposta da tela (não antes dela).
 - **Produção:** `APP_URL` monta o link (como no cadastro). Nenhuma variável nem credencial nova.
 
+## Profissionais
+
+- **Onde:** `/painel/profissionais` (lista), `/painel/profissionais/novo` (cadastro) e `/painel/profissionais/<id>` (edição, desativação e reativação). Só o **gestor** gerencia profissionais: o profissional vê "Acesso negado" e recebe 403 nas ações; sem sessão, a página leva a `/entrar`. A lista traz apenas o salão da sessão (ativos primeiro, por nome), com o estado ("Ativo"/"Inativo") e o acesso ("Você", "Com acesso", "Sem acesso").
+- **Cadastro e edição:** nome obrigatório (de 2 a 100 caracteres, espaços extras removidos) e e-mail opcional (gravado em minúsculas; guardado para o convite). Nomes repetidos são permitidos. Quem já tem acesso ao painel (convite aceito ou o próprio gestor) tem o e-mail como **somente leitura**: o servidor recusa a troca, e o e-mail de login nunca muda por esta tela.
+- **Desativar** (com confirmação): o profissional nunca é apagado. Ele sai da página pública e da escolha de profissional, e reservas, jornadas, bloqueios e vínculos com serviços continuam apontando para ele. A desativação é **recusada** se houver reserva **confirmada** que ainda não terminou (inclusive em andamento); a tela lista essas reservas (data e hora no fuso do salão, serviços e cliente, ou "cliente removida"). Remarque ou cancele antes. Na mesma transação, as **sessões** do usuário profissional vinculado são revogadas (ele perde o acesso na próxima requisição e o login responde "Seu acesso está desativado. Fale com a gestão do salão.") e os **convites pendentes** são invalidados. Desativar o próprio perfil do gestor não encerra as sessões do gestor.
+- **Reativar:** volta à lista de ativos e à página pública; sessões e convites antigos não voltam (o profissional entra de novo com a senha).
+- **"Eu também atendo":** o gestor sem perfil ativo vê essa ação na lista. Ela cria o perfil de profissional vinculado a ele (sem convite, com o nome do usuário) ou reativa o existente; há no máximo um perfil por gestor, mesmo com cliques simultâneos.
+- **Convite:** o envio do convite por e-mail é da E1.4; a seção "Acesso ao painel" da edição é onde ele vai aparecer.
+- **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/profissionais/concorrencia.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.

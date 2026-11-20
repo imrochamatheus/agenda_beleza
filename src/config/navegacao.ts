@@ -24,6 +24,8 @@ export const ROTAS = {
   clientes: '/painel/clientes',
   servicos: '/painel/servicos',
   profissionais: '/painel/profissionais',
+  novoProfissional: '/painel/profissionais/novo',
+  profissional: (id: string) => `/painel/profissionais/${seg(id)}`,
   jornada: (id: string) => `/painel/profissionais/${seg(id)}/jornada`,
   bloqueios: '/painel/bloqueios',
   configuracoes: '/painel/configuracoes',

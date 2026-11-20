@@ -1,0 +1,132 @@
+import { randomBytes } from 'node:crypto';
+
+import type pg from 'pg';
+
+import { criarTenantContext } from '@/server/tenant/context';
+import type { TenantContext } from '@/server/tenant/context';
+
+import type { SalaoCompleto } from '../../support/factories';
+
+// Apoio local aos testes de tests/integration/profissionais (D-013). Não é arquivo de teste (o glob
+// do Vitest só pega *.test.ts). SQL direto pelo driver `pg` na base deste worker, sem mocks de banco.
+
+export const MIN_MS = 60_000;
+
+/** Contexto do gestor do salão, igual ao que resolverTenant montaria. */
+export function ctxDoGestor(s: SalaoCompleto, profissionalId = s.gestor.profissionalId): TenantContext {
+  return criarTenantContext({ usuarioId: s.gestor.usuarioId, papel: 'gestor', salaoId: s.salaoId, profissionalId });
+}
+
+export function ctxDoProfissional(s: SalaoCompleto): TenantContext {
+  return criarTenantContext({
+    usuarioId: s.profissional.usuarioId,
+    papel: 'profissional',
+    salaoId: s.salaoId,
+    profissionalId: s.profissional.profissionalId,
+  });
+}
+
+/** Cancela as reservas criadas pela fábrica (R-8): o profissional fica sem reserva futura confirmada. */
+export async function cancelarReservasDoSalao(c: pg.Client, salaoId: string): Promise<void> {
+  await c.query(`UPDATE reserva SET status = 'cancelado', cancelada_em = now() WHERE salao_id = $1`, [salaoId]);
+}
+
+export type ReservaDeTeste = {
+  salaoId: string;
+  profissionalId: string;
+  clienteId: string;
+  inicio: Date;
+  fim: Date;
+  status?: 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
+  /** Serviços dos itens, na ordem (o primeiro item recebe toda a duração). */
+  servicoIds: string[];
+};
+
+/** Reserva com itens (snapshot fictício de preço e duração). Devolve o id. */
+export async function inserirReservaComItens(c: pg.Client, r: ReservaDeTeste): Promise<string> {
+  const { rows } = await c.query<{ id: string }>(
+    `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
+     VALUES ($1, $2, $3, $4, $5, $5, $6, 'equipe') RETURNING id::text AS id`,
+    [r.salaoId, r.profissionalId, r.clienteId, r.inicio, r.fim, r.status ?? 'confirmado'],
+  );
+  const id = rows[0].id;
+  const duracao = Math.max(1, Math.round((r.fim.getTime() - r.inicio.getTime()) / MIN_MS));
+  for (const [ordem, servicoId] of r.servicoIds.entries()) {
+    await c.query(
+      `INSERT INTO reserva_item (salao_id, reserva_id, servico_id, ordem, preco_centavos, duracao_min)
+       VALUES ($1, $2, $3, $4, 1000, $5)`,
+      [r.salaoId, id, servicoId, ordem, ordem === 0 ? duracao : 1],
+    );
+  }
+  return id;
+}
+
+export type EstadoConvite = 'pendente' | 'aceito' | 'invalidado';
+
+/** Convite do profissional no estado pedido. Devolve o id. */
+export async function inserirConvite(
+  c: pg.Client,
+  d: { salaoId: string; profissionalId: string; estado: EstadoConvite },
+): Promise<string> {
+  const { rows } = await c.query<{ id: string }>(
+    `INSERT INTO convite (salao_id, profissional_id, email, token_hash, expira_em, aceito_em, invalidado_em)
+     VALUES ($1, $2, $3, $4, now() + interval '7 days', $5, $6) RETURNING id::text AS id`,
+    [
+      d.salaoId,
+      d.profissionalId,
+      `convite-${randomBytes(6).toString('hex')}@exemplo.com.br`,
+      randomBytes(32).toString('hex'),
+      d.estado === 'aceito' ? new Date('2026-01-01T00:00:00Z') : null,
+      d.estado === 'invalidado' ? new Date('2026-01-02T00:00:00Z') : null,
+    ],
+  );
+  return rows[0].id;
+}
+
+export type LinhaProfissional = {
+  id: string;
+  salao_id: string;
+  usuario_id: string | null;
+  nome: string;
+  email: string | null;
+  ativo: boolean;
+  atualizado_em: Date;
+};
+
+export async function linhaProfissional(c: pg.Client, id: string): Promise<LinhaProfissional | undefined> {
+  const { rows } = await c.query<LinhaProfissional>(
+    `SELECT id::text AS id, salao_id::text AS salao_id, usuario_id::text AS usuario_id, nome, email, ativo, atualizado_em
+       FROM profissional WHERE id = $1`,
+    [id],
+  );
+  return rows[0];
+}
+
+/** Sessões do usuário: [id, revogada_em]. */
+export async function sessoesDe(c: pg.Client, usuarioId: string): Promise<{ id: string; revogada_em: Date | null }[]> {
+  const { rows } = await c.query<{ id: string; revogada_em: Date | null }>(
+    'SELECT id::text AS id, revogada_em FROM sessao WHERE usuario_id = $1 ORDER BY id',
+    [usuarioId],
+  );
+  return rows;
+}
+
+/**
+ * Fotografia de sessões, convites e profissionais de um salão (para provar "nada mudou"). Das sessões
+ * só entra `revogada_em`: `expira_em` muda legitimamente com a renovação no uso (D-010 RN-10).
+ */
+export async function fotografiaDoSalao(c: pg.Client, salaoId: string): Promise<unknown> {
+  const sessoes = await c.query(
+    `SELECT s.id, s.revogada_em FROM sessao s JOIN usuario u ON u.id = s.usuario_id
+      WHERE u.salao_id = $1 ORDER BY s.id`,
+    [salaoId],
+  );
+  const convites = await c.query('SELECT id, aceito_em, invalidado_em FROM convite WHERE salao_id = $1 ORDER BY id', [
+    salaoId,
+  ]);
+  const profissionais = await c.query(
+    'SELECT id, nome, email, ativo, usuario_id, atualizado_em FROM profissional WHERE salao_id = $1 ORDER BY id',
+    [salaoId],
+  );
+  return { sessoes: sessoes.rows, convites: convites.rows, profissionais: profissionais.rows };
+}

@@ -253,3 +253,36 @@ describe('forma chamável (Next): lê o cookie ab_sessao por next/headers', () =
     expect(await acao({ eco: 'x' })).toEqual(await acao.executar(credencial, { eco: 'x' }));
   });
 });
+
+describe('D-013 D-15: o handler recebe o relógio da execução (exec.agora)', () => {
+  it('exec.agora é o deps.agora injetado, congelado, e o mesmo instante usado em resolverTenant', async () => {
+    const expiraEm = new Date(Date.now() + HORA_MS);
+    const sessao = await criarSessao(s.gestor.usuarioId, { expiraEm });
+    const recebidos: { agora: Date; congelado: boolean }[] = [];
+    const acao = defineAcao({ papeis: ['gestor'], capacidade: 'configurar' }, async (_ctx, _i: object, exec) => {
+      recebidos.push({ agora: exec.agora, congelado: Object.isFrozen(exec) });
+      return exec.agora.toISOString();
+    });
+    // O mesmo relógio decide a sessão: no limite expira_em = agora, 401 e o handler não executa.
+    expect(await acao.executar(sessao.credencial, {}, { agora: expiraEm })).toEqual(NAO_AUTENTICADO);
+    expect(recebidos).toHaveLength(0);
+    const antes = new Date(expiraEm.getTime() - 1);
+    expect(await acao.executar(sessao.credencial, {}, { agora: antes })).toEqual({ ok: true, dados: antes.toISOString() });
+    expect(recebidos).toHaveLength(1);
+    expect(recebidos[0].agora).toBe(antes);
+    expect(recebidos[0].congelado).toBe(true);
+  });
+
+  it('sem deps.agora → um único instante do relógio real por execução', async () => {
+    let recebido: Date | undefined;
+    const acao = defineAcao({ papeis: ['gestor'], capacidade: 'leitura' }, async (_ctx, _i: object, { agora }) => {
+      recebido = agora;
+      return null;
+    });
+    const antes = Date.now();
+    expect(await acao.executar(await credencialDoGestor(s), {})).toEqual({ ok: true, dados: null });
+    expect(recebido).toBeInstanceOf(Date);
+    expect(recebido!.getTime()).toBeGreaterThanOrEqual(antes);
+    expect(recebido!.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+});

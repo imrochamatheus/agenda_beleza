@@ -143,6 +143,7 @@ describe('CA-12: rotas e segmentos reservados', () => {
         '/painel/clientes',
         '/painel/servicos',
         '/painel/profissionais',
+        '/painel/profissionais/novo',
         '/painel/bloqueios',
         '/painel/configuracoes',
         '/painel/assinatura',
@@ -161,6 +162,11 @@ describe('CA-12: rotas e segmentos reservados', () => {
   it('rotas com parâmetro codificam o valor', () => {
     expect(ROTAS.convite('a b/c')).toBe('/convite/a%20b%2Fc');
     expect(ROTAS.jornada('a b/c')).toBe('/painel/profissionais/a%20b%2Fc/jornada');
+    expect(ROTAS.profissional('a b/c')).toBe('/painel/profissionais/a%20b%2Fc');
+    expect(ROTAS.profissional('../x?y#z')).toBe('/painel/profissionais/..%2Fx%3Fy%23z');
+    // D-013: as páginas de profissional ativam o item "Profissionais" do gestor.
+    expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.novoProfissional)).toBe(ROTAS.profissionais);
+    expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.profissional('abc'))).toBe(ROTAS.profissionais);
     expect(ROTAS.salaoPublico('a b/c')).toBe('/a%20b%2Fc');
     expect(ROTAS.adminSalao('a b/c')).toBe('/admin/saloes/a%20b%2Fc');
     expect(ROTAS.adminSalaoAssinatura('a b/c')).toBe('/admin/saloes/a%20b%2Fc/assinatura');

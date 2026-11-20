@@ -3,7 +3,7 @@ import { exigirEscopo } from '@/server/tenant/context';
 import { NaoEncontrado } from '@/server/tenant/erros';
 
 import { ehUuid } from './ids';
-import type { Periodo, ReservaDTO, StatusReserva } from './tipos';
+import type { Periodo, ReservaBloqueanteDTO, ReservaDTO, StatusReserva } from './tipos';
 import type { Executor } from './transacao';
 
 export interface RepoReserva {
@@ -22,6 +22,17 @@ export interface RepoReserva {
     id: string,
     transicao: { de: StatusReserva; para: StatusReserva },
   ): Promise<ReservaDTO>;
+  /**
+   * Reservas que impedem desativar o profissional (D-013 RN-2, D-1): `status = 'confirmado'` e
+   * `fim > agora` (inclui a em andamento), do profissional, no salão do contexto. Ordem: inicio, id.
+   * Traz o nome da cliente (null se anonimizada; o telefone nunca é lido) e os nomes atuais dos
+   * serviços na ordem dos itens. ID malformado → NaoEncontrado sem consultar.
+   */
+  listarBloqueantesDeDesativacao(
+    ctx: ContextoEscopado,
+    profissionalId: string,
+    agora: Date,
+  ): Promise<ReservaBloqueanteDTO[]>;
 }
 
 const CAMPOS = {
@@ -79,6 +90,31 @@ export function criarRepoReserva(db: Executor): RepoReserva {
         throw new NaoEncontrado();
       }
       return buscarPorId(ctx, id);
+    },
+
+    async listarBloqueantesDeDesativacao(ctx, profissionalId, agora) {
+      const salaoId = exigirEscopo(ctx);
+      if (!ehUuid(profissionalId)) {
+        throw new NaoEncontrado();
+      }
+      const linhas = await db.reserva.findMany({
+        where: { salaoId, profissionalId, status: 'confirmado', fim: { gt: agora } },
+        select: {
+          id: true,
+          inicio: true,
+          fim: true,
+          cliente: { select: { nome: true } },
+          itens: { select: { servico: { select: { nome: true } } }, orderBy: { ordem: 'asc' } },
+        },
+        orderBy: [{ inicio: 'asc' }, { id: 'asc' }],
+      });
+      return linhas.map((r) => ({
+        id: r.id,
+        inicio: r.inicio,
+        fim: r.fim,
+        clienteNome: r.cliente.nome,
+        servicos: r.itens.map((i) => i.servico.nome),
+      }));
     },
   };
 }

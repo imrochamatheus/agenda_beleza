@@ -24,6 +24,12 @@ export type ResultadoAcao<O> =
 /** Injeções do núcleo (testes): política de operação e relógio. */
 export type DepsAcao = { politica?: PoliticaOperacao; agora?: Date };
 
+/**
+ * Dados da execução entregues ao handler (D-013 D-15): `agora` é o MESMO instante usado para
+ * resolver a sessão (relógio único por execução; `deps.agora` nos testes, senão o relógio real).
+ */
+export type ExecucaoAcao = { readonly agora: Date };
+
 export interface Acao<I, O> {
   /** Forma chamável usada pelo Next: lê o cookie de sessão (next/headers) e chama `executar`. */
   (input: I): Promise<ResultadoAcao<O>>;
@@ -56,11 +62,12 @@ function congelarConfig(config: ConfigAcao): Readonly<ConfigAcao> {
  * resolver sessão → conferir papel → consultar a política com a capacidade → handler.
  * Qualquer recusa interrompe antes do handler. Um ErroDeDominio lançado em qualquer etapa (inclusive
  * pelo handler, p.ex. NaoEncontrado do repositório) vira `{ ok: false }`; outros erros são relançados.
- * O handler recebe o input sem transformação; o salaoId vem só do contexto (RN-1, CA-7).
+ * O handler recebe o input sem transformação; o salaoId vem só do contexto (RN-1, CA-7). O terceiro
+ * argumento do handler (opcional) traz o relógio da execução (D-013 D-15).
  */
 export function defineAcao<I, O>(
   config: ConfigAcao,
-  handler: (ctx: TenantContext, input: I) => Promise<O>,
+  handler: (ctx: TenantContext, input: I, exec: ExecucaoAcao) => Promise<O>,
 ): Acao<I, O> {
   const metadados = congelarConfig(config);
 
@@ -69,8 +76,9 @@ export function defineAcao<I, O>(
       throw new Error('ação sem papeis ou capacidade válidos');
     }
     const politica = deps.politica ?? politicaDeOperacao;
+    const agora = deps.agora ?? new Date();
     try {
-      const ctx = await resolverTenant(c, deps.agora);
+      const ctx = await resolverTenant(c, agora);
       if (!metadados.papeis.includes(ctx.papel)) {
         throw new AcessoNegado('papel não permitido');
       }
@@ -78,7 +86,7 @@ export function defineAcao<I, O>(
       if (!decisao.permitido) {
         throw new AcessoNegado(decisao.motivo);
       }
-      return { ok: true, dados: await handler(ctx, input) };
+      return { ok: true, dados: await handler(ctx, input, Object.freeze({ agora })) };
     } catch (e) {
       if (ehErroDeDominio(e)) {
         return { ok: false, erro: e.codigo, status: e.status };

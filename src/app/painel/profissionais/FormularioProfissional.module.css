@@ -1,0 +1,13 @@
+/* Formulário de profissional (D-013 RN-11). Só tokens do tema (globals.css). */
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 28rem;
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-3) var(--espaco-6);
+}
