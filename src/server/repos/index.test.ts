@@ -130,6 +130,19 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.bloqueios.remover(c, ID),
         r.bloqueios.listarVigentes(c, new Date(), { todos: true }),
         r.bloqueios.listarNoPeriodo(c, { de: new Date(0), ate: new Date() }),
+        r.saloes.obterConfiguracoes(c),
+        r.saloes.listarSlugs(c),
+        r.saloes.travar(c),
+        r.saloes.slugAtual(c),
+        r.saloes.atualizarConfiguracoes(c, {
+          nome: 'x',
+          fuso: 'America/Sao_Paulo',
+          gradeMin: 15,
+          antecedenciaMin: 120,
+          janelaDias: 60,
+          intervaloMin: 0,
+        }),
+        r.saloes.trocarSlug(c, 'novo-slug'),
       ];
       for (const chamada of chamadas) {
         await expect(chamada).rejects.toThrow(

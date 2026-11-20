@@ -147,3 +147,19 @@ export type DadosBloqueio = { profissionalId: string | null; inicio: Date; fim: 
 
 /** `todos` → salão inteiro + todos os profissionais; `profissionalId` → os dele + os do salão inteiro. */
 export type FiltroBloqueios = { todos: true } | { profissionalId: string };
+
+/** Configurações do salão (D-017 §3.3), nas unidades do banco (antecedência em minutos). */
+export type ConfiguracoesDTO = {
+  nome: string;
+  fuso: string;
+  gradeMin: number;
+  antecedenciaMin: number;
+  janelaDias: number;
+  intervaloMin: number;
+};
+
+/** Slug atual (exatamente um) e anteriores (atual = false), por criado_em desc, slug asc. */
+export type SlugsDoSalaoDTO = { atual: string; anteriores: { slug: string; criadoEm: Date }[] };
+
+/** Resultado da troca de slug no banco: `em_uso` = de outro salão, nada gravado. */
+export type ResultadoTrocaSlugDTO = 'trocado' | 'em_uso';

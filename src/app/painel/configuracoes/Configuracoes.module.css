@@ -1,0 +1,177 @@
+/* Configurações do salão (D-017 RN-19). Só tokens do tema (globals.css); breakpoint único 48rem. */
+.pagina {
+  display: grid;
+  gap: var(--espaco-8);
+}
+
+.secao {
+  display: grid;
+  gap: var(--espaco-4);
+  min-width: 0;
+}
+
+.secao h2 {
+  margin: 0;
+}
+
+.formulario {
+  display: grid;
+  gap: var(--espaco-2);
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+  margin-block-end: var(--espaco-4);
+  max-width: 32rem;
+  min-width: 0;
+}
+
+.rotulo {
+  font-weight: 600;
+}
+
+.ajuda {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+/* <select> nativo: 100% da largura, sem rolagem horizontal com os rótulos longos (R-8). */
+.select,
+.controlePrefixado {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-width: 0;
+  min-height: var(--alvo-minimo);
+  padding: var(--espaco-2) var(--espaco-3);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+  font: inherit;
+}
+
+.select {
+  cursor: pointer;
+}
+
+.select[aria-invalid='true'],
+.controlePrefixado[aria-invalid='true'] {
+  border-color: var(--cor-erro-texto);
+  border-width: 2px;
+}
+
+.grupo {
+  display: grid;
+  gap: var(--espaco-2);
+  margin: 0 0 var(--espaco-4);
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  min-width: 0;
+}
+
+.grupo > legend {
+  padding: 0 var(--espaco-1);
+  font-weight: 600;
+}
+
+.resumoErros {
+  padding: var(--espaco-4);
+  border: 2px solid var(--cor-erro-texto);
+  border-radius: var(--raio);
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro-texto);
+}
+
+.resumoErros:focus-visible,
+.resumoErros:focus,
+.sucesso:focus-visible,
+.sucesso:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.resumoTitulo {
+  margin: 0 0 var(--espaco-2);
+  font-weight: 600;
+}
+
+.resumoErros ul {
+  margin: 0;
+  padding-left: var(--espaco-4);
+}
+
+.resumoErros a {
+  color: inherit;
+}
+
+.sucesso {
+  border-radius: var(--raio);
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-3) var(--espaco-6);
+}
+
+.slug {
+  display: grid;
+  gap: var(--espaco-4);
+  min-width: 0;
+}
+
+.enderecoAtual {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.endereco {
+  font-weight: 600;
+}
+
+.prefixado {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  min-width: 0;
+}
+
+.prefixo {
+  flex: none;
+  color: var(--cor-texto-suave);
+  font-weight: 600;
+}
+
+.anteriores {
+  display: grid;
+  gap: var(--espaco-2);
+}
+
+.anteriores h3 {
+  margin: 0;
+  font-size: var(--texto-lg);
+}
+
+.listaAnteriores {
+  margin: 0;
+  padding-left: var(--espaco-4);
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 48rem) {
+  .grupo {
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--espaco-4);
+  }
+
+  .grupo > p {
+    grid-column: 1 / -1;
+  }
+}

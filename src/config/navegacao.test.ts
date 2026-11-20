@@ -158,6 +158,7 @@ describe('CA-12: rotas e segmentos reservados', () => {
         '/dev/mp-checkout',
         '/dev/jornada',
         '/dev/bloqueios',
+        '/dev/configuracoes',
       ]),
     );
   });
@@ -184,6 +185,9 @@ describe('CA-12: rotas e segmentos reservados', () => {
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.bloqueio('abc'))).toBe(ROTAS.bloqueios);
     expect(itemAtivo(NAVEGACAO_PAINEL.profissional, ROTAS.bloqueio('abc'))).toBe(ROTAS.bloqueios);
     expect(ROTAS.devBloqueios).toBe('/dev/bloqueios');
+    // D-017: a demonstração das configurações fica sob o segmento reservado "dev" (SEGMENTOS_RESERVADOS não muda).
+    expect(ROTAS.devConfiguracoes).toBe('/dev/configuracoes');
+    expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.configuracoes)).toBe(ROTAS.configuracoes);
     expect(ROTAS.salaoPublico('a b/c')).toBe('/a%20b%2Fc');
     expect(ROTAS.adminSalao('a b/c')).toBe('/admin/saloes/a%20b%2Fc');
     expect(ROTAS.adminSalaoAssinatura('a b/c')).toBe('/admin/saloes/a%20b%2Fc/assinatura');

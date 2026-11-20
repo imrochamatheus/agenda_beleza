@@ -5,6 +5,8 @@ import {
   diferencaEmDias,
   ehDataCivilValida,
   ehDiaInteiro,
+  ehFusoCanonico,
+  fusosCanonicos,
   instanteDeHoraLocal,
   intervaloDeDiasInteiros,
   partesLocais,
@@ -170,5 +172,71 @@ describe('ehDiaInteiro (D-23)', () => {
     expect(ehDiaInteiro(new Date('2026-12-25T03:05:00Z'), new Date('2026-12-26T03:00:00Z'), SP)).toBe(false);
     expect(ehDiaInteiro(new Date('2026-12-25T03:00:00Z'), new Date('2026-12-25T19:00:00Z'), SP)).toBe(false);
     expect(ehDiaInteiro(new Date('2026-12-25T03:00:00Z'), new Date('2026-12-26T03:00:00Z'), MANAUS)).toBe(false);
+  });
+});
+
+describe('D-017 T-1: ehFusoCanonico e fusosCanonicos (RN-9, D-17, D-20)', () => {
+  it('aceita nomes canônicos (CA-3: America/Manaus) e exóticos válidos', () => {
+    for (const fuso of [SP, MANAUS, 'Pacific/Chatham', 'America/Noronha']) {
+      expect(ehFusoCanonico(fuso), fuso).toBe(true);
+    }
+  });
+
+  it('recusa inexistente, offsets, UTC, aliases, caixa diferente, espaços, vazio e não-string (CA-3)', () => {
+    const recusados: unknown[] = [
+      'America/Inexistente',
+      '+03:00',
+      '-0300',
+      'UTC',
+      'Etc/GMT+3',
+      'Brazil/East',
+      'US/Eastern',
+      'EST5EDT',
+      'america/sao_paulo',
+      ' America/Sao_Paulo',
+      'America/Sao_Paulo ',
+      '',
+      null,
+      undefined,
+      3,
+      ['America/Sao_Paulo'],
+      { toString: () => 'America/Sao_Paulo' },
+    ];
+    for (const v of recusados) {
+      expect(ehFusoCanonico(v), String(v)).toBe(false);
+    }
+  });
+
+  it('D-17: nomes que dependem da versão do ICU seguem exatamente a lista do runtime', () => {
+    const lista = fusosCanonicos();
+    // Sinônimos da mesma zona: a lista traz um dos dois (no Node 24, o nome CLDR); só o da lista é aceito.
+    for (const [a, b] of [
+      ['Asia/Katmandu', 'Asia/Kathmandu'],
+      ['Asia/Calcutta', 'Asia/Kolkata'],
+    ]) {
+      expect(ehFusoCanonico(a)).toBe(lista.includes(a));
+      expect(ehFusoCanonico(b)).toBe(lista.includes(b));
+      expect(lista.includes(a) && lista.includes(b), `${a} e ${b} não coexistem`).toBe(false);
+    }
+  });
+
+  it('todo canônico passa em validarFuso; validarFuso continua aceitando UTC e aliases', () => {
+    const lista = fusosCanonicos();
+    expect(lista.length).toBeGreaterThan(100);
+    for (const fuso of lista) {
+      expect(validarFuso(fuso)).toBe(fuso);
+      expect(ehFusoCanonico(fuso)).toBe(true);
+    }
+    expect(validarFuso('UTC')).toBe('UTC');
+    expect(validarFuso('Brazil/East')).toBe('Brazil/East');
+  });
+
+  it('a lista é congelada, sem repetição e estável entre chamadas', () => {
+    const a = fusosCanonicos();
+    expect(Object.isFrozen(a)).toBe(true);
+    expect(fusosCanonicos()).toBe(a);
+    expect(new Set(a).size).toBe(a.length);
+    expect(a).toEqual(Intl.supportedValuesOf('timeZone'));
+    expect(() => (a as string[]).push('X/Y')).toThrow(TypeError);
   });
 });
