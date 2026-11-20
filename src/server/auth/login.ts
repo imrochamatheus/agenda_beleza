@@ -8,7 +8,7 @@ import { buscarUsuarioParaLogin } from '@/server/repos/usuario';
 import { destinoAposLogin } from './destino';
 import { HASH_FICTICIO, verificarSenha } from './senha';
 import type { VerificadorSenha } from './senha';
-import { iniciarSessao } from './sessao';
+import { iniciarSessaoSeSenhaVigente } from './sessao';
 
 // Serviço de login da equipe (D-010 §3.9; RN-2, RN-6..RN-8, RN-19, RN-22, RN-25). Pré-autenticação:
 // não é defineAcao nem arquivo *.acao.ts (RN-24). Sem next/*: a casca (entrar/acoes.ts) grava o
@@ -124,8 +124,15 @@ export async function entrar(
     return recusa(MENSAGENS_LOGIN.desativado);
   }
 
+  // D-012 RN-13/D-11: a sessão só nasce se o hash verificado ainda é o vigente (corrida com a
+  // redefinição de senha). Recusada, conta como falha (sem devolver a reserva) e responde como
+  // credencial errada (D-19). A reserva do rate limit só volta depois da sessão criada.
+  const sessao = await iniciarSessaoSeSenhaVigente(usuario.id, usuario.senhaHash, agora);
+  if (sessao === null) {
+    registrar('credenciais');
+    return recusa(MENSAGENS_LOGIN.credenciais);
+  }
   await decrementarJanela(chave, janela);
-  const { token } = await iniciarSessao(usuario.id, agora);
   registrar('ok', usuario.id);
-  return { ok: true, token, destino: destinoAposLogin(entrada.proximo) };
+  return { ok: true, token: sessao.token, destino: destinoAposLogin(entrada.proximo) };
 }

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import {
   criarSessao,
+  criarSessaoSeSenhaVigente,
   revogarSessaoPorHash,
   revogarSessoesDoUsuario as revogarNoBanco,
 } from '@/server/repos/sessao';
@@ -25,6 +26,26 @@ export async function iniciarSessao(usuarioId: string, agora: Date): Promise<{ t
   const token = gerarToken();
   await criarSessao({ usuarioId, tokenHash: hashDoToken(token), agora, expiraEm: expiracaoInicial(agora) });
   return { token };
+}
+
+/**
+ * Como `iniciarSessao`, mas condicionada ao hash verificado pelo login (D-012 RN-13, D-11): só cria
+ * a sessão se `usuario.senha_hash` ainda é `senhaHash`. null = a senha mudou desde a verificação.
+ */
+export async function iniciarSessaoSeSenhaVigente(
+  usuarioId: string,
+  senhaHash: string,
+  agora: Date,
+): Promise<{ token: string } | null> {
+  const token = gerarToken();
+  const criada = await criarSessaoSeSenhaVigente({
+    usuarioId,
+    tokenHash: hashDoToken(token),
+    agora,
+    expiraEm: expiracaoInicial(agora),
+    senhaHash,
+  });
+  return criada ? { token } : null;
 }
 
 /** Logout: revoga a sessão do token. Idempotente; sem token, nada a fazer. Nunca lança por sessão inexistente. */

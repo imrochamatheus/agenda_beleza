@@ -13,9 +13,14 @@ RUN npm ci
 
 COPY . .
 # Sem DATABASE_URL: generate e build não dependem do banco (CA-7).
+# next.config.ts vira um único next.config.mjs autocontido (D-012, correção R-A): tudo o que ele
+# importa de src/ entra no bundle, e só pacotes de node_modules ficam externos. Assim o estágio
+# final não depende de src/ e um import novo no next.config.ts não quebra o `next start`.
 RUN npm run db:generate \
  && npm run build \
  && npm run build:node \
+ && npx esbuild next.config.ts --bundle --platform=node --format=esm --target=node24 \
+      --packages=external --outfile=dist/next.config.mjs \
  && npm prune --omit=dev
 
 # ---------- final: só o necessário para rodar, como usuário não root ----------
@@ -28,8 +33,10 @@ ENV NODE_ENV=production \
     PORT=3000
 
 # O prisma CLI (migrate deploy) precisa do node_modules de produção, do schema e do config.
-# src/ não entra: o cliente gerado já está empacotado em .next/ e dist/.
-COPY --from=build --chown=node:node /app/package.json /app/next.config.ts /app/prisma.config.ts ./
+# src/ não entra: o cliente gerado já está empacotado em .next/ e dist/, e o next.config vai
+# compilado (dist/next.config.mjs), nunca o .ts, que importa de src/.
+COPY --from=build --chown=node:node /app/package.json /app/prisma.config.ts ./
+COPY --from=build --chown=node:node /app/dist/next.config.mjs ./next.config.mjs
 COPY --from=build --chown=node:node /app/prisma ./prisma
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/.next ./.next
