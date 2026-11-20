@@ -32,6 +32,15 @@ export type ServicoDTO = {
   atualizadoEm: Date;
 };
 
+/** Dados editáveis do serviço (D-014 RN-1), já validados. */
+export type DadosServico = { nome: string; precoCentavos: number; duracaoMin: number };
+
+/** Serviço para o painel do gestor (D-014 §3.2): com a contagem de profissionais ATIVOS vinculados. */
+export type ServicoPainelDTO = ServicoDTO & { profissionaisAtivos: number };
+
+/** Profissional na escolha de vínculos do serviço (D-014 D-5). */
+export type ProfissionalVinculoDTO = { id: string; nome: string; ativo: boolean; vinculado: boolean };
+
 export type ProfissionalDTO = {
   id: string;
   nome: string;

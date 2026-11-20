@@ -9,10 +9,11 @@ const NBSP = ' ';
 const MENOS = '−';
 
 /**
- * `R$` + U+00A0 + milhar com '.' + ',' + 2 casas, a partir de centavos inteiros (D-13).
+ * Valor em reais sem o símbolo: milhar com '.' + ',' + 2 casas, a partir de centavos inteiros
+ * (8000 → '80,00'; 123456 → '1.234,56'). Valor inicial do campo de preço (D-014 §3.4).
  * Montado por texto e aritmética inteira, sem Intl nem ponto flutuante.
  */
-export function formatarMoeda(centavos: number): string {
+export function formatarMoedaSemSimbolo(centavos: number): string {
   if (typeof centavos !== 'number') {
     throw new TypeError('formatarMoeda: o valor deve ser um número inteiro de centavos');
   }
@@ -27,7 +28,29 @@ export function formatarMoeda(centavos: number): string {
   const digitos = String(centavos).padStart(3, '0');
   const inteiro = digitos.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   const fracao = digitos.slice(-2);
-  return `R$${NBSP}${inteiro},${fracao}`;
+  return `${inteiro},${fracao}`;
+}
+
+/** `R$` + U+00A0 + formatarMoedaSemSimbolo(centavos) (D-13). */
+export function formatarMoeda(centavos: number): string {
+  return `R$${NBSP}${formatarMoedaSemSimbolo(centavos)}`;
+}
+
+/**
+ * Duração em minutos para exibição (D-014 D-7): 45 → '45 min'; 60 → '1 h'; 90 → '1 h 30 min'.
+ * Só inteiro > 0: não número → TypeError; 0, negativo, fracionário ou NaN → RangeError.
+ */
+export function formatarDuracao(minutos: number): string {
+  if (typeof minutos !== 'number') {
+    throw new TypeError('formatarDuracao: o valor deve ser um número inteiro de minutos');
+  }
+  if (!Number.isSafeInteger(minutos) || minutos <= 0) {
+    throw new RangeError(`formatarDuracao: minutos deve ser um inteiro maior que zero (recebido: ${String(minutos)})`);
+  }
+  const horas = Math.floor(minutos / 60);
+  const resto = minutos % 60;
+  if (horas === 0) return `${resto} min`;
+  return resto === 0 ? `${horas} h` : `${horas} h ${resto} min`;
 }
 
 type Partes = { day: string; month: string; year: string; hour: string; minute: string };

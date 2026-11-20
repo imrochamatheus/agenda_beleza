@@ -146,6 +146,15 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Convite:** o envio do convite por e-mail é da E1.4; a seção "Acesso ao painel" da edição é onde ele vai aparecer.
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/profissionais/concorrencia.test.ts || break; done`.
 
+## Serviços
+
+- **Onde:** `/painel/servicos` (lista), `/painel/servicos/novo` (cadastro) e `/painel/servicos/<id>` (edição dos dados e dos profissionais, desativação e reativação). Só o **gestor** gerencia serviços: o profissional vê "Acesso negado" e recebe 403 nas ações; sem sessão, a página leva a `/entrar`. A lista traz apenas o salão da sessão (ativos primeiro, por nome), com preço, duração, situação ("Ativo"/"Inativo") e a quantidade de profissionais **ativos** que executam cada serviço.
+- **Campos:** nome (de 2 a 100 caracteres; nomes repetidos são permitidos), **preço** em reais no formato brasileiro, de `0,00` a `99.999,99` (aceita `80`, `80,5`, `80,00`, `1.234,56` e o prefixo `R$`; recusa ponto decimal como `80.00`, mais de duas casas e valores negativos), gravado em centavos inteiros, e **duração** em minutos, múltipla de 5, de 5 a 720. Toda validação é feita no servidor.
+- **Profissionais que executam:** no próprio formulário (cadastro e edição), uma caixa por profissional **ativo** do salão. Só profissionais ativos do salão da sessão podem ser vinculados. Profissionais inativos que já tinham vínculo aparecem como "Inativo, vínculo mantido": o vínculo é preservado e volta a valer se o profissional for reativado. Não há preço nem duração por profissional.
+- **Página pública:** um serviço só é ofertado se estiver ativo **e** tiver ao menos um profissional ativo vinculado (`listarServicosPublicos`, a única leitura de serviços ofertáveis para a disponibilidade e a página pública). A lista e a edição avisam "Não aparece na página pública: nenhum profissional ativo executa este serviço." quando falta profissional.
+- **Desativar e reativar** (um botão, sem confirmação; funciona sem JavaScript): o serviço nunca é apagado. Desativar o tira da página pública e de novas reservas; reservas já feitas, com o preço e a duração da época (snapshot), e os vínculos não mudam. Alterar preço ou duração também não altera reservas existentes.
+- **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/servicos/concorrencia.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.
@@ -328,7 +337,8 @@ sha256sum fraunces/package/files/fraunces-latin-opsz-normal.woff2 sourcesans/pac
 
 Fonte única de formatação de exibição. Um teste recusa `Intl.NumberFormat` e `toLocale*String` em `src/`, e `Intl.DateTimeFormat` nas camadas de exibição. `src/server` pode usar `Intl.DateTimeFormat` para cálculo.
 
-- `formatarMoeda(centavos)` → `R$ 79,00` (U+00A0 depois de `R$`, aritmética inteira; negativo, fração e não finito lançam `RangeError`).
+- `formatarMoeda(centavos)` → `R$ 79,00` (U+00A0 depois de `R$`, aritmética inteira; negativo, fração e não finito lançam `RangeError`). `formatarMoedaSemSimbolo(centavos)` → `79,00` (valor inicial do campo de preço).
+- `formatarDuracao(minutos)` → `45 min`, `1 h`, `1 h 30 min` (inteiro maior que zero).
 - `formatarData`, `formatarHora` e `formatarDataHora(instante, fuso?)` → `dd/mm/aaaa`, `HH:mm` e `dd/mm/aaaa HH:mm`, no fuso IANA do salão (padrão `FUSO_PADRAO = 'America/Sao_Paulo'`, igual ao `@default` de `salao.fuso`), independentes do `TZ` do processo.
 - `formatarDeslocamentoUtc(instante, fuso?)` → `UTC−03:00`.
 
