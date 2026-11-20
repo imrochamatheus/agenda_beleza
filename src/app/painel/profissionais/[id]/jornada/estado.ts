@@ -1,12 +1,15 @@
-// Estado e leitura do formulário de jornada (D-015 §3.6). Sem imports de servidor de runtime além de
-// @/server/jornadas/tipos (arquivo só de tipos e constantes) e da formatação de @/lib/format.
-import { formatarFaixaDeMinutos, formatarMinutosDoDia } from '@/lib/format';
-import { DIAS_SEMANA, LIMITES_JORNADA, MENSAGENS_JORNADA } from '@/server/jornadas/tipos';
-import type { DiaJornada, DiaSemana, ErrosJornada, IntervaloMin, SemanaJornada } from '@/server/jornadas/tipos';
+// Estado e leitura do formulário de jornada (D-015 §3.6). D-020 (A-7): a lógica do editor de semana mora
+// em src/app/painel/_componentes/semana/formulario.ts; aqui ficam as mesmas exportações de antes, com o
+// prefixo `jornada` e o texto "Folga" fixados. Sem imports de servidor de runtime além de
+// @/server/jornadas/tipos (só tipos e constantes).
+import * as semana from '@/app/painel/_componentes/semana/formulario';
+import type { CampoHorario, ValorLinha, ValoresSemana } from '@/app/painel/_componentes/semana/formulario';
+import { MENSAGENS_JORNADA } from '@/server/jornadas/tipos';
+import type { DiaJornada, DiaSemana, ErrosJornada } from '@/server/jornadas/tipos';
 
-export type ValorLinha = { inicio: string; fim: string };
+export type { CampoHorario, ValorLinha } from '@/app/painel/_componentes/semana/formulario';
 /** Valores dos campos: 6 linhas por dia (índice = diaSemana). */
-export type ValoresJornada = Record<DiaSemana, ValorLinha[]>;
+export type ValoresJornada = ValoresSemana;
 
 export type EstadoFormularioJornada = {
   /** Erro geral (acesso negado, não encontrado) ou, com `sucesso`, mensagem de sucesso (demonstração). */
@@ -24,82 +27,51 @@ export const ESTADO_INICIAL_FORMULARIO_JORNADA: EstadoFormularioJornada = Object
   valores: null,
 }) as EstadoFormularioJornada;
 
-export type CampoHorario = 'inicio' | 'fim';
+/** Prefixo dos ids da jornada na página. */
+export const PREFIXO_JORNADA = 'jornada';
 
 /** Nome do campo no FormData: `inicio-<dia>-<n>` / `fim-<dia>-<n>` (n a partir de 0). */
-export function nomeDoCampo(dia: DiaSemana, n: number, campo: CampoHorario): string {
-  return `${campo}-${dia}-${n}`;
-}
+export const nomeDoCampo = semana.nomeDoCampo;
 
 /** Id do campo na página: `jornada-<dia>-<n>-inicio` / `jornada-<dia>-<n>-fim`. */
 export function idDoCampo(dia: DiaSemana, n: number, campo: CampoHorario): string {
-  return `jornada-${dia}-${n}-${campo}`;
+  return semana.idDoCampo(PREFIXO_JORNADA, dia, n, campo);
 }
 
 /** Id do erro de uma linha (intervalo) e do erro do dia (limite). */
-export const idDoErroDaLinha = (dia: DiaSemana, n: number) => `jornada-${dia}-${n}-erro`;
-export const idDoErroDoDia = (dia: DiaSemana) => `jornada-${dia}-erro`;
-
-const linhasVazias = (quantas: number): ValorLinha[] => Array.from({ length: quantas }, () => ({ inicio: '', fim: '' }));
+export const idDoErroDaLinha = (dia: DiaSemana, n: number) => semana.idDoErroDaLinha(PREFIXO_JORNADA, dia, n);
+export const idDoErroDoDia = (dia: DiaSemana) => semana.idDoErroDoDia(PREFIXO_JORNADA, dia);
 
 /** Semana gravada → valores dos campos (HH:MM), completando com linhas vazias até 6. */
-export function valoresDaSemana(semana: SemanaJornada): ValoresJornada {
-  const valores = {} as ValoresJornada;
-  for (const dia of DIAS_SEMANA) {
-    const intervalos = semana[dia]?.intervalos ?? [];
-    const linhas = intervalos
-      .slice(0, LIMITES_JORNADA.linhasPorDia)
-      .map((i) => ({ inicio: formatarMinutosDoDia(i.inicioMin), fim: formatarMinutosDoDia(i.fimMin) }));
-    valores[dia] = [...linhas, ...linhasVazias(LIMITES_JORNADA.linhasPorDia - linhas.length)];
-  }
-  return valores;
-}
-
-/** Texto do FormData; ausente ou não texto (arquivo) → ''. */
-const texto = (v: FormDataEntryValue | null): string => (typeof v === 'string' ? v : '');
+export const valoresDaSemana = semana.valoresDaSemana;
 
 export type EntradaDoFormulario = {
   profissionalId: string | undefined;
-  dias: { diaSemana: number; intervalos: { inicio: string; fim: string }[] }[];
+  dias: { diaSemana: number; intervalos: ValorLinha[] }[];
 };
 
 /**
- * Só os 7 × 6 × 2 nomes conhecidos (extras e arquivos ignorados). `valores` volta aos campos cortado
- * em `horarioMaxCaracteres` (não ecoa entradas enormes); `entrada` vai inteira para a validação.
+ * Só os 7 × 6 × 2 nomes conhecidos (extras e arquivos ignorados) e o `profissionalId`. `valores` volta
+ * aos campos cortado em `horarioMaxCaracteres`; `entrada` vai inteira para a validação.
  */
 export function lerFormularioJornada(fd: FormData): { entrada: EntradaDoFormulario; valores: ValoresJornada } {
   const id = fd.get('profissionalId');
-  const valores = {} as ValoresJornada;
-  const dias: EntradaDoFormulario['dias'] = [];
-  for (const dia of DIAS_SEMANA) {
-    const intervalos: { inicio: string; fim: string }[] = [];
-    for (let n = 0; n < LIMITES_JORNADA.linhasPorDia; n += 1) {
-      intervalos.push({ inicio: texto(fd.get(nomeDoCampo(dia, n, 'inicio'))), fim: texto(fd.get(nomeDoCampo(dia, n, 'fim'))) });
-    }
-    dias.push({ diaSemana: dia, intervalos });
-    valores[dia] = intervalos.map((l) => ({
-      inicio: l.inicio.slice(0, LIMITES_JORNADA.horarioMaxCaracteres),
-      fim: l.fim.slice(0, LIMITES_JORNADA.horarioMaxCaracteres),
-    }));
-  }
-  return { entrada: { profissionalId: typeof id === 'string' ? id : undefined, dias }, valores };
+  const { dias, valores } = semana.lerSemanaDoFormulario(fd);
+  return {
+    entrada: { profissionalId: typeof id === 'string' ? id : undefined, dias: dias as EntradaDoFormulario['dias'] },
+    valores,
+  };
 }
-
-const faixas = (lista: readonly IntervaloMin[]) => lista.map((i) => formatarFaixaDeMinutos(i.inicioMin, i.fimMin)).join(', ');
 
 /** Intervalos do dia ("09:00–12:00, 13:00–18:00") ou "Folga" (RN-8). */
 export function textoDosIntervalos(dia: DiaJornada): string {
-  return dia.intervalos.length === 0 ? MENSAGENS_JORNADA.folga : faixas(dia.intervalos);
+  return semana.textoDosIntervalos(dia, MENSAGENS_JORNADA.folga);
 }
 
 /** Pausas do dia ("Pausa 12:00–13:00", "Pausas 10:00–10:30, 12:00–13:00") ou null. */
-export function textoDasPausas(dia: DiaJornada): string | null {
-  if (dia.pausas.length === 0) return null;
-  return `${dia.pausas.length === 1 ? 'Pausa' : 'Pausas'} ${faixas(dia.pausas)}`;
-}
+export const textoDasPausas = semana.textoDasPausas;
 
 /** Resumo de uma linha do dia, para o `<summary>`: intervalos e pausas separados por " · ". */
 export function resumoDoDia(dia: DiaJornada): string {
-  const pausas = textoDasPausas(dia);
-  return pausas ? `${textoDosIntervalos(dia)} · ${pausas}` : textoDosIntervalos(dia);
+  return semana.resumoDoDia(dia, MENSAGENS_JORNADA.folga);
 }

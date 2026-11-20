@@ -2,7 +2,15 @@ import { criarPublicoContext, exigirPublico } from '@/server/tenant/context';
 import type { PublicoContext } from '@/server/tenant/context';
 import { NaoEncontrado } from '@/server/tenant/erros';
 
+import { COMODIDADES, filtrarChaves, MEIOS_PAGAMENTO } from '@/server/salao/perfil-tipos';
+import type { ChaveComodidade, ChaveMeioPagamento } from '@/server/salao/perfil-tipos';
+import { montarSemana } from '@/server/semana/montagem';
+import type { SemanaHoraria } from '@/server/semana/tipos';
+
 import { obterPrisma } from './db';
+import { COLUNAS_FUNCIONAMENTO, funcionamentoDaLinha } from './funcionamento';
+import type { ColunasFuncionamento } from './funcionamento';
+import type { FuncionamentoDTO } from './tipos';
 
 /**
  * Leituras da página pública (RN-3, CA-12). Só campos públicos, por `select` explícito: nunca e-mail,
@@ -68,4 +76,100 @@ export async function listarProfissionaisPublicos(
     select: { id: true, nome: true },
     orderBy: [{ nome: 'asc' }, { id: 'asc' }],
   });
+}
+
+/** Endereço público (D-020 RN-18): completo ou null. */
+export type EnderecoPublico = {
+  logradouro: string;
+  numero: string;
+  complemento: string | null;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  cep: string;
+};
+
+/**
+ * Perfil público do salão (D-020 RN-18, projeção mínima). Nunca suspensão, regras de horário, ids de
+ * usuário, e-mails, atualizado_em nem assinatura. `funcionamento` null = não informado.
+ */
+export type PerfilPublico = {
+  nome: string;
+  descricao: string | null;
+  endereco: EnderecoPublico | null;
+  telefoneE164: string | null;
+  whatsappE164: string | null;
+  instagram: string | null;
+  meiosPagamento: ChaveMeioPagamento[];
+  comodidades: ChaveComodidade[];
+  funcionamento: SemanaHoraria | null;
+};
+
+type LinhaPerfilPublico = ColunasFuncionamento & {
+  nome: string;
+  descricao: string | null;
+  endereco_logradouro: string | null;
+  endereco_numero: string | null;
+  endereco_complemento: string | null;
+  endereco_bairro: string | null;
+  endereco_cidade: string | null;
+  endereco_uf: string | null;
+  endereco_cep: string | null;
+  telefone_e164: string | null;
+  whatsapp_e164: string | null;
+  instagram: string | null;
+  meios_pagamento: string[];
+  comodidades: string[];
+};
+
+function enderecoPublico(l: LinhaPerfilPublico): EnderecoPublico | null {
+  const { endereco_logradouro: logradouro, endereco_numero: numero, endereco_bairro: bairro } = l;
+  const { endereco_cidade: cidade, endereco_uf: uf, endereco_cep: cep } = l;
+  if (logradouro === null || numero === null || bairro === null || cidade === null || uf === null || cep === null) {
+    return null;
+  }
+  return { logradouro, numero, complemento: l.endereco_complemento, bairro, cidade, uf, cep };
+}
+
+/**
+ * Perfil público do salão (D-020 RN-18; E4.1): um comando, colunas explícitas e o fragmento único do
+ * funcionamento. Sem linha → NaoEncontrado. NÃO filtra suspensão (PLAN: o perfil continua visível).
+ * Listas só com chaves conhecidas, na ordem da lista; endereço null se algum obrigatório faltar.
+ */
+export async function lerPerfilPublico(ctx: PublicoContext): Promise<PerfilPublico> {
+  const salaoId = exigirPublico(ctx);
+  const linhas = await obterPrisma().$queryRaw<LinhaPerfilPublico[]>`
+    SELECT s.nome, s.descricao, s.endereco_logradouro, s.endereco_numero, s.endereco_complemento,
+           s.endereco_bairro, s.endereco_cidade, s.endereco_uf, s.endereco_cep, s.telefone_e164,
+           s.whatsapp_e164, s.instagram, s.meios_pagamento, s.comodidades, ${COLUNAS_FUNCIONAMENTO}
+      FROM salao s
+     WHERE s.id = ${salaoId}::uuid`;
+  const l = linhas[0];
+  if (!l) {
+    throw new NaoEncontrado();
+  }
+  const funcionamento = funcionamentoDaLinha(l);
+  return {
+    nome: l.nome,
+    descricao: l.descricao,
+    endereco: enderecoPublico(l),
+    telefoneE164: l.telefone_e164,
+    whatsappE164: l.whatsapp_e164,
+    instagram: l.instagram,
+    meiosPagamento: filtrarChaves(MEIOS_PAGAMENTO, l.meios_pagamento),
+    comodidades: filtrarChaves(COMODIDADES, l.comodidades),
+    funcionamento: funcionamento.definido ? montarSemana(funcionamento.linhas) : null,
+  };
+}
+
+/** Só o funcionamento, com o mesmo fragmento (leitura sem papel com contexto público, D-020 A-6). */
+export async function lerFuncionamentoPublico(ctx: PublicoContext): Promise<FuncionamentoDTO> {
+  const salaoId = exigirPublico(ctx);
+  const linhas = await obterPrisma().$queryRaw<ColunasFuncionamento[]>`
+    SELECT ${COLUNAS_FUNCIONAMENTO} FROM salao s WHERE s.id = ${salaoId}::uuid`;
+  const l = linhas[0];
+  if (!l) {
+    throw new NaoEncontrado();
+  }
+  return funcionamentoDaLinha(l);
 }

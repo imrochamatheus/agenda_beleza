@@ -32,6 +32,8 @@ export const ROTAS = {
   bloqueios: '/painel/bloqueios',
   bloqueio: (id: string) => `/painel/bloqueios/${seg(id)}`,
   configuracoes: '/painel/configuracoes',
+  configuracoesPerfil: '/painel/configuracoes/perfil',
+  configuracoesFuncionamento: '/painel/configuracoes/funcionamento',
   assinatura: '/painel/assinatura',
   assinaturaRetorno: '/painel/assinatura/retorno',
   // super admin
@@ -48,6 +50,8 @@ export const ROTAS = {
   devJornada: '/dev/jornada',
   devBloqueios: '/dev/bloqueios',
   devConfiguracoes: '/dev/configuracoes',
+  devPerfil: '/dev/perfil',
+  devFuncionamento: '/dev/funcionamento',
 } as const;
 
 export type ItemNavegacao = {

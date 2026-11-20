@@ -184,6 +184,25 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Demonstração para o E2E:** `/dev/configuracoes` (`?fuso=alias` mostra um fuso gravado fora da lista), ligada pela mesma `VITRINE_COMPONENTES=true` da vitrine, com os mesmos componentes e ações que só validam (não grava nada; 404 com a variável desligada).
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/salao/concorrencia.test.ts || break; done`.
 
+## Perfil público e funcionamento
+
+- **Onde:** `/painel/configuracoes/perfil` ("Perfil público") e `/painel/configuracoes/funcionamento` ("Horário de funcionamento"), com links em `/painel/configuracoes`. Só o **gestor**; o profissional vê "Acesso negado". Os dois formulários funcionam sem JavaScript.
+- **Perfil (tudo opcional; o que for preenchido fica público, inclusive os telefones):**
+  - **Descrição:** texto simples de até 1.000 caracteres (quebras de linha mantidas, sem HTML nem Markdown).
+  - **Endereço:** tudo ou nada. Com qualquer campo preenchido, logradouro, número (aceita `123A` e `s/n`), bairro, cidade, UF (uma das 27 siglas) e CEP (`01310-100` ou `01310100`, gravado com 8 dígitos) são obrigatórios; o complemento é sempre opcional.
+  - **Telefone e WhatsApp:** só números brasileiros com DDD válido, fixo (10 dígitos, começando por 2 a 5) ou celular (11, começando por 9), com ou sem `+55`; gravados em E.164 (`+5511987654321`) e exibidos como `(11) 98765-4321`. 0800, 0300, 4004 e números de outros países são recusados. A lista de DDDs fica em `src/lib/telefone.ts` (a E5.1 a reaproveita).
+  - **Instagram:** `perfil`, `@perfil` ou `instagram.com/perfil` (com ou sem `https://`, `www.` ou parâmetros); grava só o nome de usuário, em minúsculas.
+  - **Meios de pagamento** (informativos: como a cliente paga no salão) e **comodidades:** listas fixas com chaves estáveis em `src/server/salao/perfil-tipos.ts`. Ampliar uma lista é mudança de código, sem migração.
+- **Funcionamento:** semana por dia, em horário local do salão, com as mesmas regras da jornada (`HH:MM`, múltiplos de 5, até 6 intervalos por dia, sem cruzar a meia-noite, 24:00 só como fim, contíguos unidos). A escolha é explícita:
+  - **"Não informar"** (padrão de todo salão): o funcionamento não limita a disponibilidade, e a página pública omite o horário. Os horários digitados são descartados ao salvar.
+  - **"Informar"**: a semana gravada vale; um dia sem intervalos fica **fechado**. Uma semana inteira fechada é válida e significa "sem horários públicos" (a tela avisa).
+  - Gravar a mesma semana de novo não escreve nada. Trocar o fuso não recalcula o funcionamento. Feriados e fechamentos em datas específicas usam um **bloqueio do salão inteiro** (`/painel/bloqueios`).
+- **Efeito:** só a partir da E3.1 (disponibilidade), que intersecta o funcionamento com a jornada de cada profissional. Gravar o funcionamento não altera reservas, jornadas nem bloqueios e não envia mensagens.
+- **Concorrência:** as gravações do perfil, do funcionamento, das regras e do endereço público se serializam na linha do salão (`FOR NO KEY UPDATE`), sem bloquear novas reservas nem bloqueios.
+- **Demonstrações para o E2E:** `/dev/perfil` (`?vazio=1` mostra o perfil vazio) e `/dev/funcionamento` (`?modo=nao-informado` e `?modo=fechado` mostram os avisos), ligadas pela mesma `VITRINE_COMPONENTES=true`, com os mesmos formulários e ações que só validam (404 com a variável desligada).
+- **E2E:** `npx playwright test e2e/perfil.spec.ts e2e/perfil-sem-js.spec.ts e2e/funcionamento.spec.ts e2e/funcionamento-sem-js.spec.ts` (build prévio e porta 3000 livre).
+- **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/salao/concorrencia-perfil-funcionamento.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.

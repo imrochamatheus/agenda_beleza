@@ -18,7 +18,8 @@ export const metadata: Metadata = { title: 'Configurações', robots: { index: f
 
 /**
  * Configurações do salão (D-017 §3.6; RN-7, RN-19): só o gestor. Dois formulários independentes (D-10):
- * dados e regras de horário; endereço público (slug) com os anteriores. A permissão é conferida no
+ * dados e regras de horário; endereço público (slug) com os anteriores. D-020: links para o perfil
+ * público e o horário de funcionamento. A permissão é conferida no
  * servidor antes de qualquer leitura de dados.
  */
 export default async function PaginaConfiguracoes() {
@@ -36,6 +37,18 @@ export default async function PaginaConfiguracoes() {
     >
       <div className={estilos.pagina}>
         <h1>Configurações</h1>
+        <nav aria-label="Outras configurações" className={estilos.outras}>
+          <ul className={estilos.listaOutras}>
+            <li>
+              <a href={ROTAS.configuracoesPerfil}>Perfil público</a>
+              <p className={estilos.ajuda}>Descrição, endereço, contatos, meios de pagamento e comodidades.</p>
+            </li>
+            <li>
+              <a href={ROTAS.configuracoesFuncionamento}>Horário de funcionamento</a>
+              <p className={estilos.ajuda}>Dias e horários em que o salão atende.</p>
+            </li>
+          </ul>
+        </nav>
         <section className={estilos.secao} aria-labelledby="config-dados">
           <h2 id="config-dados">Dados e regras de horário</h2>
           <FormularioRegras acao={salvarConfiguracoesAcao} valoresIniciais={cfg.valores} fusos={cfg.fusos} />

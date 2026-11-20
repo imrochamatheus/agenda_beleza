@@ -159,6 +159,10 @@ describe('CA-12: rotas e segmentos reservados', () => {
         '/dev/jornada',
         '/dev/bloqueios',
         '/dev/configuracoes',
+        '/painel/configuracoes/perfil',
+        '/painel/configuracoes/funcionamento',
+        '/dev/perfil',
+        '/dev/funcionamento',
       ]),
     );
   });
@@ -188,6 +192,13 @@ describe('CA-12: rotas e segmentos reservados', () => {
     // D-017: a demonstração das configurações fica sob o segmento reservado "dev" (SEGMENTOS_RESERVADOS não muda).
     expect(ROTAS.devConfiguracoes).toBe('/dev/configuracoes');
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.configuracoes)).toBe(ROTAS.configuracoes);
+    // D-020 (CA-20): as subpáginas de perfil e funcionamento ativam "Configurações"; demonstrações sob "dev".
+    expect(ROTAS.configuracoesPerfil).toBe('/painel/configuracoes/perfil');
+    expect(ROTAS.configuracoesFuncionamento).toBe('/painel/configuracoes/funcionamento');
+    expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.configuracoesPerfil)).toBe(ROTAS.configuracoes);
+    expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.configuracoesFuncionamento)).toBe(ROTAS.configuracoes);
+    expect(ROTAS.devPerfil).toBe('/dev/perfil');
+    expect(ROTAS.devFuncionamento).toBe('/dev/funcionamento');
     expect(ROTAS.salaoPublico('a b/c')).toBe('/a%20b%2Fc');
     expect(ROTAS.adminSalao('a b/c')).toBe('/admin/saloes/a%20b%2Fc');
     expect(ROTAS.adminSalaoAssinatura('a b/c')).toBe('/admin/saloes/a%20b%2Fc/assinatura');

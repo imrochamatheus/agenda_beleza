@@ -1,0 +1,131 @@
+/* Perfil público do salão (D-020 RN-19). Só tokens do tema (globals.css); breakpoint único 48rem. */
+.pagina {
+  display: grid;
+  gap: var(--espaco-6);
+  min-width: 0;
+}
+
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+  min-width: 0;
+}
+
+.rotulo {
+  font-weight: 600;
+}
+
+.ajuda {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.texto,
+.controle {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-width: 0;
+  min-height: var(--alvo-minimo);
+  padding: var(--espaco-2) var(--espaco-3);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+  font: inherit;
+}
+
+.texto {
+  resize: vertical;
+}
+
+.texto:focus-visible,
+.controle:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.texto[aria-invalid='true'],
+.controle[aria-invalid='true'] {
+  border-color: var(--cor-erro-texto);
+  border-width: 2px;
+}
+
+.prefixado {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  min-width: 0;
+}
+
+.prefixo {
+  flex: none;
+  color: var(--cor-texto-suave);
+  font-weight: 600;
+}
+
+.grupo {
+  display: grid;
+  gap: var(--espaco-3);
+  margin: 0;
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  min-width: 0;
+}
+
+.grupo > legend {
+  padding: 0 var(--espaco-1);
+  font-weight: 600;
+}
+
+.par,
+.trio,
+.caixas {
+  display: grid;
+  gap: var(--espaco-3);
+  min-width: 0;
+}
+
+.sucesso {
+  border-radius: var(--raio);
+}
+
+.sucesso:focus-visible,
+.sucesso:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-3) var(--espaco-6);
+}
+
+.voltar {
+  margin: 0;
+}
+
+@media (min-width: 48rem) {
+  .par {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .trio {
+    grid-template-columns: 2fr 1fr 1fr;
+  }
+
+  .caixas {
+    grid-template-columns: 1fr 1fr;
+  }
+}
