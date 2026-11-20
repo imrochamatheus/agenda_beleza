@@ -21,6 +21,7 @@ export async function entrarAcao(_anterior: EstadoEntrar, formData: FormData): P
       mensagem: r.motivo === 'recusado' ? r.mensagem : null,
       erros: r.motivo === 'validacao' ? r.erros : {},
       email: email.trim().slice(0, 254),
+      reenvioDisponivel: r.motivo === 'recusado' && r.reenvioDisponivel === true,
     };
   }
   (await cookies()).set(NOME_COOKIE_SESSAO, r.token, atributosCookieSessao());

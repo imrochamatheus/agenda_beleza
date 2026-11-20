@@ -14,3 +14,9 @@
   list-style: none;
   font-size: var(--texto-sm);
 }
+
+/* Reenvio do link de confirmação (D-011 RN-16), formulário irmão do login. */
+.reenvio {
+  margin-top: var(--espaco-4);
+  max-width: 28rem;
+}

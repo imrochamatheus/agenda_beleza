@@ -31,7 +31,13 @@ export const JANELA_MS = 15 * 60 * 1000;
 export type ResultadoLogin =
   | { ok: true; token: string; destino: string }
   | { ok: false; motivo: 'validacao'; erros: { email?: string; senha?: string } }
-  | { ok: false; motivo: 'recusado'; mensagem: string };
+  | {
+      ok: false;
+      motivo: 'recusado';
+      mensagem: string;
+      /** Só no caso "e-mail não confirmado" (senha conferida): a tela oferece o reenvio (D-011 RN-16). */
+      reenvioDisponivel?: true;
+    };
 
 export type DepsLogin = {
   /** Relógio (testes). */
@@ -111,7 +117,7 @@ export async function entrar(
   }
   if (!usuario.emailConfirmado) {
     registrar('nao_confirmado');
-    return recusa(MENSAGENS_LOGIN.naoConfirmado);
+    return { ok: false, motivo: 'recusado', mensagem: MENSAGENS_LOGIN.naoConfirmado, reenvioDisponivel: true };
   }
   if (usuario.papel === 'profissional' && usuario.profissionalAtivo !== true) {
     registrar('desativado');

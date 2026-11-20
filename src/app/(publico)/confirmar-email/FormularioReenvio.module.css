@@ -1,0 +1,6 @@
+/* Formulário de reenvio do link de confirmação (D-011 RN-14, RN-20). Só tokens do tema. */
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 28rem;
+}

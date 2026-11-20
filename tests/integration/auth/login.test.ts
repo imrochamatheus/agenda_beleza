@@ -146,10 +146,35 @@ describe('CA-15: e-mail não confirmado', () => {
         ok: false,
         motivo: 'recusado',
         mensagem: 'Confirme seu e-mail antes de entrar.',
+        reenvioDisponivel: true,
       });
       expect(await entrar({ email, senha: 'errada' }, silencioso)).toEqual(CREDENCIAIS);
     }
     expect(await totalDeSessoes()).toBe(antes);
+  });
+
+  it('D-011 CA-6/RN-16: só o "não confirmado" com a senha certa indica reenvio', async () => {
+    const n = await criarSalaoCompleto({ gestor: { emailConfirmado: false } });
+    const inativo = await criarSalaoCompleto({ profissional: { ativo: false } });
+    const admin = await criarSuperAdmin();
+    const semReenvio: [string, { email: string; senha: string }][] = [
+      ['não confirmado com senha errada', { email: n.gestor.email, senha: 'errada' }],
+      ['e-mail inexistente', { email: emailNovo(), senha: SENHA_DE_TESTE }],
+      ['super admin', { email: admin.email, senha: SENHA_DE_TESTE }],
+      ['profissional desativado', { email: inativo.profissional.email, senha: SENHA_DE_TESTE }],
+      ['validação', { email: '', senha: '' }],
+    ];
+    for (const [nome, entrada] of semReenvio) {
+      const r = await entrar(entrada, silencioso);
+      expect(r.ok, nome).toBe(false);
+      expect(r, nome).not.toHaveProperty('reenvioDisponivel');
+    }
+    const r = await entrar({ email: n.gestor.email, senha: SENHA_DE_TESTE }, silencioso);
+    expect(r).toMatchObject({ ok: false, mensagem: MENSAGENS_LOGIN.naoConfirmado, reenvioDisponivel: true });
+    // O sucesso também não traz o campo.
+    expect(await entrar({ email: inativo.gestor.email, senha: SENHA_DE_TESTE }, silencioso)).not.toHaveProperty(
+      'reenvioDisponivel',
+    );
   });
 });
 

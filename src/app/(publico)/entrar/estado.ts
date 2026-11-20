@@ -8,10 +8,13 @@ export type EstadoEntrar = {
   erros: { email?: string; senha?: string };
   /** E-mail digitado, devolvido para o campo após um erro. */
   email: string;
+  /** D-011 RN-16: senha certa e e-mail não confirmado → a tela oferece o reenvio do link. */
+  reenvioDisponivel: boolean;
 };
 
 export const ESTADO_INICIAL_ENTRAR: EstadoEntrar = Object.freeze({
   mensagem: null,
   erros: Object.freeze({}),
   email: '',
+  reenvioDisponivel: false,
 }) as EstadoEntrar;
