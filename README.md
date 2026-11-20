@@ -164,6 +164,16 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Demonstração para o E2E:** `/dev/jornada` (`?modo=edicao|leitura|vazia`), ligada pela mesma `VITRINE_COMPONENTES=true` da vitrine, com os mesmos componentes e uma ação que só valida (não grava nada; 404 com a variável desligada).
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/jornadas/concorrencia.test.ts || break; done`.
 
+## Bloqueios
+
+- **Onde:** `/painel/bloqueios` (item "Bloqueios" do menu do gestor e do profissional): formulário "Novo bloqueio" e a lista dos bloqueios **vigentes e futuros** (os já encerrados não aparecem), por início. Cada bloqueio editável tem "Editar" (`/painel/bloqueios/<id>`: início, fim e motivo; o dono e o nível não mudam, para isso remova e crie outro) e "Remover" (apaga de vez; bloqueio não é histórico).
+- **Quem:** o **gestor** cria, edita e remove bloqueios do **salão inteiro** (feriado, reforma: vale para todos os profissionais) e de **qualquer profissional** do salão, inclusive do próprio perfil e de profissional inativo (marcado "(inativo)"). O **profissional** gere só os **próprios** e vê os do salão inteiro somente leitura; não vê os de colegas. Bloqueio de outro salão responde 404.
+- **Horário:** sempre **hora local do salão** (fuso configurado), gravado em UTC. "Com horário": datas `dd/mm/aaaa` e horas `HH:MM` (00:00 a 23:55) em **múltiplos de 5 minutos**; pode atravessar a meia-noite e durar vários dias. "Dia inteiro": da data de início à data de fim, **inclusivas** (00:00 local da primeira até 00:00 local do dia seguinte à última, também em dias de 23 h ou 25 h de horário de verão); as horas são ignoradas. Trocar o fuso do salão não recalcula os bloqueios: eles passam a ser exibidos no novo fuso.
+- **Limites:** o fim precisa ser depois do início e depois de agora (o início pode estar no passado, ex.: "hoje, dia inteiro"); duração de até **366 dias** (366 datas no dia inteiro); início até **2 anos** à frente; motivo opcional de até 200 caracteres. Bloqueios podem se sobrepor.
+- **Reservas cobertas:** é permitido bloquear um período com reservas. Depois de salvar, a tela lista as reservas **confirmadas** sob o bloqueio (data e hora, profissional e cliente, ou "cliente removida"). Elas **não são alteradas nem canceladas**, e nenhuma mensagem é enviada.
+- **Demonstração para o E2E:** `/dev/bloqueios` (`?modo=gestor|profissional|edicao`), ligada pela mesma `VITRINE_COMPONENTES=true` da vitrine, com os mesmos componentes e ações que só validam (não grava nada; 404 com a variável desligada).
+- **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/bloqueios/concorrencia.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.

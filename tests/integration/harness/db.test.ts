@@ -170,5 +170,6 @@ describe('executarPrisma', () => {
     expect(r.stdout).toContain('database "agenda_beleza_test"');
     expect(r.stdout).toContain('at "localhost:1"');
     expect(r.stderr).toContain('P1001');
-  });
+    // Sobe o Prisma CLI num processo filho: com a suíte inteira e a cobertura ligada passou de 5 s na CI (DEF-CI-1 da D-016).
+  }, 30_000);
 });

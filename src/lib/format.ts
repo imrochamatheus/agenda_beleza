@@ -205,3 +205,26 @@ export function formatarDeslocamentoUtc(instante: Date, fuso?: string): string {
   const sinal = casado[1] === '-' ? MENOS : '+';
   return `UTC${sinal}${casado[2]}:${casado[3]}`;
 }
+
+/**
+ * Período de um bloqueio (D-016 §3.5, RN-19), no fuso do salão:
+ * - `diaInteiro` e uma única data → '25/12/2026 (dia inteiro)';
+ * - `diaInteiro` e várias datas → '24/12/2026 a 26/12/2026' (a última data é a de `fim − 1 ms`, o que
+ *   vale também nos dias de 23 h e 25 h);
+ * - senão → '25/12/2026 22:00 a 26/12/2026 02:00' (data e hora nas duas pontas).
+ * `diaInteiro` vem do servidor (a classificação depende da regra de horário de verão, que este arquivo
+ * não calcula). Instante inválido, `fim <= inicio` ou fuso inválido → erro.
+ */
+export function formatarPeriodoBloqueio(inicio: Date, fim: Date, fuso: string, diaInteiro: boolean): string {
+  validarEntrada(inicio, fuso);
+  validarEntrada(fim, fuso);
+  if (fim.getTime() <= inicio.getTime()) {
+    throw new RangeError('formatarPeriodoBloqueio: o fim deve ser posterior ao início');
+  }
+  if (!diaInteiro) {
+    return `${formatarDataHora(inicio, fuso)} a ${formatarDataHora(fim, fuso)}`;
+  }
+  const primeira = formatarData(inicio, fuso);
+  const ultima = formatarData(new Date(fim.getTime() - 1), fuso);
+  return primeira === ultima ? `${primeira} (dia inteiro)` : `${primeira} a ${ultima}`;
+}

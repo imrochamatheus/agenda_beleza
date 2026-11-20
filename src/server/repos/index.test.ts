@@ -57,6 +57,15 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.jornadas.travarProfissional(ctx, id),
         r.jornadas.buscarProfissional(ctx, id),
         r.jornadas.aplicarDiferenca(ctx, id, { remover: [], inserir: [] }),
+        r.reservas.listarConfirmadasQueCruzam(ctx, { de: new Date(0), ate: new Date() }, id, 10),
+        r.bloqueios.buscarProfissional(ctx, id),
+        r.bloqueios.buscar(ctx, id),
+        r.bloqueios.travar(ctx, id),
+        r.bloqueios.atualizarPeriodo(ctx, id, { inicio: new Date(0), fim: new Date(), motivo: null }),
+        r.bloqueios.remover(ctx, id),
+        r.bloqueios.criar(ctx, { profissionalId: id, inicio: new Date(0), fim: new Date(), motivo: null }),
+        r.bloqueios.listarVigentes(ctx, new Date(), { profissionalId: id }),
+        r.bloqueios.listarNoPeriodo(ctx, { de: new Date(0), ate: new Date() }, { profissionalId: id }),
       ];
       for (const chamada of chamadas) {
         await expect(chamada).rejects.toBeInstanceOf(NaoEncontrado);
@@ -109,6 +118,18 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.jornadas.travarProfissional(c, ID),
         r.jornadas.buscarProfissional(c, ID),
         r.jornadas.aplicarDiferenca(c, ID, { remover: [], inserir: [] }),
+        r.reservas.listarConfirmadasQueCruzam(c, { de: new Date(0), ate: new Date() }, null, 10),
+        r.reservas.listarConfirmadasQueCruzam(c, { de: new Date(0), ate: new Date() }, ID, 10),
+        r.bloqueios.fusoDoSalao(c),
+        r.bloqueios.buscarProfissional(c, ID),
+        r.bloqueios.listarProfissionais(c),
+        r.bloqueios.criar(c, { profissionalId: null, inicio: new Date(0), fim: new Date(), motivo: null }),
+        r.bloqueios.buscar(c, ID),
+        r.bloqueios.travar(c, ID),
+        r.bloqueios.atualizarPeriodo(c, ID, { inicio: new Date(0), fim: new Date(), motivo: null }),
+        r.bloqueios.remover(c, ID),
+        r.bloqueios.listarVigentes(c, new Date(), { todos: true }),
+        r.bloqueios.listarNoPeriodo(c, { de: new Date(0), ate: new Date() }),
       ];
       for (const chamada of chamadas) {
         await expect(chamada).rejects.toThrow(
@@ -127,6 +148,14 @@ describe('repositórios de tenant sem consultar o banco', () => {
   it('D-015: aplicarDiferenca com listas vazias (ou só ids malformados) não consulta', async () => {
     expect(await repos().jornadas.aplicarDiferenca(ctx, ID, { remover: [], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
     expect(await repos().jornadas.aplicarDiferenca(ctx, ID, { remover: ['abc'], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
+  });
+
+  it('D-016: listarConfirmadasQueCruzam com limite inválido → RangeError sem consulta', async () => {
+    for (const limite of [0, -1, 1.5, Number.NaN]) {
+      await expect(repos().reservas.listarConfirmadasQueCruzam(ctx, { de: new Date(0), ate: new Date() }, null, limite)).rejects.toThrow(
+        RangeError,
+      );
+    }
   });
 
   it('garantirPerfilDoGestor exige TenantContext: SistemaContext → Error antes da consulta (D-013)', async () => {

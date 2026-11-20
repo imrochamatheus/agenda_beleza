@@ -14,6 +14,7 @@ import {
   formatarMoeda,
   formatarMinutosDoDia,
   formatarMoedaSemSimbolo,
+  formatarPeriodoBloqueio,
   FUSO_PADRAO,
 } from './format';
 
@@ -307,5 +308,40 @@ describe('formatarDiaDaSemana (D-015 RN-15)', () => {
     for (const v of [7, -1, 1.5, Number.NaN, '1' as unknown as number]) {
       expect(() => formatarDiaDaSemana(v)).toThrow(RangeError);
     }
+  });
+});
+
+describe('formatarPeriodoBloqueio (D-016 CA-23, CA-3, CA-5, R-2)', () => {
+  it('dia inteiro de uma única data → "dd/mm/aaaa (dia inteiro)" (CA-3)', () => {
+    expect(formatarPeriodoBloqueio(d('2026-12-25T03:00:00Z'), d('2026-12-26T03:00:00Z'), SP, true)).toBe('25/12/2026 (dia inteiro)');
+  });
+
+  it('vários dias inteiros → "primeira a última" (datas inclusivas)', () => {
+    expect(formatarPeriodoBloqueio(d('2026-12-24T03:00:00Z'), d('2026-12-27T03:00:00Z'), SP, true)).toBe('24/12/2026 a 26/12/2026');
+  });
+
+  it('com horário atravessando a meia-noite → data e hora nas duas pontas (CA-5)', () => {
+    expect(formatarPeriodoBloqueio(d('2026-12-26T01:00:00Z'), d('2026-12-26T05:00:00Z'), SP, false)).toBe('25/12/2026 22:00 a 26/12/2026 02:00');
+  });
+
+  it('dias de 23 h e de 25 h em São Paulo (horário de verão histórico, R-2)', () => {
+    expect(formatarPeriodoBloqueio(d('2018-11-04T03:00:00Z'), d('2018-11-05T02:00:00Z'), SP, true)).toBe('04/11/2018 (dia inteiro)');
+    expect(formatarPeriodoBloqueio(d('2018-02-17T02:00:00Z'), d('2018-02-18T03:00:00Z'), SP, true)).toBe('17/02/2018 (dia inteiro)');
+    expect(formatarPeriodoBloqueio(d('2018-02-17T02:00:00Z'), d('2018-11-05T02:00:00Z'), SP, true)).toBe('17/02/2018 a 04/11/2018');
+  });
+
+  it('o mesmo instante é exibido no fuso pedido (Manaus, CA-17)', () => {
+    expect(formatarPeriodoBloqueio(d('2026-12-25T17:00:00Z'), d('2026-12-25T19:00:00Z'), 'America/Manaus', false)).toBe(
+      '25/12/2026 13:00 a 25/12/2026 15:00',
+    );
+  });
+
+  it('fim <= início, instante inválido ou fuso inválido → erro', () => {
+    const a = d('2026-12-25T03:00:00Z');
+    expect(() => formatarPeriodoBloqueio(a, a, SP, false)).toThrow(RangeError);
+    expect(() => formatarPeriodoBloqueio(a, d('2026-12-24T03:00:00Z'), SP, true)).toThrow(RangeError);
+    expect(() => formatarPeriodoBloqueio(new Date('x'), a, SP, false)).toThrow(RangeError);
+    expect(() => formatarPeriodoBloqueio(a, d('2026-12-26T03:00:00Z'), '', true)).toThrow(RangeError);
+    expect(() => formatarPeriodoBloqueio(a, d('2026-12-26T03:00:00Z'), 'Foo/Bar', true)).toThrow(RangeError);
   });
 });

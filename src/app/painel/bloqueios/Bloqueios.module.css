@@ -1,0 +1,242 @@
+/* Bloqueios (D-016 RN-19). Só tokens do tema (globals.css); breakpoint único 48rem. */
+.pagina {
+  display: grid;
+  gap: var(--espaco-8);
+}
+
+.secao {
+  display: grid;
+  gap: var(--espaco-4);
+}
+
+.secao h2 {
+  margin: 0;
+}
+
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 40rem;
+}
+
+.ajuda {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.resumoErros {
+  padding: var(--espaco-4);
+  border: 2px solid var(--cor-erro-texto);
+  border-radius: var(--raio);
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro-texto);
+}
+
+.resumoErros:focus-visible,
+.resumoErros:focus,
+.salvo:focus-visible,
+.salvo:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.resumoTitulo {
+  margin: 0 0 var(--espaco-2);
+  font-weight: 600;
+}
+
+.resumoErros ul {
+  margin: 0;
+  padding-left: var(--espaco-4);
+}
+
+.resumoErros a {
+  color: inherit;
+}
+
+.salvo {
+  display: grid;
+  gap: var(--espaco-3);
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+}
+
+.salvoTitulo {
+  margin: 0;
+  font-size: var(--texto-lg);
+}
+
+.semReservas {
+  margin: 0;
+}
+
+.aviso {
+  display: grid;
+  gap: var(--espaco-2);
+  padding: var(--espaco-3) var(--espaco-4);
+  border-radius: var(--raio);
+  background: var(--cor-aviso-fundo);
+  color: var(--cor-aviso-texto);
+}
+
+.avisoTitulo {
+  margin: 0;
+  font-weight: 600;
+}
+
+.avisoLista {
+  margin: 0;
+  padding-left: var(--espaco-4);
+}
+
+.aviso p {
+  margin: 0;
+}
+
+.alvoFixo {
+  margin: 0;
+}
+
+.periodo {
+  display: grid;
+  gap: var(--espaco-3);
+  margin: 0;
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+}
+
+.periodo > legend {
+  padding: 0 var(--espaco-1);
+  font-weight: 600;
+}
+
+.modos {
+  display: grid;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.modos > legend {
+  padding: 0;
+  margin-bottom: var(--espaco-2);
+  font-weight: 600;
+}
+
+.opcoesModo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-2) var(--espaco-6);
+}
+
+.radio {
+  display: inline-flex;
+  gap: var(--espaco-2);
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  cursor: pointer;
+}
+
+.radio input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--cor-primaria);
+}
+
+.radio input:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.campos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--espaco-3);
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-3) var(--espaco-6);
+}
+
+.vazio {
+  margin: 0;
+  color: var(--cor-texto-suave);
+}
+
+.lista {
+  display: grid;
+  gap: var(--espaco-3);
+  max-width: 40rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: var(--espaco-1);
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+}
+
+.item p {
+  margin: 0;
+}
+
+.itemAlvo {
+  font-weight: 600;
+}
+
+.itemMotivo,
+.somenteLeitura {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.itemAcoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-2) var(--espaco-4);
+  margin-top: var(--espaco-2);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  color: var(--cor-primaria-forte);
+}
+
+.link:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+@media (min-width: 48rem) {
+  .item {
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+
+  .item > p {
+    grid-column: 1;
+  }
+
+  .itemAcoes {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    margin-top: 0;
+  }
+}

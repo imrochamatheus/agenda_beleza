@@ -1,9 +1,10 @@
+import { Prisma } from '@/generated/prisma/client';
 import type { ContextoEscopado } from '@/server/tenant/context';
 import { exigirEscopo } from '@/server/tenant/context';
 import { NaoEncontrado } from '@/server/tenant/erros';
 
 import { ehUuid } from './ids';
-import type { Periodo, ReservaBloqueanteDTO, ReservaDTO, StatusReserva } from './tipos';
+import type { Periodo, ReservaBloqueanteDTO, ReservaCobertaDTO, ReservaDTO, StatusReserva } from './tipos';
 import type { Executor } from './transacao';
 
 export interface RepoReserva {
@@ -33,6 +34,61 @@ export interface RepoReserva {
     profissionalId: string,
     agora: Date,
   ): Promise<ReservaBloqueanteDTO[]>;
+  /**
+   * Reservas sob um bloqueio (D-016 RN-8): `status = 'confirmado'` e [inicio, fim) && [de, ate) (sem
+   * ocupado_ate, spec D-7), no salão do contexto; `profissionalId` → só dele; null → de todos os
+   * profissionais do salão. Ordem: inicio, id. No máximo `limite` itens; `total` é a contagem completa.
+   * Traz o nome do profissional e o da cliente (null se anonimizada); o telefone NUNCA é lido.
+   * profissionalId malformado → NaoEncontrado sem consultar. Ver consultaReservasQueCruzam.
+   */
+  listarConfirmadasQueCruzam(
+    ctx: ContextoEscopado,
+    periodo: Periodo,
+    profissionalId: string | null,
+    limite: number,
+  ): Promise<{ reservas: ReservaCobertaDTO[]; total: number }>;
+}
+
+type LinhaCoberta = {
+  id: string;
+  profissional_id: string;
+  profissional_nome: string;
+  inicio: Date;
+  fim: Date;
+  cliente_nome: string | null;
+  total: bigint;
+};
+
+/**
+ * SQL de listarConfirmadasQueCruzam (exportado só para o teste de plano, D-016 R-3). O literal
+ * 'confirmado' e o predicado redundante `tstzrange(r.inicio, r.ocupado_ate, '[)') && …` ficam NO TEXTO
+ * para o planejador provar a implicação com o predicado do índice parcial `reserva_sem_sobreposicao`
+ * (GiST da exclusion) e usá-lo, inclusive com plano genérico. NÃO troque o literal por parâmetro nem
+ * junte as duas variantes num `$p IS NULL OR …` (o plano perde o índice). O filtro exato
+ * `r.inicio < ate AND r.fim > de` vem junto, porque [inicio, ocupado_ate) é um superconjunto.
+ * Seleciona c.nome e nunca c.telefone_e164.
+ */
+export function consultaReservasQueCruzam(
+  salaoId: string,
+  { de, ate }: Periodo,
+  profissionalId: string | null,
+  limite: number,
+): Prisma.Sql {
+  const doProfissional =
+    profissionalId === null ? Prisma.empty : Prisma.sql`AND r.profissional_id = ${profissionalId}::uuid`;
+  return Prisma.sql`
+    SELECT r.id::text AS id, r.profissional_id::text AS profissional_id, p.nome AS profissional_nome,
+           r.inicio, r.fim, c.nome AS cliente_nome, count(*) OVER () AS total
+      FROM reserva r
+      JOIN profissional p ON p.salao_id = r.salao_id AND p.id = r.profissional_id
+      JOIN cliente c ON c.salao_id = r.salao_id AND c.id = r.cliente_id
+     WHERE r.salao_id = ${salaoId}::uuid
+       AND r.status = 'confirmado'
+       AND tstzrange(r.inicio, r.ocupado_ate, '[)') && tstzrange(${de}::timestamptz, ${ate}::timestamptz, '[)')
+       AND r.inicio < ${ate}::timestamptz AND r.fim > ${de}::timestamptz
+       ${doProfissional}
+     ORDER BY r.inicio, r.id
+     LIMIT ${limite}::int`;
 }
 
 const CAMPOS = {
@@ -115,6 +171,29 @@ export function criarRepoReserva(db: Executor): RepoReserva {
         clienteNome: r.cliente.nome,
         servicos: r.itens.map((i) => i.servico.nome),
       }));
+    },
+
+    async listarConfirmadasQueCruzam(ctx, periodo, profissionalId, limite) {
+      const salaoId = exigirEscopo(ctx);
+      if (profissionalId !== null && !ehUuid(profissionalId)) {
+        throw new NaoEncontrado();
+      }
+      if (!Number.isSafeInteger(limite) || limite < 1) {
+        throw new RangeError('listarConfirmadasQueCruzam: limite deve ser um inteiro positivo');
+      }
+      const linhas = await db.$queryRaw<LinhaCoberta[]>(consultaReservasQueCruzam(salaoId, periodo, profissionalId, limite));
+      const total = linhas.length === 0 ? 0 : Number(linhas[0].total);
+      return {
+        total,
+        reservas: linhas.map((l) => ({
+          id: l.id,
+          profissionalId: l.profissional_id,
+          profissionalNome: l.profissional_nome,
+          inicio: l.inicio,
+          fim: l.fim,
+          clienteNome: l.cliente_nome,
+        })),
+      };
     },
   };
 }

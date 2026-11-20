@@ -157,6 +157,7 @@ describe('CA-12: rotas e segmentos reservados', () => {
         '/dev/componentes',
         '/dev/mp-checkout',
         '/dev/jornada',
+        '/dev/bloqueios',
       ]),
     );
   });
@@ -178,6 +179,11 @@ describe('CA-12: rotas e segmentos reservados', () => {
     // D-015: a jornada ativa "Profissionais"; a demonstração fica sob o segmento reservado "dev".
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.jornada('abc'))).toBe(ROTAS.profissionais);
     expect(ROTAS.devJornada).toBe('/dev/jornada');
+    // D-016: a edição de bloqueio codifica o id e ativa "Bloqueios" (gestor e profissional).
+    expect(ROTAS.bloqueio('a b/c')).toBe('/painel/bloqueios/a%20b%2Fc');
+    expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.bloqueio('abc'))).toBe(ROTAS.bloqueios);
+    expect(itemAtivo(NAVEGACAO_PAINEL.profissional, ROTAS.bloqueio('abc'))).toBe(ROTAS.bloqueios);
+    expect(ROTAS.devBloqueios).toBe('/dev/bloqueios');
     expect(ROTAS.salaoPublico('a b/c')).toBe('/a%20b%2Fc');
     expect(ROTAS.adminSalao('a b/c')).toBe('/admin/saloes/a%20b%2Fc');
     expect(ROTAS.adminSalaoAssinatura('a b/c')).toBe('/admin/saloes/a%20b%2Fc/assinatura');
