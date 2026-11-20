@@ -42,6 +42,33 @@ export type ProfissionalDTO = {
   atualizadoEm: Date;
 };
 
+/** Usuário vinculado a um perfil de profissional (convite aceito ou o gestor que atende). */
+export type VinculoProfissional = { papel: 'gestor' | 'profissional'; emailLogin: string };
+
+/** Profissional para o painel do gestor (D-013 §3.2): inclui o vínculo, sem a senha. */
+export type ProfissionalPainelDTO = ProfissionalDTO & { vinculo: VinculoProfissional | null };
+
+/** Resultado da trava FOR UPDATE do profissional: estado atual e dados para as regras, numa consulta. */
+export type TravaProfissional = {
+  id: string;
+  usuarioId: string | null;
+  ativo: boolean;
+  email: string | null;
+  papelUsuario: 'gestor' | 'profissional' | null;
+  fusoSalao: string;
+};
+
+/** Reserva confirmada que impede a desativação do profissional (D-013 RN-2). */
+export type ReservaBloqueanteDTO = {
+  id: string;
+  inicio: Date;
+  fim: Date;
+  /** null = cliente anonimizada. */
+  clienteNome: string | null;
+  /** Nomes atuais dos serviços, na ordem dos itens (D-13). */
+  servicos: string[];
+};
+
 /** Anonimizada: nome e telefone nulos e anonimizadaEm preenchido (a UI mostra "cliente removida"). */
 export type ClienteDTO = {
   id: string;

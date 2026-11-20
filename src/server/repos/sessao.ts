@@ -2,6 +2,7 @@ import { Prisma } from '@/generated/prisma/client';
 import type { Papel } from '@/server/tenant/context';
 
 import { obterPrisma } from './db';
+import type { Executor } from './transacao';
 
 /**
  * Sessões da equipe (D-005 §3.2; D-010 §3.6). Exceção documentada à RN-8: é pré-contexto (ainda não
@@ -150,9 +151,17 @@ export async function revogarSessaoPorHash(tokenHash: string, agora: Date): Prom
   return count;
 }
 
-/** Revoga todas as sessões ainda não revogadas do usuário (E1.3, E2.2). Nunca apaga linhas. */
-export async function revogarSessoesDoUsuario(usuarioId: string, agora: Date): Promise<number> {
-  const { count } = await obterPrisma().sessao.updateMany({
+/**
+ * Revoga todas as sessões ainda não revogadas do usuário (E1.3, E2.2). Nunca apaga linhas. `db` é o
+ * executor (padrão: cliente global); a desativação de profissional passa o da sua transação (D-013
+ * RN-7), para a revogação ser desfeita junto num rollback.
+ */
+export async function revogarSessoesDoUsuario(
+  usuarioId: string,
+  agora: Date,
+  db: Executor = obterPrisma(),
+): Promise<number> {
+  const { count } = await db.sessao.updateMany({
     where: { usuarioId, revogadaEm: null },
     data: { revogadaEm: agora },
   });

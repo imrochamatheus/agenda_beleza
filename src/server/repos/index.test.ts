@@ -36,6 +36,12 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.servicos.renomear(ctx, id, 'x'),
         r.profissionais.buscarPorId(ctx, id),
         r.profissionais.renomear(ctx, id, 'x'),
+        r.profissionais.buscarParaPainel(ctx, id),
+        r.profissionais.travarParaAlteracao(ctx, id),
+        r.profissionais.atualizarDados(ctx, id, { nome: 'x', email: null }),
+        r.profissionais.aplicarDesativacao(ctx, id, { agora: new Date(), revogarSessoesDe: null }),
+        r.profissionais.reativar(ctx, id),
+        r.reservas.listarBloqueantesDeDesativacao(ctx, id, new Date()),
         r.clientes.buscarPorId(ctx, id),
         r.clientes.renomear(ctx, id, 'x'),
         r.reservas.buscarPorId(ctx, id),
@@ -62,6 +68,16 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.profissionais.buscarPorId(c, ID),
         r.profissionais.listar(c),
         r.profissionais.renomear(c, ID, 'x'),
+        r.profissionais.criar(c, { nome: 'x', email: null }),
+        r.profissionais.listarParaPainel(c),
+        r.profissionais.buscarParaPainel(c, ID),
+        r.profissionais.listarAtivos(c),
+        r.profissionais.travarParaAlteracao(c, ID),
+        r.profissionais.atualizarDados(c, ID, { nome: 'x', email: null }),
+        r.profissionais.aplicarDesativacao(c, ID, { agora: new Date(), revogarSessoesDe: null }),
+        r.profissionais.reativar(c, ID),
+        r.profissionais.garantirPerfilDoGestor(c as never),
+        r.reservas.listarBloqueantesDeDesativacao(c, ID, new Date()),
         r.clientes.buscarPorId(c, ID),
         r.clientes.listar(c),
         r.clientes.renomear(c, ID, 'x'),
@@ -75,6 +91,12 @@ describe('repositórios de tenant sem consultar o banco', () => {
         );
       }
     }
+  });
+
+  it('garantirPerfilDoGestor exige TenantContext: SistemaContext → Error antes da consulta (D-013)', async () => {
+    await expect(repos().profissionais.garantirPerfilDoGestor(contextoDeSistema(SALAO, 'worker') as never)).rejects.toThrow(
+      'perfil do gestor exige TenantContext',
+    );
   });
 
   it('SistemaContext é aceito (chega à consulta: o erro é de conexão, não de escopo)', async () => {

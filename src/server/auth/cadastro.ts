@@ -1,4 +1,5 @@
 import { slugBase } from '@/lib/slug';
+import { normalizarNome } from '@/lib/texto';
 import { criarSalaoComGestor, emailJaCadastrado } from '@/server/repos/cadastro';
 
 import { enviarLinkDeConfirmacao, esquemaEmail, novoTokenDeConfirmacao, registrarLog } from './confirmacao-email';
@@ -32,23 +33,12 @@ export type CampoCadastro = 'nome' | 'email' | 'senha' | 'nomeSalao';
 export type DadosCadastro = { nome: string; email: string; senha: string; nomeSalao: string };
 export type ErrosCadastro = Partial<Record<CampoCadastro, string>>;
 
-const CONTROLE = /\p{Cc}/u;
-
-/** Trim + colapso de espaços; null se não for texto ou tiver caractere de controle (inclui quebra de linha). */
-function nomeNormalizado(v: unknown, limite: { min: number; max: number }): string | null {
-  if (typeof v !== 'string' || CONTROLE.test(v)) {
-    return null;
-  }
-  const n = v.trim().replace(/\s+/gu, ' ');
-  return n.length >= limite.min && n.length <= limite.max ? n : null;
-}
-
 /** RN-7. Puro (unidade). Todos os erros juntos. A senha não é aparada nem normalizada. */
 export function validarCadastro(
   e: Record<CampoCadastro, unknown>,
 ): { ok: true; dados: DadosCadastro } | { ok: false; erros: ErrosCadastro } {
   const erros: ErrosCadastro = {};
-  const nome = nomeNormalizado(e.nome, LIMITES_CADASTRO.nome);
+  const nome = normalizarNome(e.nome, LIMITES_CADASTRO.nome);
   if (nome === null) erros.nome = MENSAGENS_CADASTRO.nome;
 
   const email = esquemaEmail.safeParse(e.email);
@@ -61,7 +51,7 @@ export function validarCadastro(
     erros.senha = MENSAGENS_CADASTRO.senhaLonga;
   }
 
-  const nomeSalao = nomeNormalizado(e.nomeSalao, LIMITES_CADASTRO.nomeSalao);
+  const nomeSalao = normalizarNome(e.nomeSalao, LIMITES_CADASTRO.nomeSalao);
   if (nomeSalao === null) erros.nomeSalao = MENSAGENS_CADASTRO.nomeSalao;
 
   if (nome === null || !email.success || erros.senha || nomeSalao === null) {
