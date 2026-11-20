@@ -14,6 +14,7 @@ import { repos } from './index';
 
 const SALAO = '0b0c5f6e-4a7d-4f0a-9a43-1f7f3c1e2d10';
 const ID = '5d2a9b1c-3e4f-4a5b-8c6d-7e8f9a0b1c2d';
+const DADOS = { nome: 'Corte', precoCentavos: 8000, duracaoMin: 45 };
 const ctx = criarTenantContext({ usuarioId: ID, papel: 'gestor', salaoId: SALAO, profissionalId: null });
 
 // Banco inacessível (porta fechada): os casos abaixo têm de responder ANTES de qualquer consulta;
@@ -34,6 +35,12 @@ describe('repositórios de tenant sem consultar o banco', () => {
       const chamadas = [
         r.servicos.buscarPorId(ctx, id),
         r.servicos.renomear(ctx, id, 'x'),
+        r.servicos.buscarParaPainel(ctx, id),
+        r.servicos.listarProfissionaisParaVinculo(ctx, id),
+        r.servicos.travarParaAlteracao(ctx, id),
+        r.servicos.atualizarDados(ctx, id, DADOS),
+        r.servicos.definirAtivo(ctx, id, false),
+        r.servicos.substituirVinculosAtivos(ctx, id, []),
         r.profissionais.buscarPorId(ctx, id),
         r.profissionais.renomear(ctx, id, 'x'),
         r.profissionais.buscarParaPainel(ctx, id),
@@ -65,6 +72,16 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.servicos.buscarPorId(c, ID),
         r.servicos.listar(c),
         r.servicos.renomear(c, ID, 'x'),
+        r.servicos.criar(c, DADOS),
+        r.servicos.listarParaPainel(c),
+        r.servicos.buscarParaPainel(c, ID),
+        r.servicos.listarProfissionaisParaVinculo(c, ID),
+        r.servicos.travarProfissionaisParaVinculo(c, [ID]),
+        r.servicos.travarProfissionaisParaVinculo(c, []),
+        r.servicos.travarParaAlteracao(c, ID),
+        r.servicos.atualizarDados(c, ID, DADOS),
+        r.servicos.definirAtivo(c, ID, true),
+        r.servicos.substituirVinculosAtivos(c, ID, [ID]),
         r.profissionais.buscarPorId(c, ID),
         r.profissionais.listar(c),
         r.profissionais.renomear(c, ID, 'x'),
@@ -91,6 +108,12 @@ describe('repositórios de tenant sem consultar o banco', () => {
         );
       }
     }
+  });
+
+  it('D-014: travarProfissionaisParaVinculo sem nenhum UUID válido → [] sem consulta', async () => {
+    const r = repos();
+    expect(await r.servicos.travarProfissionaisParaVinculo(ctx, [])).toEqual([]);
+    expect(await r.servicos.travarProfissionaisParaVinculo(ctx, ['abc', '', "1' OR '1'='1"])).toEqual([]);
   });
 
   it('garantirPerfilDoGestor exige TenantContext: SistemaContext → Error antes da consulta (D-013)', async () => {

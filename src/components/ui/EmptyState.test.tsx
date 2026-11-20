@@ -10,7 +10,7 @@ describe('EmptyState (CA-17, RN-19)', () => {
       <EmptyState
         titulo="Nenhum serviço cadastrado."
         descricao="Cadastre o primeiro serviço."
-        acao={<a href="/painel/servicos">Cadastrar serviço</a>}
+        acao={<a href="#cadastrar-servico">Cadastrar serviço</a>}
       />,
     );
     expect(screen.getByRole('heading', { level: 2, name: 'Nenhum serviço cadastrado.' })).toBeTruthy();

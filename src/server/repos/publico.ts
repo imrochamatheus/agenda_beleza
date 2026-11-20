@@ -45,10 +45,15 @@ export async function resolverSalaoPorSlug(slug: string): Promise<ResolucaoSlug>
   };
 }
 
+/**
+ * Serviços ofertáveis do salão (D-014 RN-7): ativos E com ao menos um profissional ATIVO vinculado
+ * (a relação é pela FK composta (salao_id, profissional_id): só enxerga profissionais do mesmo salão).
+ * É a ÚNICA leitura de serviços ofertáveis para E3.1 (disponibilidade) e E4.1 (página pública).
+ */
 export async function listarServicosPublicos(ctx: PublicoContext): Promise<ServicoPublico[]> {
   const salaoId = exigirPublico(ctx);
   return obterPrisma().servico.findMany({
-    where: { salaoId, ativo: true },
+    where: { salaoId, ativo: true, profissionais: { some: { profissional: { ativo: true } } } },
     select: { id: true, nome: true, precoCentavos: true, duracaoMin: true },
     orderBy: [{ nome: 'asc' }, { id: 'asc' }],
   });

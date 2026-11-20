@@ -1,0 +1,42 @@
+/* Páginas de /painel/servicos (D-014 RN-11). Só tokens do tema; breakpoint único 48rem. */
+.pagina {
+  display: grid;
+  gap: var(--espaco-6);
+}
+
+.cabecalho {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-3);
+}
+
+.secao {
+  display: grid;
+  gap: var(--espaco-3);
+  padding-top: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-sutil);
+}
+
+.secao h2 {
+  margin: 0;
+  font-size: var(--texto-lg);
+}
+
+.secao p {
+  margin: 0;
+}
+
+.aviso {
+  display: block;
+  color: var(--cor-aviso-texto);
+  font-size: var(--texto-sm);
+}
+
+@media (min-width: 48rem) {
+  .cabecalho {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+  }
+}

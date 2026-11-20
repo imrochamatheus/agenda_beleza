@@ -8,7 +8,9 @@ import {
   formatarDataHora,
   formatarDeslocamentoUtc,
   formatarHora,
+  formatarDuracao,
   formatarMoeda,
+  formatarMoedaSemSimbolo,
   FUSO_PADRAO,
 } from './format';
 
@@ -53,6 +55,46 @@ describe('formatarMoeda (CA-1, CA-5)', () => {
 
   it('CA-5: texto (forçado) → TypeError', () => {
     expect(() => formatarMoeda('7900' as never)).toThrow(TypeError);
+  });
+});
+
+describe('formatarMoedaSemSimbolo (D-014 §3.4)', () => {
+  it.each([
+    [0, '0,00'],
+    [10, '0,10'],
+    [8000, '80,00'],
+    [123456, '1.234,56'],
+    [9999999, '99.999,99'],
+  ])('%d → %s, igual a formatarMoeda sem "R$ "', (centavos, esperado) => {
+    expect(formatarMoedaSemSimbolo(centavos)).toBe(esperado);
+    expect(formatarMoeda(centavos)).toBe(`R$${NBSP}${esperado}`);
+  });
+
+  it('as mesmas recusas de formatarMoeda', () => {
+    expect(() => formatarMoedaSemSimbolo(-1)).toThrow(RangeError);
+    expect(() => formatarMoedaSemSimbolo(1.5)).toThrow(RangeError);
+    expect(() => formatarMoedaSemSimbolo('80' as never)).toThrow(TypeError);
+  });
+});
+
+describe('formatarDuracao (D-014 D-7)', () => {
+  it.each([
+    [5, '5 min'],
+    [45, '45 min'],
+    [60, '1 h'],
+    [90, '1 h 30 min'],
+    [125, '2 h 5 min'],
+    [720, '12 h'],
+  ])('%d → %s', (minutos, esperado) => {
+    expect(formatarDuracao(minutos)).toBe(esperado);
+  });
+
+  it.each([0, -5, 1.5, NaN, Infinity])('%d → RangeError', (minutos) => {
+    expect(() => formatarDuracao(minutos)).toThrow(RangeError);
+  });
+
+  it('texto → TypeError', () => {
+    expect(() => formatarDuracao('45' as never)).toThrow(TypeError);
   });
 });
 

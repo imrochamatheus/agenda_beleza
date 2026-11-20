@@ -1,0 +1,41 @@
+/* Formulário de serviço (D-014 RN-11). Só tokens do tema (globals.css). */
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 32rem;
+}
+
+.profissionais {
+  display: grid;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+}
+
+.profissionais legend {
+  padding: 0 var(--espaco-2);
+  font-weight: 600;
+}
+
+.inativos {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.inativos p,
+.inativos ul {
+  margin: 0;
+}
+
+.inativos ul {
+  padding-left: var(--espaco-4);
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-3) var(--espaco-6);
+}
