@@ -174,3 +174,17 @@
     grid-template-columns: 1fr auto;
   }
 }
+
+.tituloFoco:focus,
+.tituloFoco:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.consequencias {
+  display: grid;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding-left: var(--espaco-4);
+  max-width: 40rem;
+}

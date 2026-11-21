@@ -49,6 +49,17 @@ const paraLinha = (l: LinhaMensagem): MensagemLinhaDTO => ({
 
 export interface RepoMensagem {
   /**
+   * Anonimização da cliente (D-031), na transação que já travou salão e cliente: em 2 comandos, nesta
+   * ordem (mensagem → tentativa), limpa destinatário e parâmetros de TODAS as mensagens das reservas da
+   * cliente e o `erro_detalhe` das tentativas; `pendente`/`falhou` viram `cancelada_anonimizacao`
+   * (`enviando` mantém o estado: o T2 fecha o resultado). Não toca `erro_codigo` nem o id do provedor.
+   */
+  anonimizarDaCliente(
+    ctx: ContextoEscopado,
+    clienteId: string,
+    agora: Date,
+  ): Promise<{ canceladas: number; limpas: number }>;
+  /**
    * Cliente FOR KEY SHARE OF c + consentimentos por finalidade + reserva (sem trava), num comando.
    * NaoEncontrado se a reserva não for do salão ou o id não for UUID.
    */
@@ -81,6 +92,41 @@ export interface RepoMensagem {
 
 export function criarRepoMensagem(db: Executor): RepoMensagem {
   return {
+    async anonimizarDaCliente(ctx, clienteId, agora) {
+      const salaoId = exigirEscopo(ctx);
+      if (!ehUuid(clienteId)) {
+        throw new NaoEncontrado();
+      }
+      const [n] = await db.$queryRaw<{ canceladas: number; limpas: number }[]>`
+        WITH alvo AS (
+          SELECT m.id, m.estado::text AS antes
+            FROM mensagem m
+            JOIN reserva r ON r.id = m.reserva_id
+           WHERE m.salao_id = ${salaoId}::uuid AND r.salao_id = ${salaoId}::uuid
+             AND r.cliente_id = ${clienteId}::uuid
+             AND (m.estado IN ('pendente', 'falhou') OR m.destinatario_e164 IS NOT NULL OR m.parametros IS NOT NULL)
+           ORDER BY m.id
+             FOR UPDATE OF m
+        ), u AS (
+          UPDATE mensagem m
+             SET estado = CASE WHEN alvo.antes IN ('pendente', 'falhou')
+                               THEN 'cancelada_anonimizacao'::estado_mensagem ELSE m.estado END,
+                 destinatario_e164 = NULL, parametros = NULL, atualizado_em = ${agora}::timestamptz
+            FROM alvo
+           WHERE m.id = alvo.id
+          RETURNING alvo.antes
+        )
+        SELECT count(*) FILTER (WHERE antes IN ('pendente', 'falhou'))::int AS canceladas, count(*)::int AS limpas FROM u`;
+      await db.$executeRaw`
+        UPDATE mensagem_tentativa t
+           SET erro_detalhe = NULL
+          FROM mensagem m
+          JOIN reserva r ON r.id = m.reserva_id
+         WHERE t.mensagem_id = m.id AND m.salao_id = ${salaoId}::uuid AND r.salao_id = ${salaoId}::uuid
+           AND r.cliente_id = ${clienteId}::uuid AND t.erro_detalhe IS NOT NULL`;
+      return { canceladas: n.canceladas, limpas: n.limpas };
+    },
+
     async contextoDeRegistro(ctx, reservaId) {
       const salaoId = exigirEscopo(ctx);
       if (!ehUuid(reservaId)) {

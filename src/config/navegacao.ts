@@ -24,6 +24,7 @@ export const ROTAS = {
   agendaReserva: (id: string) => `/painel/agenda/reservas/${seg(id)}`,
   clientes: '/painel/clientes',
   cliente: (id: string) => `/painel/clientes/${seg(id)}`,
+  excluirCliente: (id: string) => `/painel/clientes/${seg(id)}/excluir`,
   servicos: '/painel/servicos',
   novoServico: '/painel/servicos/novo',
   servico: (id: string) => `/painel/servicos/${seg(id)}`,

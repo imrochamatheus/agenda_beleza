@@ -1,5 +1,8 @@
 'use server';
 
+import { redirect } from 'next/navigation';
+
+import { ROTAS } from '@/config/navegacao';
 import { estadoInicial, lerFormularioCliente } from '@/app/painel/clientes/estado';
 import type { EstadoFormularioCliente } from '@/app/painel/clientes/estado';
 import { vitrineHabilitada } from '@/server/env';
@@ -29,4 +32,13 @@ export async function demonstrarEdicaoAcao(anterior: EstadoFormularioCliente, fd
     ...estadoInicial({ nome: v.nome, telefone: formatarTelefone(v.telefoneE164) }),
     sucesso: semAlteracao ? MENSAGENS_CLIENTE.semAlteracao : MENSAGENS_CLIENTE.salva,
   };
+}
+
+/**
+ * "Confirmar exclusão" da demonstração (D-031): não anonimiza nada; só leva à vista da cliente removida
+ * (PRG), como a ação real. Desligada a vitrine, não faz nada.
+ */
+export async function demonstrarExclusaoAcao(): Promise<void> {
+  if (!vitrineHabilitada(process.env)) return;
+  redirect(`${ROTAS.devClientes}?vista=anonimizada&exclusao=ok`);
 }
