@@ -2,6 +2,8 @@ import { criarRepoBloqueio } from './bloqueio';
 import type { RepoBloqueio } from './bloqueio';
 import { criarRepoCliente } from './cliente';
 import type { RepoCliente } from './cliente';
+import { criarRepoConsentimento } from './consentimento';
+import type { RepoConsentimento } from './consentimento';
 import { obterPrisma } from './db';
 import { criarRepoDisponibilidade } from './disponibilidade';
 import type { RepoDisponibilidade } from './disponibilidade';
@@ -21,13 +23,15 @@ import { criarRepoServico } from './servico';
 import type { RepoServico } from './servico';
 import type { Executor } from './transacao';
 
-export type { RepoBloqueio, RepoCliente, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoProfissional, RepoReserva, RepoSalao, RepoServico };
+export type { RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoProfissional, RepoReserva, RepoSalao, RepoServico };
 
 /** Repositórios de tenant: toda operação recebe ContextoEscopado e filtra salao_id (RN-8). */
 export interface Repos {
   servicos: RepoServico;
   profissionais: RepoProfissional;
   clientes: RepoCliente;
+  /** Consentimento por finalidade, versionado (D-023). */
+  consentimentos: RepoConsentimento;
   reservas: RepoReserva;
   jornadas: RepoJornada;
   bloqueios: RepoBloqueio;
@@ -47,6 +51,7 @@ export function criarRepos(db: Executor): Repos {
     servicos: criarRepoServico(db),
     profissionais: criarRepoProfissional(db),
     clientes: criarRepoCliente(db),
+    consentimentos: criarRepoConsentimento(db),
     reservas: criarRepoReserva(db),
     jornadas: criarRepoJornada(db),
     bloqueios: criarRepoBloqueio(db),

@@ -14,7 +14,8 @@ import type { Executor } from './transacao';
 //   salao (FOR NO KEY UPDATE: regras, slug, perfil por UPDATE, funcionamento; ver repos/funcionamento.ts)
 //     → profissional(is) (FOR UPDATE | FOR NO KEY UPDATE | FOR SHARE, por id)
 //       → servico(s) (FOR SHARE / FOR NO KEY UPDATE, por id)
-//         → servico_profissional / jornada / salao_funcionamento / salao_foto / reserva / reserva_item
+//         → cliente → consentimento (D-023: FOR KEY SHARE na cliente, depois INSERT; ver repos/consentimento.ts)
+//           → servico_profissional / jornada / salao_funcionamento / salao_foto / reserva / reserva_item
 // (D-021: fotos do salão — salao FOR NO KEY UPDATE → salao_foto; ver repos/foto.ts.)
 // Os INSERT com FK para salao só tomam FOR KEY SHARE, que não conflita com FOR NO KEY UPDATE.
 // - Editar serviço: profissionais escolhidos FOR SHARE → serviço FOR NO KEY UPDATE → UPDATE do

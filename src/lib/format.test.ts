@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   formatarData,
+  formatarDataCivil,
   formatarDataHora,
   formatarDeslocamentoUtc,
   formatarDiaDaSemana,
@@ -382,5 +383,20 @@ describe('formatarInteiro (D-020)', () => {
 
   it.each([-1, 1.5, Number.NaN, '1' as unknown as number])('inválido (%s) → RangeError', (v) => {
     expect(() => formatarInteiro(v)).toThrow(RangeError);
+  });
+});
+
+describe('formatarDataCivil (D-023)', () => {
+  it('reordena a data de calendário sem depender do fuso', () => {
+    expect(formatarDataCivil('2026-11-21')).toBe('21/11/2026');
+    expect(formatarDataCivil('2024-02-29')).toBe('29/02/2024');
+  });
+
+  it.each(['2026-02-30', '2026-13-01', '21/11/2026', '', '2026-1-1'])('%s → RangeError', (v) => {
+    expect(() => formatarDataCivil(v)).toThrow(RangeError);
+  });
+
+  it('entrada que não é texto → RangeError', () => {
+    expect(() => formatarDataCivil(undefined as unknown as string)).toThrow(RangeError);
   });
 });

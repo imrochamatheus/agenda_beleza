@@ -1,0 +1,33 @@
+.documento {
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+.meta {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.indice {
+  margin: var(--espaco-6) 0;
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+}
+
+.indice ul {
+  margin: 0;
+  padding-left: var(--espaco-6);
+}
+
+.indice a {
+  display: inline-block;
+  min-height: var(--alvo-minimo);
+  line-height: var(--alvo-minimo);
+}
+
+.secao {
+  margin-top: var(--espaco-8);
+  scroll-margin-top: var(--espaco-6);
+}

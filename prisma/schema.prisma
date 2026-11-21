@@ -55,6 +55,14 @@ enum OrigemReserva {
   @@map("origem_reserva")
 }
 
+enum FinalidadeConsentimento {
+  mensagens_reserva
+  convite_avaliacao
+  publicacao_avaliacao
+
+  @@map("finalidade_consentimento")
+}
+
 enum OrigemConsentimento {
   publico
   equipe
@@ -428,6 +436,8 @@ model Consentimento {
   id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   salaoId      String              @map("salao_id") @db.Uuid
   clienteId    String              @map("cliente_id") @db.Uuid
+  /// Sem DEFAULT: quem grava sempre informa a finalidade.
+  finalidade   FinalidadeConsentimento
   origem       OrigemConsentimento
   /// Versão dos textos de Termos e Privacidade aceitos.
   versaoTermos String              @map("versao_termos")
@@ -436,7 +446,7 @@ model Consentimento {
   salao   Salao   @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   cliente Cliente @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
 
-  @@index([salaoId, clienteId])
+  @@index([salaoId, clienteId, finalidade, criadoEm(sort: Desc), id(sort: Desc)], map: "consentimento_vigente_idx")
   @@map("consentimento")
 }
 

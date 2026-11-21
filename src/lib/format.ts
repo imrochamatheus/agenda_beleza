@@ -178,6 +178,22 @@ export function formatarData(instante: Date, fuso?: string): string {
   return `${p.day}/${p.month}/${p.year}`;
 }
 
+/**
+ * Data de calendário 'AAAA-MM-DD' (sem fuso) → 'dd/mm/aaaa'. Só reordena os campos, logo não
+ * depende do fuso do processo. Fora do formato ou data inexistente → RangeError.
+ */
+export function formatarDataCivil(data: string): string {
+  const m = typeof data === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(data) : null;
+  if (m !== null) {
+    const [, a, mes, dia] = m;
+    const teste = new Date(Date.UTC(Number(a), Number(mes) - 1, Number(dia)));
+    if (teste.getUTCFullYear() === Number(a) && teste.getUTCMonth() === Number(mes) - 1 && teste.getUTCDate() === Number(dia)) {
+      return `${dia}/${mes}/${a}`;
+    }
+  }
+  throw new RangeError(`formatarDataCivil: data fora do formato AAAA-MM-DD (${String(data)})`);
+}
+
 /** HH:mm, 00..23, no fuso (IANA). */
 export function formatarHora(instante: Date, fuso?: string): string {
   const p = partes(instante, fuso);
