@@ -42,7 +42,8 @@ describe('RN-13: somente leitura', () => {
   const dosArquivos = [
     ...arquivos(join(RAIZ, 'src/server/agenda')),
     // D-029: o formulário de reserva manual (agenda/nova) escreve por ação; a agenda em si segue só de leitura.
-    ...arquivos(join(RAIZ, 'src/app/painel/agenda'), (p) => !p.includes('/agenda/nova/')),
+    // D-030: o mesmo vale para as ações do detalhe da reserva (agenda/reservas/[id]: remarcar, cancelar, status).
+    ...arquivos(join(RAIZ, 'src/app/painel/agenda'), (p) => !p.includes('/agenda/nova/') && !p.includes('/agenda/reservas/[id]/')),
     ...arquivos(join(RAIZ, 'src/app/dev/agenda')),
     join(RAIZ, 'src/server/repos/agenda.ts'),
   ].filter(naoTeste);

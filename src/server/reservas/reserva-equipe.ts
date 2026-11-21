@@ -36,6 +36,22 @@ export function lerHora(v: unknown): number | null {
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
+/**
+ * Decisão de encaixe da equipe (D-029 RN-2/RN-3), lida NA transação com o `r` dela: jornada do profissional,
+ * bloqueios que cruzam o período e funcionamento do salão. Compartilhada com a remarcação (D-030).
+ */
+export function criarDecisorDeEncaixe(confirmou: boolean): NonNullable<DependenciasCriarReserva['decidirEncaixe']> {
+  return async (c, r, d) => {
+    const jornada = montarSemanaJornada(await r.jornadas.listarDoProfissional(c, d.profissionalId));
+    const bloqueios = await r.bloqueios.listarNoPeriodo(c, { de: d.inicio, ate: d.fim }, { profissionalId: d.profissionalId });
+    const dto = await r.funcionamento.ler(c);
+    const funcionamento = dto.definido ? { definido: true as const, semana: montarSemana(dto.linhas) } : { definido: false as const };
+    const motivos = detectarMotivos({ inicio: d.inicio, fim: d.fim, fuso: d.fuso, jornada, bloqueios, funcionamento });
+    if (motivos.length === 0) return { encaixe: false };
+    return confirmou ? { encaixe: true } : { motivos };
+  };
+}
+
 export type DependenciasReservaEquipe = Pick<DependenciasCriarReserva, 'enfileirar' | 'politica' | 'aposRevalidar'>;
 
 export async function criarReservaDaEquipe(
@@ -77,15 +93,7 @@ export async function criarReservaDaEquipe(
     {
       ...deps,
       consentimentoOpcional: true,
-      decidirEncaixe: async (c, r, d) => {
-        const jornada = montarSemanaJornada(await r.jornadas.listarDoProfissional(c, d.profissionalId));
-        const bloqueios = await r.bloqueios.listarNoPeriodo(c, { de: d.inicio, ate: d.fim }, { profissionalId: d.profissionalId });
-        const dto = await r.funcionamento.ler(c);
-        const funcionamento = dto.definido ? { definido: true as const, semana: montarSemana(dto.linhas) } : { definido: false as const };
-        const motivos = detectarMotivos({ inicio: d.inicio, fim: d.fim, fuso: d.fuso, jornada, bloqueios, funcionamento });
-        if (motivos.length === 0) return { encaixe: false };
-        return confirmou ? { encaixe: true } : { motivos };
-      },
+      decidirEncaixe: criarDecisorDeEncaixe(confirmou),
     },
   );
 }

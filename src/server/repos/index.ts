@@ -21,13 +21,15 @@ import { criarRepoProfissional } from './profissional';
 import type { RepoProfissional } from './profissional';
 import { criarRepoReserva } from './reserva';
 import type { RepoReserva } from './reserva';
+import { criarRepoReservaAlteracao } from './reserva-alteracao';
+import type { RepoReservaAlteracao } from './reserva-alteracao';
 import { criarRepoSalao } from './salao';
 import type { RepoSalao } from './salao';
 import { criarRepoServico } from './servico';
 import type { RepoServico } from './servico';
 import type { Executor } from './transacao';
 
-export type { RepoAgenda, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoSalao, RepoServico };
+export type { RepoAgenda, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoReservaAlteracao, RepoSalao, RepoServico };
 
 /** Repositórios de tenant: toda operação recebe ContextoEscopado e filtra salao_id (RN-8). */
 export interface Repos {
@@ -37,6 +39,8 @@ export interface Repos {
   /** Consentimento por finalidade, versionado (D-023). */
   consentimentos: RepoConsentimento;
   reservas: RepoReserva;
+  /** Remarcar, cancelar e marcar status (D-030). */
+  reservasAlteracao: RepoReservaAlteracao;
   jornadas: RepoJornada;
   bloqueios: RepoBloqueio;
   /** Configurações, slugs e perfil do próprio salão (D-017, D-020). */
@@ -61,6 +65,7 @@ export function criarRepos(db: Executor): Repos {
     clientes: criarRepoCliente(db),
     consentimentos: criarRepoConsentimento(db),
     reservas: criarRepoReserva(db),
+    reservasAlteracao: criarRepoReservaAlteracao(db),
     jornadas: criarRepoJornada(db),
     bloqueios: criarRepoBloqueio(db),
     saloes: criarRepoSalao(db),
