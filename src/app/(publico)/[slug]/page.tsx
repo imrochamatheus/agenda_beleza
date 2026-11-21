@@ -14,6 +14,8 @@ import type { VisaoDoPasso } from '@/server/reserva-publica/tipos';
 import { lerPerfilPublico, resolverSalaoPorSlug } from '@/server/repos/publico';
 import { NaoEncontrado } from '@/server/tenant/erros';
 
+import { lerAvaliacoesPublicas } from '@/server/avaliacoes/leitura';
+
 import { reservarAcao } from './acoes';
 import { PaginaDoSalao } from './_componentes/PaginaDoSalao';
 
@@ -64,7 +66,11 @@ export default async function PaginaPublicaDoSalao({ params, searchParams }: Pro
 
   const ctx = resolucao.contexto;
   const agora = new Date();
-  const [salao, regras] = await Promise.all([carregarSalao(ctx, agora), lerRegrasDaPagina(ctx, agora)]);
+  const [salao, regras, avaliacoes] = await Promise.all([
+    carregarSalao(ctx, agora),
+    lerRegrasDaPagina(ctx, agora),
+    lerAvaliacoesPublicas(ctx),
+  ]);
   const base = ROTAS.salaoPublico(resolucao.slugAtual);
   const passo = lerPasso(consulta, regras);
   const visao: VisaoDoPasso = salao.decisao.disponivel
@@ -88,6 +94,7 @@ export default async function PaginaPublicaDoSalao({ params, searchParams }: Pro
       visao={visao}
       chave={crypto.randomUUID()}
       humano={widgetHumano()}
+      avaliacoes={avaliacoes}
       acao={reservarAcao}
     />
   );

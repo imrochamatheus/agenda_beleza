@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  formatarMesAno,
+  formatarNota,
   formatarData,
   formatarDataCivil,
   formatarDataHora,
@@ -416,5 +418,39 @@ describe('formatarLista (D-024)', () => {
   it('texto fora da lista → TypeError', () => {
     expect(() => formatarLista([1] as never)).toThrow(TypeError);
     expect(() => formatarLista('A' as never)).toThrow(TypeError);
+  });
+});
+
+describe('formatarNota (D-032)', () => {
+  it.each([
+    [4.3, '4,3'],
+    [5, '5,0'],
+    [1, '1,0'],
+    [3.5, '3,5'],
+  ])('%s → %s', (n, esperado) => {
+    expect(formatarNota(n)).toBe(esperado);
+  });
+
+  it.each([[0], [5.1], [0.9], [NaN], [Infinity], ['4' as never]])('fora de 1..5 ou não numérico (%s) → RangeError', (n) => {
+    expect(() => formatarNota(n)).toThrow(RangeError);
+  });
+});
+
+describe('formatarMesAno (D-032)', () => {
+  it('mês por extenso e ano no fuso do salão', () => {
+    expect(formatarMesAno(new Date('2026-11-22T12:00:00Z'), 'America/Sao_Paulo')).toBe('novembro de 2026');
+    expect(formatarMesAno(new Date('2026-03-15T12:00:00Z'), 'America/Sao_Paulo')).toBe('março de 2026');
+  });
+
+  it('a virada do mês depende do fuso, não do processo', () => {
+    const instante = new Date('2026-12-01T01:30:00Z');
+    expect(formatarMesAno(instante, 'UTC')).toBe('dezembro de 2026');
+    expect(formatarMesAno(instante, 'America/Sao_Paulo')).toBe('novembro de 2026');
+    expect(formatarMesAno(new Date('2027-01-01T02:00:00Z'), 'America/Sao_Paulo')).toBe('dezembro de 2026');
+  });
+
+  it('fuso inválido → RangeError; nunca traz o dia', () => {
+    expect(() => formatarMesAno(new Date(), 'Nao/Existe')).toThrow(RangeError);
+    expect(formatarMesAno(new Date('2026-11-22T12:00:00Z'), 'UTC')).not.toMatch(/22/);
   });
 });

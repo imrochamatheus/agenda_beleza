@@ -42,8 +42,10 @@ const VETADOS = [
 ];
 
 const rotasFixas = () =>
-  Object.values(ROTAS)
-    .map((r) => (typeof r === 'function' ? r('x') : r))
+  Object.entries(ROTAS)
+    .filter(([chave]) => chave !== 'avaliar') // começa pelo slug do salão (D-032)
+    .map(([, r]) => r)
+    .map((r) => (typeof r === 'function' ? (r as (x: string) => string)('x') : r))
     .filter((r) => typeof r === 'string');
 
 describe('CA-11: navegação por papel', () => {
@@ -221,8 +223,8 @@ describe('CA-12: rotas e segmentos reservados', () => {
   it('SEGMENTOS_RESERVADOS = 1º segmento de cada rota (sem /[slug]) + api + _next', () => {
     const esperado = new Set<string>(['api', '_next']);
     for (const [chave, rota] of Object.entries(ROTAS)) {
-      if (chave === 'salaoPublico') continue;
-      const caminho = typeof rota === 'function' ? rota('x') : rota;
+      if (chave === 'salaoPublico' || chave === 'avaliar') continue;
+      const caminho = typeof rota === 'function' ? (rota as (x: string) => string)('x') : rota;
       const primeiro = caminho.split('/')[1];
       if (primeiro) esperado.add(primeiro);
     }

@@ -11,6 +11,7 @@ x-env-app: &env-app
     DATABASE_URL: postgresql://${POSTGRES_USER:-agenda}:${POSTGRES_PASSWORD:-agenda_dev}@postgres:5432/${POSTGRES_DB:-agenda_beleza}
     # Obrigatório em produção (a imagem roda com NODE_ENV=production); este padrão serve só ao compose local.
     RATE_LIMIT_SEGREDO: ${RATE_LIMIT_SEGREDO:-compose-local-segredo-do-limite-0123456789}
+    AVALIACAO_SEGREDO: ${AVALIACAO_SEGREDO:-compose-local-segredo-avaliacao-0123456789}
 
 services:
   postgres:
@@ -45,6 +46,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-agenda}:${POSTGRES_PASSWORD:-agenda_dev}@postgres:5432/${POSTGRES_DB:-agenda_beleza}
       ARMAZENAMENTO_DIR: /app/.armazenamento
       RATE_LIMIT_SEGREDO: ${RATE_LIMIT_SEGREDO:-compose-local-segredo-do-limite-0123456789}
+      AVALIACAO_SEGREDO: ${AVALIACAO_SEGREDO:-compose-local-segredo-avaliacao-0123456789}
     volumes:
       # Fotos do armazenamento simulado (D-021); sobrevive a `down` (só `down -v` apaga). O worker não monta.
       - armazenamento:/app/.armazenamento

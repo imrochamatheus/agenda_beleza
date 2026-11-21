@@ -1,0 +1,74 @@
+/* Formulário de avaliação (D-032). Só tokens do tema (globals.css). */
+.bloco {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 32rem;
+}
+
+.notas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.notas legend {
+  padding: 0;
+  margin-block-end: var(--espaco-2);
+  font-weight: 600;
+}
+
+.nota {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  min-height: var(--alvo-minimo);
+  min-width: var(--alvo-minimo);
+  padding: 0 var(--espaco-3);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+}
+
+.nota input {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.texto {
+  width: 100%;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+  resize: vertical;
+}
+
+.texto:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.texto[aria-invalid='true'] {
+  border-color: var(--cor-erro-texto);
+  border-width: 2px;
+}
+
+.ajuda {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.erro {
+  margin: 0;
+  color: var(--cor-erro-texto);
+}
+
+.campo {
+  display: grid;
+  gap: var(--espaco-1);
+}

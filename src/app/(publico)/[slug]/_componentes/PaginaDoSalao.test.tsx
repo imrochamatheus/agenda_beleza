@@ -202,3 +202,23 @@ describe('PaginaDoSalao: passos', () => {
     expect(estadoInicialReserva('x').status).toBe('editando');
   });
 });
+
+describe('PaginaDoSalao: avaliações (D-032, CA-3, CA-15)', () => {
+  it('sem a propriedade (vitrine de reserva), não há seção de avaliações', () => {
+    montar();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Avaliações' })).toBeNull();
+  });
+
+  it('com avaliações: a seção aparece depois da equipe, com média e contagem', () => {
+    montar({ avaliacoes: { total: 2, media: 4.5, itens: [{ nome: 'Maria S.', nota: 5, comentario: 'Ótimo', mesAno: 'novembro de 2026' }] } });
+    const titulos = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(titulos.indexOf('Avaliações')).toBeGreaterThan(titulos.indexOf('Equipe'));
+    expect(screen.getByText('4,5')).toBeTruthy();
+    expect(screen.getByText('Maria S.')).toBeTruthy();
+  });
+
+  it('sem avaliações: "Ainda sem avaliações"', () => {
+    montar({ avaliacoes: { total: 0, media: null, itens: [] } });
+    expect(screen.getByText('Ainda sem avaliações')).toBeTruthy();
+  });
+});

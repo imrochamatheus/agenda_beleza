@@ -188,6 +188,8 @@ model Salao {
   auditorias           Auditoria[]
   funcionamento        SalaoFuncionamento[]
   fotos                SalaoFoto[]
+  avaliacoes           Avaliacao[]
+  avaliacaoConvites    AvaliacaoConvite[]
 
   @@map("salao")
 }
@@ -427,6 +429,7 @@ model Cliente {
   salao          Salao           @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   consentimentos Consentimento[]
   reservas       Reserva[]
+  avaliacoes     Avaliacao[]
 
   @@unique([salaoId, telefoneE164])
   @@unique([salaoId, id])
@@ -434,15 +437,15 @@ model Cliente {
 }
 
 model Consentimento {
-  id           String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  salaoId      String              @map("salao_id") @db.Uuid
-  clienteId    String              @map("cliente_id") @db.Uuid
+  id           String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId      String                  @map("salao_id") @db.Uuid
+  clienteId    String                  @map("cliente_id") @db.Uuid
   /// Sem DEFAULT: quem grava sempre informa a finalidade.
   finalidade   FinalidadeConsentimento
   origem       OrigemConsentimento
   /// Versão dos textos de Termos e Privacidade aceitos.
-  versaoTermos String              @map("versao_termos")
-  criadoEm     DateTime            @default(now()) @map("criado_em") @db.Timestamptz(6)
+  versaoTermos String                  @map("versao_termos")
+  criadoEm     DateTime                @default(now()) @map("criado_em") @db.Timestamptz(6)
 
   salao   Salao   @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   cliente Cliente @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
@@ -477,11 +480,13 @@ model Reserva {
   criadoEm        DateTime      @default(now()) @map("criado_em") @db.Timestamptz(6)
   atualizadoEm    DateTime      @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
 
-  salao        Salao         @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  profissional Profissional  @relation(fields: [salaoId, profissionalId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
-  cliente      Cliente       @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
-  itens        ReservaItem[]
-  mensagens    Mensagem[]
+  salao             Salao              @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  profissional      Profissional       @relation(fields: [salaoId, profissionalId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  cliente           Cliente            @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  itens             ReservaItem[]
+  mensagens         Mensagem[]
+  avaliacoes        Avaliacao[]
+  convitesAvaliacao AvaliacaoConvite[]
 
   @@unique([salaoId, id])
   @@unique([salaoId, chaveRequisicao])
@@ -855,4 +860,52 @@ model SimWhatsappFalhaForcada {
 
   @@index([criadoEm, id])
   @@map("sim_whatsapp_falha_forcada")
+}
+
+// ---------------------------------------------------------------------------
+// Avaliações verificadas (D-032)
+// ---------------------------------------------------------------------------
+
+/// Só o hash do token fica gravado. CHECKs em SQL bruto: avaliacao_convite_token_hash_chk, avaliacao_convite_validade_chk.
+model AvaliacaoConvite {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId      String    @map("salao_id") @db.Uuid
+  reservaId    String    @unique @map("reserva_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  expiraEm     DateTime  @map("expira_em") @db.Timestamptz(6)
+  usadoEm      DateTime? @map("usado_em") @db.Timestamptz(6)
+  invalidadoEm DateTime? @map("invalidado_em") @db.Timestamptz(6)
+  criadoEm     DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao   Salao   @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reserva Reserva @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([salaoId, reservaId])
+  @@map("avaliacao_convite")
+}
+
+/// Uma por reserva. CHECKs em SQL bruto: avaliacao_nota_chk, avaliacao_comentario_chk,
+/// avaliacao_nome_exibicao_chk, avaliacao_versao_termos_chk. Anonimização zera nome_exibicao e comentario.
+model Avaliacao {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId            String    @map("salao_id") @db.Uuid
+  reservaId          String    @unique @map("reserva_id") @db.Uuid
+  clienteId          String    @map("cliente_id") @db.Uuid
+  nota               Int       @db.SmallInt
+  comentario         String?
+  nomeExibicao       String?   @map("nome_exibicao")
+  publicacaoAceitaEm DateTime  @map("publicacao_aceita_em") @db.Timestamptz(6)
+  versaoTermos       String    @map("versao_termos")
+  retiradaEm         DateTime? @map("retirada_em") @db.Timestamptz(6)
+  /// Sem FK: a moderação (E8.4) decide.
+  retiradaPor        String?   @map("retirada_por") @db.Uuid
+  criadoEm           DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao   Salao   @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reserva Reserva @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  cliente Cliente @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([salaoId, criadoEm(sort: Desc), id], map: "avaliacao_publica_idx")
+  @@index([salaoId, clienteId])
+  @@map("avaliacao")
 }

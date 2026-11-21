@@ -31,6 +31,9 @@ const TABELAS = [
   'assinatura_pagamento',
   'assinatura_transicao',
   'auditoria',
+  // D-032: avaliações verificadas e convites por link.
+  'avaliacao',
+  'avaliacao_convite',
   'bloqueio',
   'cliente',
   'consentimento',
@@ -137,6 +140,13 @@ const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
   ['salao_foto_chave_chk', 'salao_foto', 'c'],
   ['consentimento_origem_finalidade_chk', 'consentimento', 'c'],
   ['consentimento_versao_termos_chk', 'consentimento', 'c'],
+  // D-032 (migração 20261122000000_avaliacao)
+  ['avaliacao_convite_token_hash_chk', 'avaliacao_convite', 'c'],
+  ['avaliacao_convite_validade_chk', 'avaliacao_convite', 'c'],
+  ['avaliacao_nota_chk', 'avaliacao', 'c'],
+  ['avaliacao_comentario_chk', 'avaliacao', 'c'],
+  ['avaliacao_nome_exibicao_chk', 'avaliacao', 'c'],
+  ['avaliacao_versao_termos_chk', 'avaliacao', 'c'],
 ];
 
 // [nome, tabela, único]
@@ -338,12 +348,12 @@ describe('CA-1: o Prisma não acusa drift', () => {
 });
 
 describe('CA-15: integridade referencial e identificadores', () => {
-  it('CA-15: as 39 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
+  it('CA-15: as 44 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
     const r = await linhas<{ nome: string; del: string; upd: string }>(
       `SELECT conname AS nome, confdeltype::text AS del, confupdtype::text AS upd
        FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace`,
     );
-    expect(r).toHaveLength(39); // 37 até a D-007 + salao_funcionamento_salao_id_fkey (D-020) + salao_foto_salao_id_fkey (D-021)
+    expect(r).toHaveLength(44); // 37 até a D-007 + salao_funcionamento_salao_id_fkey (D-020) + salao_foto_salao_id_fkey (D-021) + 5 da D-032
     expect(r.filter((f) => f.del !== 'r' || f.upd !== 'r')).toEqual([]);
   });
 
@@ -413,6 +423,7 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261121100000_consentimento_finalidade', antes: false, ok: true },
       { migration_name: '20261121200000_tipo_mensagem_convite_avaliacao', antes: false, ok: true },
       { migration_name: '20261121200100_mensagem_reconciliacao', antes: false, ok: true },
+      { migration_name: '20261122000000_avaliacao', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,

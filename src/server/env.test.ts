@@ -443,9 +443,18 @@ describe('proteção da página pública (D-027)', () => {
 
   it('RATE_LIMIT_SEGREDO: obrigatório (≥ 32) só em produção; curto é recusado sempre', () => {
     expect(() => validarEnv(base)).not.toThrow();
-    expect(falhaDe({ ...base, NODE_ENV: 'production' }).variaveis).toEqual(['RATE_LIMIT_SEGREDO']);
-    expect(() => validarEnv({ ...base, NODE_ENV: 'production', RATE_LIMIT_SEGREDO: 'x'.repeat(32) })).not.toThrow();
+    expect(falhaDe({ ...base, NODE_ENV: 'production', AVALIACAO_SEGREDO: 'y'.repeat(32) }).variaveis).toEqual(['RATE_LIMIT_SEGREDO']);
+    expect(() => validarEnv({ ...base, NODE_ENV: 'production', RATE_LIMIT_SEGREDO: 'x'.repeat(32), AVALIACAO_SEGREDO: 'y'.repeat(32) })).not.toThrow();
     expect(falhaDe({ ...base, RATE_LIMIT_SEGREDO: 'curto' }).variaveis).toEqual(['RATE_LIMIT_SEGREDO']);
+  });
+
+  it('AVALIACAO_SEGREDO: obrigatório (≥ 32) só em produção; curto é recusado sempre', () => {
+    const prod = { ...base, NODE_ENV: 'production', RATE_LIMIT_SEGREDO: 'x'.repeat(32) };
+    expect(() => validarEnv(base)).not.toThrow();
+    expect(falhaDe(prod).variaveis).toEqual(['AVALIACAO_SEGREDO']);
+    expect(() => validarEnv({ ...prod, AVALIACAO_SEGREDO: 'y'.repeat(32) })).not.toThrow();
+    expect(falhaDe({ ...base, AVALIACAO_SEGREDO: 'curto' }).variaveis).toEqual(['AVALIACAO_SEGREDO']);
+    expect(exemplo.AVALIACAO_SEGREDO).toBe('');
   });
 
   it('o .env.example traz os padrões e o segredo vazio', () => {
