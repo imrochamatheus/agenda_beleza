@@ -4,7 +4,7 @@ import { descreverModos, executarCheckEnv } from './check-env';
 
 const BASE = { DATABASE_URL: 'postgresql://agenda:senha-do-banco@h:5432/d' };
 const SIMULADOS =
-  'check-env: ambiente válido (adaptadores: email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado)';
+  'check-env: ambiente válido (adaptadores: armazenamento=simulado, email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado)';
 
 function saidaGravada() {
   const linhas = { log: [] as string[], error: [] as string[] };
@@ -126,7 +126,7 @@ describe('executarCheckEnv', () => {
       expect(r.codigo).toBe(0);
       expect(r.error).toEqual([]);
       expect(r.log).toEqual([
-        'check-env: ambiente válido (adaptadores: email=real, mp=simulado, turnstile=real, whatsapp=simulado)',
+        'check-env: ambiente válido (adaptadores: armazenamento=simulado, email=real, mp=simulado, turnstile=real, whatsapp=simulado)',
       ]);
       for (const valor of [
         'senha-smtp-super-secreta',
@@ -162,9 +162,9 @@ describe('executarCheckEnv', () => {
 });
 
 describe('descreverModos', () => {
-  it('lista os quatro modos na ordem email, mp, turnstile, whatsapp', () => {
+  it('lista os cinco modos na ordem armazenamento, email, mp, turnstile, whatsapp', () => {
     expect(
-      descreverModos({ email: 'real', mercadoPago: 'simulado', turnstile: 'real', whatsapp: 'simulado' }),
-    ).toBe('email=real, mp=simulado, turnstile=real, whatsapp=simulado');
+      descreverModos({ armazenamento: 'simulado', email: 'real', mercadoPago: 'simulado', turnstile: 'real', whatsapp: 'simulado' }),
+    ).toBe('armazenamento=simulado, email=real, mp=simulado, turnstile=real, whatsapp=simulado');
   });
 });

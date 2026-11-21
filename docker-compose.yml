@@ -38,6 +38,13 @@ services:
     command: ["app"]
     init: true
     <<: *env-app
+    environment:
+      # environment aqui SUBSTITUI o da âncora (merge raso): repetir o que a âncora define.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-agenda}:${POSTGRES_PASSWORD:-agenda_dev}@postgres:5432/${POSTGRES_DB:-agenda_beleza}
+      ARMAZENAMENTO_DIR: /app/.armazenamento
+    volumes:
+      # Fotos do armazenamento simulado (D-021); sobrevive a `down` (só `down -v` apaga). O worker não monta.
+      - armazenamento:/app/.armazenamento
     ports:
       - "3000:3000"
     depends_on:
@@ -66,3 +73,4 @@ services:
 
 volumes:
   pgdata: {}
+  armazenamento: {}

@@ -34,6 +34,9 @@ export const ROTAS = {
   configuracoes: '/painel/configuracoes',
   configuracoesPerfil: '/painel/configuracoes/perfil',
   configuracoesFuncionamento: '/painel/configuracoes/funcionamento',
+  configuracoesFotos: '/painel/configuracoes/fotos',
+  envioFotos: '/api/painel/fotos',
+  fotoPublica: (id: string) => `/api/fotos/${seg(id)}`,
   assinatura: '/painel/assinatura',
   assinaturaRetorno: '/painel/assinatura/retorno',
   // super admin
@@ -52,6 +55,8 @@ export const ROTAS = {
   devConfiguracoes: '/dev/configuracoes',
   devPerfil: '/dev/perfil',
   devFuncionamento: '/dev/funcionamento',
+  devFotos: '/dev/fotos',
+  devFotosEnvio: '/dev/fotos/enviar',
 } as const;
 
 export type ItemNavegacao = {

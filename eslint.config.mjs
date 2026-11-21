@@ -4,8 +4,8 @@ import nextTs from 'eslint-config-next/typescript';
 
 // Arquivos de código verificados pelas regras de arquitetura abaixo.
 const CODIGO = '**/*.{ts,tsx,mts,js,mjs}';
-// Testes ficam fora das regras de arquitetura: montam cenários com o banco e os adaptadores reais.
-const TESTES = ['tests/**', '**/*.test.{ts,tsx}'];
+// Testes (inclusive os E2E, que geram imagens com o sharp) ficam fora das regras de arquitetura: montam cenários com o banco e os adaptadores reais.
+const TESTES = ['tests/**', 'e2e/**', '**/*.test.{ts,tsx}'];
 
 // Pastas com permissões próprias. Cada arquivo de código casa com UM só bloco que configura
 // `no-restricted-imports`: no flat config, dois blocos que configuram a mesma regra para o mesmo
@@ -18,6 +18,8 @@ const ACESSO_AO_BANCO = ['src/server/repos/**', 'prisma/seed.ts'];
 const WORKER = ['src/worker/**'];
 const FILA = ['src/server/queue/**'];
 const DEV = ['src/app/dev/**'];
+// D-021 (A-9): o sharp só é importado pelo módulo de imagem.
+const IMAGEM = ['src/server/imagem/**'];
 // Restringe uma pasta (`x/**`) ou um arquivo aos arquivos de código.
 const comExtensao = (padroes) =>
   padroes.map((p) => (p.endsWith('/**') ? `${p}/*.{ts,tsx,mts,js,mjs}` : p));
@@ -58,6 +60,7 @@ const SDK_PROVEDOR = [
   '^@cloudflare/',
   '^cloudflare(/|$)',
   '^(whatsapp|@whatsapp|@meta)',
+  '^@aws-sdk/',
 ].map((regex) => ({ regex, message: MENSAGEM_SDK }));
 
 // RN-16 (b): os módulos de adaptador (integrations/*/real e integrations/*/simulado) e o checkout
@@ -91,6 +94,14 @@ const PG_BOSS = [
   },
 ];
 
+// D-021 (A-9): sharp (decodificação e reprocessamento de imagem) só em src/server/imagem.
+const IMAGEM_SHARP = [
+  {
+    regex: '^sharp(/|$)',
+    message: 'D-021: processe imagens pelo módulo de src/server/imagem (sharp só ali).',
+  },
+];
+
 const restringirImports = (...grupos) => ({
   'no-restricted-imports': ['error', { patterns: grupos.flat() }],
 });
@@ -106,38 +117,44 @@ export default defineConfig([
   // Geral: tudo que não está nas pastas com permissões próprias nem é teste.
   {
     files: [CODIGO],
-    ignores: [...INTEGRACOES, ...ACESSO_AO_BANCO, ...WORKER, ...FILA, ...DEV, ...TESTES],
-    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES, PG_BOSS),
+    ignores: [...INTEGRACOES, ...ACESSO_AO_BANCO, ...WORKER, ...FILA, ...DEV, ...IMAGEM, ...TESTES],
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES, PG_BOSS, IMAGEM_SHARP),
   },
   // Integrações: podem usar SDKs e os próprios adaptadores, mas acessam o banco só via repos.
   {
     files: comExtensao(INTEGRACOES),
     ignores: TESTES,
-    rules: restringirImports(PRISMA, PG_BOSS),
+    rules: restringirImports(PRISMA, PG_BOSS, IMAGEM_SHARP),
   },
   // Repositórios e seed: acessam o banco, mas não os SDKs, os adaptadores nem o pg-boss.
   {
     files: comExtensao(ACESSO_AO_BANCO),
     ignores: TESTES,
-    rules: restringirImports(SDK_PROVEDOR, ADAPTADORES, PG_BOSS),
+    rules: restringirImports(SDK_PROVEDOR, ADAPTADORES, PG_BOSS, IMAGEM_SHARP),
   },
   // Worker: acessa o banco e o pg-boss, mas não os SDKs nem os adaptadores.
   {
     files: comExtensao(WORKER),
     ignores: TESTES,
-    rules: restringirImports(SDK_PROVEDOR, ADAPTADORES),
+    rules: restringirImports(SDK_PROVEDOR, ADAPTADORES, IMAGEM_SHARP),
   },
   // Fila: usa o pg-boss, mas acessa o banco de domínio só via repos e não usa SDKs nem adaptadores.
   {
     files: comExtensao(FILA),
     ignores: TESTES,
-    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES),
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES, IMAGEM_SHARP),
   },
   // Telas de desenvolvimento: como o geral, com a exceção do MP simulado.
   {
     files: comExtensao(DEV),
     ignores: TESTES,
-    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES_EXCETO_MP_SIMULADO, PG_BOSS),
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES_EXCETO_MP_SIMULADO, PG_BOSS, IMAGEM_SHARP),
+  },
+  // Imagem: usa o sharp, mas como o geral não acessa banco, SDKs, adaptadores nem o pg-boss.
+  {
+    files: comExtensao(IMAGEM),
+    ignores: TESTES,
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES, PG_BOSS),
   },
   // RN-16 (c). O eslint-config-next não configura no-restricted-syntax; se passar a configurar,
   // mesclar aqui (este bloco substituiria o dele).

@@ -199,6 +199,13 @@ describe('CA-12: rotas e segmentos reservados', () => {
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.configuracoesFuncionamento)).toBe(ROTAS.configuracoes);
     expect(ROTAS.devPerfil).toBe('/dev/perfil');
     expect(ROTAS.devFuncionamento).toBe('/dev/funcionamento');
+    // D-021 (CA-16): fotos do salão; a subpágina ativa "Configurações"; SEGMENTOS_RESERVADOS não muda.
+    expect(ROTAS.configuracoesFotos).toBe('/painel/configuracoes/fotos');
+    expect(ROTAS.envioFotos).toBe('/api/painel/fotos');
+    expect(ROTAS.fotoPublica('a b/c')).toBe('/api/fotos/a%20b%2Fc');
+    expect(ROTAS.devFotos).toBe('/dev/fotos');
+    expect(ROTAS.devFotosEnvio).toBe('/dev/fotos/enviar');
+    expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.configuracoesFotos)).toBe(ROTAS.configuracoes);
     expect(ROTAS.salaoPublico('a b/c')).toBe('/a%20b%2Fc');
     expect(ROTAS.adminSalao('a b/c')).toBe('/admin/saloes/a%20b%2Fc');
     expect(ROTAS.adminSalaoAssinatura('a b/c')).toBe('/admin/saloes/a%20b%2Fc/assinatura');

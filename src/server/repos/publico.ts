@@ -173,3 +173,16 @@ export async function lerFuncionamentoPublico(ctx: PublicoContext): Promise<Func
   }
   return funcionamentoDaLinha(l);
 }
+
+/** Linha pública de uma foto (D-021 RN-15). `chave` é tipo interno: o serviço monta a URL (A-13). */
+export type LinhaFotoPublica = { id: string; chave: string; alt: string; largura: number; altura: number };
+
+/** Fotos do salão do contexto por posição; select explícito; salão sem fotos → []. Não filtra suspensão. */
+export async function lerFotosPublicasDoSalao(ctx: PublicoContext): Promise<LinhaFotoPublica[]> {
+  const salaoId = exigirPublico(ctx);
+  return obterPrisma().$queryRaw<LinhaFotoPublica[]>`
+    SELECT id::text AS id, chave, alt, largura, altura
+      FROM salao_foto
+     WHERE salao_id = ${salaoId}::uuid
+     ORDER BY posicao`;
+}

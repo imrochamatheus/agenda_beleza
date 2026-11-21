@@ -47,6 +47,10 @@ export default async function PaginaConfiguracoes() {
               <a href={ROTAS.configuracoesFuncionamento}>Horário de funcionamento</a>
               <p className={estilos.ajuda}>Dias e horários em que o salão atende.</p>
             </li>
+            <li>
+              <a href={ROTAS.configuracoesFotos}>Fotos do salão</a>
+              <p className={estilos.ajuda}>Até 12 fotos exibidas na página pública.</p>
+            </li>
           </ul>
         </nav>
         <section className={estilos.secao} aria-labelledby="config-dados">

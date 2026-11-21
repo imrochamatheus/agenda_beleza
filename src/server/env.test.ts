@@ -75,12 +75,13 @@ const SIMULADOS = {
   turnstile: { modo: 'simulado' },
   mercadoPago: { modo: 'simulado' },
   whatsapp: { modo: 'simulado' },
+  armazenamento: { modo: 'simulado' },
 };
 
 const FILA_PADRAO = { retryLimit: 4, retryDelaySeconds: 30, retryBackoff: true };
 
 describe('validarEnv', () => {
-  it('CA-1: aceita o .env.example sem alterações e seleciona os quatro adaptadores simulados', () => {
+  it('CA-1: aceita o .env.example sem alterações e seleciona os cinco adaptadores simulados', () => {
     expect(validarEnv(exemplo)).toEqual({
       DATABASE_URL: exemplo.DATABASE_URL,
       APP_URL: 'http://localhost:3000',
@@ -203,6 +204,29 @@ describe('validarEnv', () => {
       'WHATSAPP_ADAPTER',
     ]);
     expect(erro.message).not.toContain('usuario');
+  });
+
+  it('CA-5 (D-021): STORAGE_ADAPTER=real sem nenhuma S3_* nomeia as cinco, ordenadas e sem valores', () => {
+    expect(falhaDe({ DATABASE_URL: URL_VALIDA, STORAGE_ADAPTER: 'real' }).variaveis).toEqual([
+      'S3_ACCESS_KEY_ID',
+      'S3_BUCKET',
+      'S3_ENDPOINT',
+      'S3_REGIAO',
+      'S3_SECRET_ACCESS_KEY',
+    ]);
+    expect(
+      falhaDe({
+        DATABASE_URL: URL_VALIDA,
+        STORAGE_ADAPTER: 'real',
+        S3_ENDPOINT: 'ftp://x',
+        S3_REGIAO: 'r',
+        S3_BUCKET: 'b',
+        S3_ACCESS_KEY_ID: 'k',
+        S3_SECRET_ACCESS_KEY: 's',
+        S3_URL_PUBLICA: 'nao-e-url',
+      }).variaveis,
+    ).toEqual(['S3_ENDPOINT', 'S3_URL_PUBLICA']);
+    expect(falhaDe({ DATABASE_URL: URL_VALIDA, STORAGE_ADAPTER: 'REAL' }).variaveis).toEqual(['STORAGE_ADAPTER']);
   });
 
   it('CA-8: no modo simulado as variáveis do provedor são ignoradas (nem obrigatórias nem validadas)', () => {
@@ -338,12 +362,13 @@ describe('modosAtivos', () => {
     });
     const modos = modosAtivos(env);
     expect(modos).toEqual({
+      armazenamento: 'simulado',
       email: 'simulado',
       mercadoPago: 'simulado',
       turnstile: 'real',
       whatsapp: 'simulado',
     });
-    expect(Object.keys(modos)).toEqual(['email', 'mercadoPago', 'turnstile', 'whatsapp']);
+    expect(Object.keys(modos)).toEqual(['armazenamento', 'email', 'mercadoPago', 'turnstile', 'whatsapp']);
     expect(JSON.stringify(modos)).not.toContain('segredo-turnstile');
   });
 });

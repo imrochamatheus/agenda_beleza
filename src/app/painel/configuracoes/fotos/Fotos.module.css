@@ -1,0 +1,171 @@
+/* Fotos do salão (D-021 RN-21). Só tokens do tema (globals.css); breakpoint único 48rem. */
+.pagina {
+  display: grid;
+  gap: var(--espaco-6);
+  min-width: 0;
+}
+
+.voltar {
+  margin: 0;
+}
+
+.secao {
+  display: grid;
+  gap: var(--espaco-4);
+  min-width: 0;
+}
+
+.secao h2 {
+  margin: 0;
+}
+
+.contador {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.ajuda {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.campoArquivo {
+  display: grid;
+  gap: var(--espaco-2);
+  min-width: 0;
+}
+
+.rotulo {
+  font-weight: 600;
+}
+
+.obrigatorio {
+  font-weight: 400;
+  color: var(--cor-texto-suave);
+}
+
+.arquivo {
+  max-width: 100%;
+  min-height: var(--alvo-minimo);
+  padding: var(--espaco-2);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+  font: inherit;
+}
+
+.arquivo:focus-visible,
+.controle:focus-visible,
+.resultado:focus-visible,
+.resultado:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.resultado {
+  border-radius: var(--raio);
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-3);
+}
+
+.vazio {
+  margin: 0;
+  color: var(--cor-texto-suave);
+}
+
+.lista {
+  display: grid;
+  gap: var(--espaco-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: var(--espaco-4);
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio-grande);
+  background: var(--cor-superficie);
+  min-width: 0;
+}
+
+.miniatura {
+  min-width: 0;
+}
+
+.imagem {
+  display: block;
+  max-inline-size: 100%;
+  inline-size: auto;
+  block-size: auto;
+  max-block-size: 14rem;
+  border-radius: var(--raio);
+  background: var(--cor-superficie-alt);
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.detalhes {
+  display: grid;
+  gap: var(--espaco-3);
+  min-width: 0;
+}
+
+.posicao {
+  margin: 0;
+  font-weight: 600;
+}
+
+.formAlt {
+  display: grid;
+  gap: var(--espaco-2);
+  justify-items: start;
+  min-width: 0;
+}
+
+.campoAlt {
+  display: grid;
+  gap: var(--espaco-1);
+  inline-size: 100%;
+  min-width: 0;
+}
+
+.controle {
+  inline-size: 100%;
+  min-height: var(--alvo-minimo);
+  padding: var(--espaco-2) var(--espaco-3);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+  font: inherit;
+}
+
+.acoesFoto {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-2) var(--espaco-3);
+}
+
+@media (min-width: 48rem) {
+  .item {
+    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+    align-items: start;
+  }
+}

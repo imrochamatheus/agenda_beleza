@@ -58,6 +58,7 @@ npm run test:e2e               # build + Playwright (viewport de celular); liber
 npx playwright test e2e/a11y-base.spec.ts  # só o E2E de acessibilidade (exige build prévio)
 npx playwright test e2e/entrar.spec.ts     # só o E2E de /entrar e do proxy (exige build prévio; sem banco)
 npx playwright test e2e/recuperar-senha.spec.ts  # só o E2E da recuperação de senha (exige build prévio; sem banco)
+npx playwright test e2e/fotos.spec.ts e2e/fotos-sem-js.spec.ts  # só o E2E das fotos do salão (exige build prévio; sem banco)
 ```
 
 - Os testes de integração usam **somente** `TEST_DATABASE_URL`, nunca `DATABASE_URL`, e recusam rodar se as duas forem iguais. Sem `TEST_DATABASE_URL`, eles falham com uma mensagem que nomeia a variável.
@@ -203,6 +204,22 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **E2E:** `npx playwright test e2e/perfil.spec.ts e2e/perfil-sem-js.spec.ts e2e/funcionamento.spec.ts e2e/funcionamento-sem-js.spec.ts` (build prévio e porta 3000 livre).
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/salao/concorrencia-perfil-funcionamento.test.ts || break; done`.
 
+## Fotos do salão
+
+- **Onde:** `/painel/configuracoes/fotos` ("Fotos do salão"), com link em `/painel/configuracoes`. Só o **gestor**; o profissional vê "Acesso negado". Até **12** fotos por salão, com texto alternativo obrigatório (1 a 150 caracteres), ordem por "Mover para cima/baixo" e remoção. Tudo funciona sem JavaScript.
+- **Envio:** formulário nativo `multipart/form-data` para `POST /api/painel/fotos` (a primeira mutação por route handler do projeto; fica fora do proxy de `/painel`). Arquivo de até **5 MB** (5.242.880 bytes) em JPEG, PNG ou WebP; o tipo vem dos bytes iniciais, nunca da extensão. Toda imagem é reprocessada: orientação EXIF aplicada, maior lado de no máximo **1600 px** (nunca amplia), sRGB, **sem nenhum metadado (EXIF, GPS, XMP, ICC)**, primeiro quadro de animações e saída em WebP. Imagens acima de 50 megapixels são recusadas. O resultado volta por redirecionamento (303) para a página, com um código de lista fechada em `?envio=`.
+- **Segurança do envio:** o cabeçalho `Origin` tem de ser igual à origem de `APP_URL` (senão **403**, sem ler o arquivo). Por isso, **acesse o painel pelo endereço configurado em `APP_URL`** (`http://localhost:3000` e `http://127.0.0.1:3000` são origens diferentes). O corpo nunca é lido além do limite, e a chave do objeto (`fotos/<128 bits aleatórios>.webp`) é gerada no servidor, sem o nome do arquivo.
+- **Entrega pública:** `GET /api/fotos/<id>` (sem sessão; não filtra suspensão), com `Cache-Control: public, max-age=3600`, `ETag` e `nosniff`. Nada lista fotos ou objetos. **Cache:** uma foto removida pode continuar visível por até 1 hora em navegadores e proxies (e mais, se houver CDN).
+- **Leitura para a página pública (E4.1):** `lerFotosPublicas` (`src/server/fotos/leitura.ts`) devolve `{ id, url, alt, largura, altura }` por foto, na ordem; nunca monte a URL à mão.
+- **Variáveis** (`.env.example`):
+  - `STORAGE_ADAPTER`: `simulado` (padrão) grava arquivos em `ARMAZENAMENTO_DIR` (padrão `.armazenamento`, fora de `public/`; no compose, o volume nomeado `armazenamento` em `/app/.armazenamento`, que sobrevive a `docker compose down`); `real` usa um armazenamento compatível com S3 (variáveis em "Credenciais para os serviços reais"). Como nos outros adaptadores, o worker também valida o ambiente: `STORAGE_ADAPTER=real` incompleto derruba app e worker.
+- **Consistência:** o objeto é gravado antes da transação; se o limite, o token ou a transação recusarem, ele é removido. Na remoção, a linha sai primeiro e o objeto depois do commit; se essa limpeza falhar, o log tem `armazenamento.orfao` com a chave, e a foto continua removida (a rota pública responde 404). Não há varredura de objetos órfãos nesta versão.
+- **Duplo envio:** cada renderização da página gera um token de envio (`salao_foto.envio`, único por salão); o mesmo envio repetido responde "ok" sem criar outra foto.
+- **Suspensão:** as quatro operações (enviar, descrever, mover, remover) declaram a capacidade `configurar`; o bloqueio com o salão suspenso é da E6.4. A leitura pública continua liberada.
+- **Demonstração para o E2E:** `/dev/fotos` (`?n=0..12` escolhe quantas fotos de exemplo), ligada pela `VITRINE_COMPONENTES=true`, com os mesmos componentes; o envio de demonstração valida e processa em memória (com o `sharp`), não grava e responde 303.
+- **E2E:** `npx playwright test e2e/fotos.spec.ts e2e/fotos-sem-js.spec.ts` (build prévio e porta 3000 livre).
+- **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/fotos/concorrencia.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.
@@ -211,13 +228,14 @@ Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<se
 |---|---|---|---|
 | E-mail transacional | `EMAIL_ADAPTER` | grava cada mensagem na tabela `email_log` | SMTP (`nodemailer`), configurado pelas variáveis `SMTP_*` e `EMAIL_FROM` |
 | Cloudflare Turnstile | `TURNSTILE_ADAPTER` | aceita só o token de teste documentado abaixo | `siteverify` da Cloudflare, com `TURNSTILE_SITE_KEY` e `TURNSTILE_SECRET_KEY` |
+| Armazenamento de fotos | `STORAGE_ADAPTER` | arquivos em `ARMAZENAMENTO_DIR` (padrão `.armazenamento`) | compatível com S3 (`@aws-sdk/client-s3`), configurado pelas variáveis `S3_*` |
 | Mercado Pago (assinaturas) | `MP_ADAPTER` | estado nas tabelas `sim_mp_*` e checkout em `/dev/mp-checkout` | adaptador real: E6.6 (ainda recusado na inicialização) |
 | WhatsApp Cloud API | `WHATSAPP_ADAPTER` | registra cada chamada em `sim_whatsapp_chamada` | adaptador real: E7.2 (ainda recusado na inicialização) |
 
-- **Valores aceitos:** `simulado` ou `real`. Vazio ou ausente vale `simulado`. Com o `.env.example` sem alterações, os quatro ficam no modo simulado, sem nenhuma credencial.
+- **Valores aceitos:** `simulado` ou `real`. Vazio ou ausente vale `simulado`. Com o `.env.example` sem alterações, os cinco ficam no modo simulado, sem nenhuma credencial.
 - **Validação na inicialização:** o `check-env` (entrypoint da app e do worker) e o próprio worker validam o ambiente **antes** de migrar ou de processar qualquer coisa. Se faltar ou estiver inválida alguma variável exigida pelo modo `real`, o processo sai com código diferente de 0, e o log nomeia as variáveis, nunca os valores. Exemplo: `EMAIL_ADAPTER=real` sem `SMTP_HOST` nomeia `SMTP_HOST`. Com o `.env.example` sem alterações (em que `EMAIL_FROM` também está vazio), a saída real é `check-env: Variáveis de ambiente ausentes ou inválidas: EMAIL_FROM, SMTP_HOST`. Hoje `MP_ADAPTER=real` e `WHATSAPP_ADAPTER=real` são sempre recusados, nomeando o seletor.
 - **No modo simulado**, as variáveis do provedor são ignoradas, mesmo com valores inválidos.
-- **Modos ativos no log:** a app imprime `check-env: ambiente válido (adaptadores: email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado)`, e o worker emite o evento JSON `worker.adaptadores` antes do primeiro heartbeat (`docker compose logs app worker`).
+- **Modos ativos no log:** a app imprime `check-env: ambiente válido (adaptadores: armazenamento=simulado, email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado)`, e o worker emite o evento JSON `worker.adaptadores` antes do primeiro heartbeat (`docker compose logs app worker`).
 - **Build:** o `next build` não valida o ambiente e não precisa de `.env`. O registro só lê as variáveis no primeiro uso, em runtime.
 - **Lint (RN-16):** fora de `src/server/integrations/**` e dos testes, a regra `no-restricted-imports` proíbe importar os SDKs dos provedores (`nodemailer`, `mercadopago`, `@cloudflare/*`, …) e os arquivos `real`/`simulado` dos adaptadores. A única exceção é `src/app/dev/**`, que pode usar o MP simulado. A regra `no-restricted-syntax` também proíbe escrever as URLs dos provedores (`challenges.cloudflare.com`, `api.mercadopago.com`, `graph.facebook.com`) fora das integrações.
 - **Valores do plano:** o preço (R$ 79,00 por mês, `PRECO_MENSAL_CENTAVOS = 7900`) e o teste grátis (`DIAS_TESTE = 30`) ficam só em `src/config/plano.ts`.
@@ -444,7 +462,7 @@ O workflow `CI` (`.github/workflows/ci.yml`, GitHub Actions) roda em todo pull r
 
 Nenhuma credencial é necessária para rodar ou testar o projeto: tudo funciona com os adaptadores simulados. Elas só são exigidas quando o seletor do serviço vai para `real`. As variáveis ficam no `.env` (declaradas, vazias, no `.env.example`). **Nunca versione valores reais.**
 
-Os seletores são `EMAIL_ADAPTER`, `WHATSAPP_ADAPTER`, `MP_ADAPTER` e `TURNSTILE_ADAPTER` (`simulado` | `real`).
+Os seletores são `EMAIL_ADAPTER`, `WHATSAPP_ADAPTER`, `MP_ADAPTER`, `TURNSTILE_ADAPTER` e `STORAGE_ADAPTER` (`simulado` | `real`).
 
 ### E-mail transacional (`EMAIL_ADAPTER=real`, SMTP)
 
@@ -472,6 +490,23 @@ Credenciais: um widget Turnstile criado no painel da Cloudflare para o domínio 
 | `TURNSTILE_SECRET_KEY` | sim | chave secreta usada no `siteverify` (**credencial**) |
 
 - O `siteverify` tem tempo-limite de 5 s. Se a Cloudflare estiver indisponível, a validação devolve "indisponível", sem lançar erro.
+
+### Armazenamento de fotos (`STORAGE_ADAPTER=real`, compatível com S3)
+
+**Não validado contra um provedor real:** os testes cobrem o adaptador com um cliente injetado e um servidor S3 falso local (sem rede). Credenciais: um bucket compatível com S3 (AWS S3, Cloudflare R2, MinIO etc.) e uma chave de acesso com permissão **só** de `PutObject`, `GetObject` e `DeleteObject` nesse bucket.
+
+| Variável | Obrigatória | Conteúdo |
+|---|---|---|
+| `S3_ENDPOINT` | sim | URL `http`/`https` do serviço (na AWS, o endpoint regional) |
+| `S3_REGIAO` | sim | região (`auto` no Cloudflare R2) |
+| `S3_BUCKET` | sim | nome do bucket |
+| `S3_ACCESS_KEY_ID` | sim | chave de acesso |
+| `S3_SECRET_ACCESS_KEY` | sim | segredo da chave (**credencial**) |
+| `S3_URL_PUBLICA` | não | URL pública do bucket ou da CDN (`https`, ou `http` em `localhost`), **sem listagem**; com ela a leitura pública devolve essa URL em vez de `/api/fotos/<id>` |
+| `S3_FORCE_PATH_STYLE` | não | `true` (padrão, compatível com MinIO e R2) ou `false` (endereçamento virtual, aceito pela AWS) |
+
+- O objeto é gravado sem ACL pública (a política de leitura é do bucket) e com `Content-Type: image/webp`. O adaptador nunca lista o bucket.
+- Se usar `S3_URL_PUBLICA`, o bucket ou a CDN **não podem listar objetos**; isso é configuração do operador. A foto removida pode continuar visível pelo cache da CDN.
 
 ### Mercado Pago (`MP_ADAPTER=real`)
 
