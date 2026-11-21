@@ -7,6 +7,9 @@ export const ACOES_AUDITAVEIS = [
   'salao.renomear',
   'login.falha_totp',
   'login.falha_senha',
+  // D-034 (E1.5): sucesso do login do super admin e cadastro do TOTP (entidade `usuario`, sem antes/depois).
+  'login.sucesso',
+  'totp.cadastrar',
 ] as const;
 export type AcaoAuditavel = (typeof ACOES_AUDITAVEIS)[number];
 

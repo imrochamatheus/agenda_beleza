@@ -15,6 +15,14 @@ const nextConfig: NextConfig = {
     return [
       { source: ROTAS.confirmarEmail, headers: referrer },
       { source: ROTAS.redefinirSenha, headers: referrer },
+      // D-034: nada de /admin fica em cache (nem em proxies nem no histórico), nem é indexado.
+      {
+        source: '/admin/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex' },
+        ],
+      },
       // D-032: o token do convite de avaliação está no CAMINHO. Mesma política de referrer (nunca
       // `no-referrer`: o POST sem JS sairia com `Origin: null`), sem cache e fora dos buscadores.
       {

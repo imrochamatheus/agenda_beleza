@@ -63,6 +63,7 @@ export const ROTAS = {
   devAvaliacao: '/dev/avaliacao',
   devPerfil: '/dev/perfil',
   devFuncionamento: '/dev/funcionamento',
+  devAdminEntrar: '/dev/admin-entrar',
   devFotos: '/dev/fotos',
   devFotosEnvio: '/dev/fotos/enviar',
   devReserva: '/dev/reserva',

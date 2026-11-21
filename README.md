@@ -312,6 +312,17 @@ Entrega da D-032 (E4.5). Migração `20261122000000_avaliacao` (tabelas `avaliac
 - `acao` e `entidade` vêm de listas fechadas em `tipos.ts` (acrescente por PR). `antes`/`depois`: JSON puro, até 6 níveis e 16 KiB; chaves suspeitas de segredo (`senha`, `token`, `totp`, ...) fazem a gravação FALHAR, nunca são redigidas. Grave só campos de negócio escolhidos, sem PII em valores livres.
 - Testes: `npx vitest run src/server/auditoria` e `npx vitest run --project integration tests/integration/auditoria`.
 
+## Super admin e TOTP (E1.5)
+
+Acesso da operação da plataforma, só com senha **e** código TOTP (RFC 6238, HMAC-SHA1, 6 dígitos, 30 s, ±1 janela). Não há cadastro público: a única forma de criar a conta é o script abaixo (e, depois, o seed).
+
+- **Criar a conta:** defina `SUPERADMIN_EMAIL` e `SUPERADMIN_PASSWORD` (12 a 1024 caracteres) no `.env` e rode `npm run superadmin:criar`. Imprime só `criado` ou `existente` (nunca a senha) e sai com 0; é idempotente (rodar de novo não troca a senha nem reseta o TOTP). E-mail que já é de gestor ou profissional: sai com 1 e nada muda. Com o compose: `docker compose exec -e SUPERADMIN_EMAIL=… -e SUPERADMIN_PASSWORD=… app node dist/scripts/superadmin-criar.js` (o `dist/` vai na imagem).
+- **Primeiro acesso:** em `/admin/entrar`, senha correta sem TOTP leva ao cadastro: QR code (SVG gerado no servidor, sem serviço externo e sem JavaScript) e a chave em texto. O segredo só é ativado depois de confirmar um código válido. Os próximos acessos pedem senha e código.
+- **Sessão própria:** cookie `ab_admin` (httpOnly, SameSite=Strict, Path `/admin`, Secure em produção), 30 min de inatividade e teto de 8 h, sem a renovação de 7/30 dias do salão. A etapa do código vale 10 min. Cada código só vale uma vez (anti-replay em `usuario.totp_ultimo_passo`). Limites por janela fixa de 15 min: 10 falhas de senha por e-mail e 5 falhas de código por usuário (a 6ª é recusada mesmo com o código certo).
+- **Chave:** `ADMIN_TOTP_CHAVE` cifra o segredo (AES-256-GCM, AAD = id do usuário). Perdê-la ou trocá-la invalida todos os TOTP (reset manual na tabela de variáveis, seção "Proteção da página pública").
+- **Auditoria:** `login.sucesso` e `totp.cadastrar` na mesma transação da sessão; `login.falha_senha` e `login.falha_totp` em conexão própria. Nunca guardam senha, código nem segredo.
+- **Demonstração e testes:** `/dev/admin-entrar` (`?vista=codigo|cadastro`; `VITRINE_COMPONENTES=true`) e `npx playwright test e2e/admin-entrar.spec.ts e2e/admin-entrar-sem-js.spec.ts`; integração em `tests/integration/auth/admin/`. Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/auth/admin/concorrencia.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.
@@ -504,6 +515,8 @@ Entrega da D-027 (E4.2). Sem migração. Módulo `src/server/protecao/` sobre `r
 | `TRUSTED_PROXY_HOPS` | `0` | 0 a 10. `0` ignora `X-Forwarded-For`; o App Router não expõe o IP do socket, então **todos caem no balde `desconhecido`** (limite global). Atrás de proxy/CDN, informe quantos (ex.: `1`): vale a N-ésima entrada de `X-Forwarded-For` contada da direita. Valor inválido falha no `check-env` |
 | `RATE_LIMIT_SEGREDO` | vazio | HMAC das chaves por número (mínimo 32 caracteres). **Obrigatório com `NODE_ENV=production`**; fora dela há um padrão de desenvolvimento. O compose local traz um valor próprio. Trocá-lo zera as contagens por número |
 | `AVALIACAO_SEGREDO` | vazio | HMAC dos links de avaliação enviados por WhatsApp (mínimo 32 caracteres; app e worker). **Obrigatório com `NODE_ENV=production`**; fora dela há um padrão de desenvolvimento. O compose local traz um valor próprio. **Rotação invalida os links ainda não usados** (o hash gravado deixa de casar) |
+| `ADMIN_TOTP_CHAVE` | vazio | chave AES-256-GCM (32 bytes: base64 ou 64 hex; gere com `openssl rand -base64 32`) que cifra os segredos TOTP do super admin (D-034). **Obrigatória com `NODE_ENV=production`**; o compose local traz um valor próprio. **Perder ou trocar a chave invalida todos os TOTP**: reset manual = `UPDATE usuario SET totp_segredo_cifrado = NULL, totp_ativado_em = NULL, totp_ultimo_passo = NULL WHERE papel = 'super_admin'` e novo cadastro no próximo login |
+| `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` | vazio | lidas só por `npm run superadmin:criar` (cria o super admin se não existir, imprime `criado` ou `existente`; senha de 12 a 1024 caracteres). Não são exigidas pelo `check-env` |
 | `PROTECAO_JANELA_SEGUNDOS` | `900` | janela fixa (60 a 86400); permite rajada de até 2x na virada |
 | `PROTECAO_LIMITE_IP_RESERVA` / `_DISPONIBILIDADE` / `_AVALIACAO` / `_DENUNCIA` | `10` / `60` / `5` / `5` | por IP e janela |
 | `PROTECAO_LIMITE_NUMERO` | `5` | tentativas de reserva por número e salão na janela |

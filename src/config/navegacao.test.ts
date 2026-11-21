@@ -215,6 +215,9 @@ describe('CA-12: rotas e segmentos reservados', () => {
     expect(ROTAS.devFotos).toBe('/dev/fotos');
     expect(ROTAS.devFotosEnvio).toBe('/dev/fotos/enviar');
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.configuracoesFotos)).toBe(ROTAS.configuracoes);
+    // D-034: a demonstração do login do admin fica sob "dev"; "admin" já é segmento reservado.
+    expect(ROTAS.devAdminEntrar).toBe('/dev/admin-entrar');
+    expect(SEGMENTOS_RESERVADOS.has('admin')).toBe(true);
     expect(ROTAS.salaoPublico('a b/c')).toBe('/a%20b%2Fc');
     expect(ROTAS.adminSalao('a b/c')).toBe('/admin/saloes/a%20b%2Fc');
     expect(ROTAS.adminSalaoAssinatura('a b/c')).toBe('/admin/saloes/a%20b%2Fc/assinatura');
