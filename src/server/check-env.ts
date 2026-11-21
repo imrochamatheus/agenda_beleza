@@ -5,9 +5,10 @@ export interface SaidaCheckEnv {
   error(mensagem: string): void;
 }
 
-/** `email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado` (só modos, nunca valores). */
+/** `armazenamento=simulado, email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado` (só modos, nunca valores). */
 export function descreverModos(modos: ModosAtivos): string {
   return [
+    `armazenamento=${modos.armazenamento}`,
     `email=${modos.email}`,
     `mp=${modos.mercadoPago}`,
     `turnstile=${modos.turnstile}`,
@@ -17,7 +18,7 @@ export function descreverModos(modos: ModosAtivos): string {
 
 /**
  * Valida o ambiente e devolve o código de saída do processo. Em caso de sucesso, registra numa
- * única linha o modo ativo dos quatro adaptadores (RN-14). Nunca imprime valores.
+ * única linha o modo ativo dos cinco adaptadores (RN-14). Nunca imprime valores.
  */
 export function executarCheckEnv(
   fonte: Record<string, string | undefined>,

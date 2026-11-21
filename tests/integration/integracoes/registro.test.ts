@@ -63,6 +63,7 @@ describe('CA-1: as portas do registro são os simulados (efeito no banco)', () =
       whatsapp: 'simulado',
       mercadoPago: 'simulado',
       turnstile: 'simulado',
+      armazenamento: 'simulado',
     });
   });
 

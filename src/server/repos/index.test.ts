@@ -81,6 +81,9 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.bloqueios.criar(ctx, { profissionalId: id, inicio: new Date(0), fim: new Date(), motivo: null }),
         r.bloqueios.listarVigentes(ctx, new Date(), { profissionalId: id }),
         r.bloqueios.listarNoPeriodo(ctx, { de: new Date(0), ate: new Date() }, { profissionalId: id }),
+        r.fotos.editarAlt(ctx, id, 'x'),
+        r.fotos.trocarComVizinha(ctx, id, 'cima', 1),
+        r.fotos.removerCompactando(ctx, id),
       ];
       for (const chamada of chamadas) {
         await expect(chamada).rejects.toBeInstanceOf(NaoEncontrado);
@@ -145,6 +148,9 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.bloqueios.remover(c, ID),
         r.bloqueios.listarVigentes(c, new Date(), { todos: true }),
         r.bloqueios.listarNoPeriodo(c, { de: new Date(0), ate: new Date() }),
+        r.fotos.listar(c),
+        r.fotos.editarAlt(c, ID, 'x'),
+        r.fotos.removerCompactando(c, ID),
         r.saloes.obterConfiguracoes(c),
         r.saloes.listarSlugs(c),
         r.saloes.travar(c),

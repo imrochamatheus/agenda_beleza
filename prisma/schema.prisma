@@ -178,6 +178,7 @@ model Salao {
   convites             Convite[]
   auditorias           Auditoria[]
   funcionamento        SalaoFuncionamento[]
+  fotos                SalaoFoto[]
 
   @@map("salao")
 }
@@ -356,6 +357,30 @@ model SalaoFuncionamento {
   salao Salao @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@map("salao_funcionamento")
+}
+
+/// Foto do perfil público do salão (D-021). Uma linha por foto; posições 1..n sem buracos, até 12 (o limite é a
+/// trava salao FOR NO KEY UPDATE da aplicação, não CHECK). salao_foto_posicao_unica é declarada aqui só para o
+/// diff do Prisma não a tratar como índice sobrando: no banco ela é UNIQUE ... DEFERRABLE INITIALLY DEFERRED
+/// (SQL bruto, parte 2 da migração; o Prisma não vê o diferimento; não use `upsert`/`ON CONFLICT` nela).
+/// Seu índice atende as leituras por salão (sem @@index). Os CHECKs salao_foto_*_chk também são SQL bruto. Parecer: docs/demandas/D-021/dba.md. Sem nome do arquivo original.
+model SalaoFoto {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId  String   @map("salao_id") @db.Uuid
+  chave    String   @unique
+  alt      String
+  posicao  Int
+  largura  Int
+  altura   Int
+  bytes    Int
+  envio    String   @db.Uuid
+  criadoEm DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+
+  salao Salao @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([salaoId, envio])
+  @@unique([salaoId, posicao], map: "salao_foto_posicao_unica")
+  @@map("salao_foto")
 }
 
 /// profissional_id nulo = bloqueio do salão inteiro. Removível (não é histórico protegido).

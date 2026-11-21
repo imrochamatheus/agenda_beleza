@@ -29,7 +29,7 @@ async function estadoDaBase(): Promise<{ base: string; saloes: number; migracoes
   }
 }
 
-// Contrato de migrações: D-004 (3), D-007 (simuladores) e D-020 (perfil e funcionamento). Ver
+// Contrato de migrações: D-004 (3), D-007 (simuladores), D-020 (perfil e funcionamento) e D-021 (fotos). Ver
 // docs/demandas/D-007/dba.md e docs/demandas/D-020/dba.md.
 const MIGRACOES = [
   '20261118000000_init',
@@ -37,6 +37,7 @@ const MIGRACOES = [
   '20261118000200_restricoes_sql',
   '20261119000000_simuladores_integracao',
   '20261120000000_perfil_funcionamento',
+  '20261121000000_salao_foto',
 ];
 
 describe('CA-17: a guarda roda antes de qualquer conexão (prepararExecucao)', () => {

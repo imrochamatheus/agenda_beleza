@@ -102,7 +102,7 @@ afterEach(() => {
   redefinirIntegracoes();
 });
 
-describe('CA-1: .env.example sem alterações → quatro simulados', () => {
+describe('CA-1: .env.example sem alterações → cinco simulados', () => {
   it('CA-1: modos "simulado" e cada porta é a instância construída pela fábrica do simulado', async () => {
     const r = criarIntegracoes(exemplo);
 
@@ -111,6 +111,7 @@ describe('CA-1: .env.example sem alterações → quatro simulados', () => {
       whatsapp: 'simulado',
       mercadoPago: 'simulado',
       turnstile: 'simulado',
+      armazenamento: 'simulado',
     });
     expect(r.email).toBe(ultimaInstancia(criarEmailSimulado));
     expect(r.whatsapp).toBe(ultimaInstancia(criarWhatsAppSimulado));
@@ -127,7 +128,7 @@ describe('CA-1: .env.example sem alterações → quatro simulados', () => {
     await expect(r.turnstile.validar({ token: TOKEN_TURNSTILE_SIMULADO })).resolves.toEqual({ valido: true });
   });
 
-  it('CA-1: integracoes() sobre o process.env do .env.example dá os quatro simulados', () => {
+  it('CA-1: integracoes() sobre o process.env do .env.example dá os cinco simulados', () => {
     esvaziarAmbiente();
     for (const [chave, valor] of Object.entries(exemplo)) vi.stubEnv(chave, valor);
 
@@ -136,6 +137,7 @@ describe('CA-1: .env.example sem alterações → quatro simulados', () => {
       whatsapp: 'simulado',
       mercadoPago: 'simulado',
       turnstile: 'simulado',
+      armazenamento: 'simulado',
     });
   });
 
@@ -371,5 +373,38 @@ describe('CA-14: chave do site do Turnstile lida em runtime, pela porta do regis
     vi.stubEnv('TURNSTILE_SITE_KEY', 'ignorada');
     expect(simulado).toBe(ultimaInstancia(criarTurnstileSimulado));
     expect(simulado.chaveDoSite()).toBe(CHAVE_SITE_TURNSTILE_SIMULADA);
+  });
+});
+
+describe('D-021: armazenamento no registro', () => {
+  const S3 = {
+    STORAGE_ADAPTER: 'real',
+    S3_ENDPOINT: 'https://s3.exemplo.test',
+    S3_REGIAO: 'auto',
+    S3_BUCKET: 'b',
+    S3_ACCESS_KEY_ID: 'AKIA',
+    S3_SECRET_ACCESS_KEY: 'segredo-s3-xyz',
+  };
+
+  it('simulado: usa ARMAZENAMENTO_DIR (ou o padrão) e ignora as S3_*; urlPublica é null', () => {
+    const r = criarIntegracoes({ DATABASE_URL: URL_BANCO, ARMAZENAMENTO_DIR: '/tmp/arm-x', S3_BUCKET: 'ignorado' });
+    expect(r.modos.armazenamento).toBe('simulado');
+    expect(r.armazenamento.urlPublica('fotos/' + 'a'.repeat(22) + '.webp')).toBeNull();
+    expect(criarIntegracoes({ DATABASE_URL: URL_BANCO }).modos.armazenamento).toBe('simulado');
+  });
+
+  it('real: valida as S3_*; com S3_URL_PUBLICA a URL pública sai do bucket/CDN', () => {
+    const chave = 'fotos/' + 'a'.repeat(22) + '.webp';
+    const sem = criarIntegracoes({ DATABASE_URL: URL_BANCO, ...S3 });
+    expect(sem.modos.armazenamento).toBe('real');
+    expect(sem.armazenamento.urlPublica(chave)).toBeNull();
+    const com = criarIntegracoes({ DATABASE_URL: URL_BANCO, ...S3, S3_URL_PUBLICA: 'https://cdn.exemplo.test/' });
+    expect(com.armazenamento.urlPublica(chave)).toBe(`https://cdn.exemplo.test/${chave}`);
+  });
+
+  it('real incompleto nomeia as variáveis, sem valores', () => {
+    const erro = erroDe(() => criarIntegracoes({ DATABASE_URL: URL_BANCO, STORAGE_ADAPTER: 'real', S3_BUCKET: 'segredo-s3-xyz' }));
+    expect(erro.variaveis).toEqual(['S3_ACCESS_KEY_ID', 'S3_ENDPOINT', 'S3_REGIAO', 'S3_SECRET_ACCESS_KEY']);
+    expect(erro.message).not.toContain('segredo-s3-xyz');
   });
 });

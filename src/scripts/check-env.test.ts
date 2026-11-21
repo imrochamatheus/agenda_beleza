@@ -26,7 +26,7 @@ describe('src/scripts/check-env.ts', () => {
     await import('./check-env');
     expect(process.exitCode).toBe(0);
     expect(console.log).toHaveBeenCalledWith(
-      'check-env: ambiente válido (adaptadores: email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado)',
+      'check-env: ambiente válido (adaptadores: armazenamento=simulado, email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado)',
     );
   });
 

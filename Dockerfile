@@ -42,6 +42,9 @@ COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+# Armazenamento simulado de fotos (D-021): criado com dono node ANTES do USER, para o volume nomeado
+# montado aqui herdar o dono. O sharp usa os binários glibc (@img/sharp-linux-x64) já em node_modules.
+RUN mkdir -p /app/.armazenamento && chown node:node /app/.armazenamento
 
 USER node
 EXPOSE 3000

@@ -30,4 +30,17 @@ for caminho in /confirmar-email /redefinir-senha; do
   echo "smoke: GET $caminho -> referrer-policy: strict-origin"
 done
 
+# D-021 (CA-17): sharp carrega na imagem final e o diretório de fotos é gravável pelo usuário node.
+docker compose exec -T app node -e "
+const sharp = require('sharp');
+sharp({ create: { width: 2, height: 2, channels: 3, background: '#a67b5b' } }).webp().toBuffer()
+  .then((b) => { if (b.subarray(8, 12).toString() !== 'WEBP') throw new Error('saida nao e WebP'); })
+  .then(() => {
+    const fs = require('fs'); const p = require('path').join(process.env.ARMAZENAMENTO_DIR, '.smoke.tmp-teste');
+    fs.writeFileSync(p, 'ok'); fs.unlinkSync(p);
+  })
+  .catch((e) => { console.error(e); process.exit(1); });
+" || falhar "sharp ou ARMAZENAMENTO_DIR (gravável) falhou na imagem"
+echo "smoke: sharp converte para WebP e ARMAZENAMENTO_DIR é gravável"
+
 echo "smoke: OK"

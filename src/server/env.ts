@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import * as ambienteArmazenamento from './integrations/armazenamento/ambiente';
 import * as ambienteEmail from './integrations/email/ambiente';
 import * as ambienteMercadoPago from './integrations/mercadopago/ambiente';
 import * as ambienteTurnstile from './integrations/turnstile/ambiente';
@@ -31,6 +32,7 @@ export const esquemaEnv = z.object({
   WHATSAPP_ADAPTER: z.enum(ADAPTADORES).default('simulado'),
   MP_ADAPTER: z.enum(ADAPTADORES).default('simulado'),
   TURNSTILE_ADAPTER: z.enum(ADAPTADORES).default('simulado'),
+  STORAGE_ADAPTER: z.enum(ADAPTADORES).default('simulado'),
   // Fila (D-008 RN-9/RN-10). Só dígitos: '-1', '1.5', ' 4' e 'abc' são recusados.
   QUEUE_RETRY_LIMIT: inteiroEntre(0, 20).default(4),
   QUEUE_RETRY_DELAY_SECONDS: inteiroEntre(1, 3600).default(30),
@@ -55,11 +57,12 @@ export type Env = {
     turnstile: ConfigIntegracao<ambienteTurnstile.ConfigTurnstile>;
     mercadoPago: ConfigIntegracao<ambienteMercadoPago.ConfigMercadoPagoReal>;
     whatsapp: ConfigIntegracao<ambienteWhatsApp.ConfigWhatsAppReal>;
+    armazenamento: ConfigIntegracao<ambienteArmazenamento.ConfigS3>;
   };
 };
 
 type NomeIntegracao = keyof Env['integracoes'];
-export type Seletor = 'EMAIL_ADAPTER' | 'WHATSAPP_ADAPTER' | 'MP_ADAPTER' | 'TURNSTILE_ADAPTER';
+export type Seletor = 'EMAIL_ADAPTER' | 'WHATSAPP_ADAPTER' | 'MP_ADAPTER' | 'TURNSTILE_ADAPTER' | 'STORAGE_ADAPTER';
 
 /** Contrato comum dos módulos `<integração>/ambiente.ts`. */
 type ModuloAmbiente<C> = {
@@ -75,6 +78,7 @@ const MODULOS = {
   turnstile: ambienteTurnstile,
   mercadoPago: ambienteMercadoPago,
   whatsapp: ambienteWhatsApp,
+  armazenamento: ambienteArmazenamento,
 } satisfies { [N in NomeIntegracao]: ModuloAmbiente<unknown> };
 
 /** Chaves do .env.example que o runtime da app não lê (S-3): usadas pelo compose ou pelos testes. */
@@ -161,8 +165,9 @@ export function validarEnv(fonte: Record<string, string | undefined>): Env {
   const turnstile = lerIntegracao(entrada, MODULOS.turnstile, erros);
   const mercadoPago = lerIntegracao(entrada, MODULOS.mercadoPago, erros);
   const whatsapp = lerIntegracao(entrada, MODULOS.whatsapp, erros);
+  const armazenamento = lerIntegracao(entrada, MODULOS.armazenamento, erros);
 
-  if (!base.success || !email || !turnstile || !mercadoPago || !whatsapp) {
+  if (!base.success || !email || !turnstile || !mercadoPago || !whatsapp || !armazenamento) {
     throw new ErroDeAmbiente(erros);
   }
   return {
@@ -173,17 +178,18 @@ export function validarEnv(fonte: Record<string, string | undefined>): Env {
       retryDelaySeconds: base.data.QUEUE_RETRY_DELAY_SECONDS,
       retryBackoff: base.data.QUEUE_RETRY_BACKOFF,
     },
-    integracoes: { email, turnstile, mercadoPago, whatsapp },
+    integracoes: { email, turnstile, mercadoPago, whatsapp, armazenamento },
   };
 }
 
-export type ModosAtivos = { email: Modo; mercadoPago: Modo; turnstile: Modo; whatsapp: Modo };
+export type ModosAtivos = { armazenamento: Modo; email: Modo; mercadoPago: Modo; turnstile: Modo; whatsapp: Modo };
 
 /** Modo ativo de cada integração, sem nenhum valor de configuração (seguro para log). */
 export function modosAtivos(env: Env): ModosAtivos {
-  const { email, mercadoPago, turnstile, whatsapp } = env.integracoes;
+  const { armazenamento, email, mercadoPago, turnstile, whatsapp } = env.integracoes;
   // Ordem alfabética: é a ordem das chaves no evento worker.adaptadores.
   return {
+    armazenamento: armazenamento.modo,
     email: email.modo,
     mercadoPago: mercadoPago.modo,
     turnstile: turnstile.modo,

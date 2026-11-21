@@ -47,6 +47,8 @@ const TABELAS = [
   'salao_slug',
   // D-020: horário de funcionamento do salão.
   'salao_funcionamento',
+  // D-021: fotos do salão.
+  'salao_foto',
   'servico',
   'servico_profissional',
   'sessao',
@@ -125,6 +127,12 @@ const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
   ['salao_telefone_e164_chk', 'salao', 'c'],
   ['salao_whatsapp_e164_chk', 'salao', 'c'],
   ['salao_instagram_chk', 'salao', 'c'],
+  // D-021 (migração 20261121000000_salao_foto, parte 2)
+  ['salao_foto_posicao_chk', 'salao_foto', 'c'],
+  ['salao_foto_dimensoes_chk', 'salao_foto', 'c'],
+  ['salao_foto_bytes_chk', 'salao_foto', 'c'],
+  ['salao_foto_alt_chk', 'salao_foto', 'c'],
+  ['salao_foto_chave_chk', 'salao_foto', 'c'],
 ];
 
 // [nome, tabela, único]
@@ -162,7 +170,7 @@ const FKS_COMPOSTAS = [
 ];
 
 describe('CA-1: catálogo depois do migrate deploy', () => {
-  it('CA-1: existem exatamente as 31 tabelas do contrato em public (fora _prisma_migrations)', async () => {
+  it('CA-1: existem exatamente as tabelas do contrato em public (fora _prisma_migrations)', async () => {
     const r = await linhas<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> '_prisma_migrations'
@@ -204,6 +212,21 @@ describe('CA-1: catálogo depois do migrate deploy', () => {
       "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'salao_funcionamento_sem_sobreposicao'",
     );
     expect(r.def).toBe('EXCLUDE USING gist (salao_id WITH =, dia_semana WITH =, int4range(inicio_min, fim_min) WITH &&)');
+  });
+
+  it('D-021: salao_foto_posicao_unica é UNIQUE (salao_id, posicao) DEFERRABLE INITIALLY DEFERRED (o diff do Prisma não vê o diferimento)', async () => {
+    const r = await linhas<{ tipo: string; adiavel: boolean; adiada: boolean; def: string }>(
+      `SELECT contype::text AS tipo, condeferrable AS adiavel, condeferred AS adiada, pg_get_constraintdef(oid) AS def
+       FROM pg_constraint WHERE conname = 'salao_foto_posicao_unica' AND conrelid = 'salao_foto'::regclass`,
+    );
+    expect(r).toEqual([
+      {
+        tipo: 'u',
+        adiavel: true,
+        adiada: true,
+        def: 'UNIQUE (salao_id, posicao) DEFERRABLE INITIALLY DEFERRED',
+      },
+    ]);
   });
 
   it('D-020: as listas do perfil são text[] NOT NULL com default vazio (o diff do Prisma não confere a nulidade)', async () => {
@@ -310,12 +333,12 @@ describe('CA-1: o Prisma não acusa drift', () => {
 });
 
 describe('CA-15: integridade referencial e identificadores', () => {
-  it('CA-15: as 38 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
+  it('CA-15: as 39 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
     const r = await linhas<{ nome: string; del: string; upd: string }>(
       `SELECT conname AS nome, confdeltype::text AS del, confupdtype::text AS upd
        FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace`,
     );
-    expect(r).toHaveLength(38); // 37 até a D-007 + salao_funcionamento_salao_id_fkey (D-020)
+    expect(r).toHaveLength(39); // 37 até a D-007 + salao_funcionamento_salao_id_fkey (D-020) + salao_foto_salao_id_fkey (D-021)
     expect(r.filter((f) => f.del !== 'r' || f.upd !== 'r')).toEqual([]);
   });
 
@@ -381,6 +404,7 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261118000200_restricoes_sql', antes: false, ok: true },
       { migration_name: '20261119000000_simuladores_integracao', antes: false, ok: true },
       { migration_name: '20261120000000_perfil_funcionamento', antes: false, ok: true },
+      { migration_name: '20261121000000_salao_foto', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,

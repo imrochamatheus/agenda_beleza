@@ -24,3 +24,6 @@ npm-debug.log*
 # código gerado: cliente Prisma (npm run db:generate) e bundles do worker/check-env (npm run build:node)
 src/generated/
 dist/
+
+# Armazenamento simulado de fotos (D-021)
+.armazenamento/

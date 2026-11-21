@@ -104,6 +104,7 @@ const fluir = async () => {
 const ADAPTADORES_SIMULADOS = {
   evento: 'worker.adaptadores',
   em: '2026-11-18T12:00:00.000Z',
+  armazenamento: 'simulado',
   email: 'simulado',
   mercadoPago: 'simulado',
   turnstile: 'simulado',

@@ -1,5 +1,10 @@
 import { type ConfigIntegracao, ErroDeAmbiente, type Modo, validarEnv } from '@/server/env';
 
+import type { ConfigS3 } from './armazenamento/ambiente';
+import { DIRETORIO_PADRAO } from './armazenamento/ambiente';
+import type { PortaArmazenamento } from './armazenamento/port';
+import { criarArmazenamentoReal } from './armazenamento/real';
+import { criarArmazenamentoSimulado } from './armazenamento/simulado';
 import type { ConfigSmtp } from './email/ambiente';
 import type { PortaEmail } from './email/port';
 import { criarEmailReal } from './email/real';
@@ -27,7 +32,8 @@ export interface Integracoes {
   readonly whatsapp: PortaWhatsApp;
   readonly mercadoPago: PortaMercadoPago;
   readonly turnstile: PortaTurnstile;
-  readonly modos: Readonly<{ email: Modo; whatsapp: Modo; mercadoPago: Modo; turnstile: Modo }>;
+  readonly armazenamento: PortaArmazenamento;
+  readonly modos: Readonly<{ email: Modo; whatsapp: Modo; mercadoPago: Modo; turnstile: Modo; armazenamento: Modo }>;
 }
 
 type Fonte = Record<string, string | undefined>;
@@ -64,29 +70,41 @@ export function selecionarMercadoPago(modo: Modo, o: { appUrl: string }): PortaM
   return modo === 'real' ? criarMercadoPagoReal() : criarMercadoPagoSimulado({ appUrl: o.appUrl });
 }
 
+/**
+ * Armazenamento (D-021). Simulado grava em `ARMAZENAMENTO_DIR` (padrão `.armazenamento`) e ignora
+ * as `S3_*`; real usa a ConfigS3 validada.
+ */
+export function selecionarArmazenamento(c: ConfigIntegracao<ConfigS3>, fonte: Fonte): PortaArmazenamento {
+  if (c.modo === 'real') return criarArmazenamentoReal(c.config);
+  const dir = fonte.ARMAZENAMENTO_DIR;
+  return criarArmazenamentoSimulado({ diretorio: dir === undefined || dir === '' ? DIRETORIO_PADRAO : dir });
+}
+
 /** WhatsApp. `real` liga o stub NaoImplementado de `whatsapp/real.ts` (CA-9; E7.2). */
 export function selecionarWhatsApp(modo: Modo): PortaWhatsApp {
   return modo === 'real' ? criarWhatsAppReal() : criarWhatsAppSimulado();
 }
 
 /**
- * Valida `fonte` (um único ErroDeAmbiente com todas as variáveis inválidas) e constrói as quatro
+ * Valida `fonte` (um único ErroDeAmbiente com todas as variáveis inválidas) e constrói as cinco
  * portas. A leitura da chave do site do Turnstile consulta `fonte` na chamada: com `process.env`
  * (caso de `integracoes()`), o valor é o vigente em runtime.
  */
 export function criarIntegracoes(fonte: Fonte): Integracoes {
   const env = validarEnv(fonte);
-  const { email, whatsapp, mercadoPago, turnstile } = env.integracoes;
+  const { email, whatsapp, mercadoPago, turnstile, armazenamento } = env.integracoes;
   return {
     email: selecionarEmail(email),
     whatsapp: selecionarWhatsApp(whatsapp.modo),
     mercadoPago: selecionarMercadoPago(mercadoPago.modo, { appUrl: env.APP_URL }),
     turnstile: selecionarTurnstile(turnstile, () => fonte),
+    armazenamento: selecionarArmazenamento(armazenamento, fonte),
     modos: {
       email: email.modo,
       whatsapp: whatsapp.modo,
       mercadoPago: mercadoPago.modo,
       turnstile: turnstile.modo,
+      armazenamento: armazenamento.modo,
     },
   };
 }

@@ -24,6 +24,7 @@
     "fila:exemplo": "npm run build:node && node --env-file-if-exists=.env dist/scripts/enfileirar-exemplo.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1163.0",
     "@node-rs/argon2": "2.2.2",
     "@opentelemetry/api": "1.10.0",
     "@prisma/adapter-pg": "7.10.1",
@@ -34,6 +35,7 @@
     "prisma": "7.10.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "sharp": "0.35.5",
     "zod": "4.6.7"
   },
   "devDependencies": {
