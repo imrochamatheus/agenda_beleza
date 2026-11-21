@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MENSAGENS_RESERVA_PUBLICA } from '@/server/reserva-publica/tipos';
 import type { ResultadoReservaPublica } from '@/server/reserva-publica/tipos';
 
-import { destinoDoRedirecionamento, lerFormulario, paraEstado } from './formulario';
+import { destinoDoRedirecionamento, lerSelecaoDoFormulario, lerFormulario, paraEstado } from './formulario';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
@@ -102,3 +102,13 @@ describe('paraEstado', () => {
     );
   });
 });
+
+describe('lerSelecaoDoFormulario (D-036 DEF-1)', () => {
+  it('lê serviços, profissional e dia; seleção incompleta ou inválida devolve null', () => {
+    expect(lerSelecaoDoFormulario(fd(COMPLETO))).toEqual({ s: [A, B], p: 'qualquer', data: '2026-12-01' });
+    expect(lerSelecaoDoFormulario(fd({ ...COMPLETO, data: 'x' }))).toBeNull();
+    expect(lerSelecaoDoFormulario(fd({ ...COMPLETO, p: 'x' }))).toBeNull();
+    expect(lerSelecaoDoFormulario(fd({ ...COMPLETO, s: ['x'] }))).toBeNull();
+  });
+});
+

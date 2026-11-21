@@ -1,0 +1,87 @@
+import { CREDENCIAIS_DEMO, dias, diasUteis, h, telefoneDemo, type SalaoSpec } from './dados';
+
+// Salão A: Studio Aurora (America/Sao_Paulo). A gestora também atende. Marcos tem usuário de profissional.
+export const SALAO_A: SalaoSpec = {
+  chave: 'a',
+  nome: 'Studio Aurora',
+  slug: 'studio-aurora',
+  fuso: 'America/Sao_Paulo',
+  gradeMin: 15,
+  intervaloMin: 0,
+  perfil: {
+    descricao:
+      'Espaço acolhedor no coração de Pinheiros, com atendimento sem pressa e produtos selecionados. (Dados fictícios de demonstração.)',
+    logradouro: 'Rua dos Pinheiros',
+    numero: '1200',
+    complemento: 'Sala 4',
+    bairro: 'Pinheiros',
+    cidade: 'São Paulo',
+    uf: 'SP',
+    cep: '05422001',
+    telefone: telefoneDemo('11', 1),
+    whatsapp: telefoneDemo('11', 2),
+    instagram: 'studio.aurora.demo',
+    meiosPagamento: ['pix', 'cartao_credito', 'cartao_debito', 'dinheiro'],
+    comodidades: ['wifi', 'bebidas', 'ar_condicionado', 'acessibilidade'],
+  },
+  funcionamento: [...diasUteis([h(9), h(19)]), ...dias([6], [h(9), h(15)])],
+  gestor: CREDENCIAIS_DEMO.gestorA,
+  servicos: [
+    { chave: 'corte', nome: 'Corte feminino', precoCentavos: 9000, duracaoMin: 60 },
+    { chave: 'escova', nome: 'Escova', precoCentavos: 5500, duracaoMin: 30 },
+    { chave: 'coloracao', nome: 'Coloração', precoCentavos: 18000, duracaoMin: 120 },
+    { chave: 'manicure', nome: 'Manicure', precoCentavos: 4500, duracaoMin: 45 },
+    { chave: 'hidratacao', nome: 'Hidratação', precoCentavos: 8000, duracaoMin: 45 },
+  ],
+  profissionais: [
+    {
+      chave: 'helena',
+      nome: CREDENCIAIS_DEMO.gestorA.nome,
+      gestor: true,
+      servicos: ['corte', 'escova', 'coloracao', 'manicure', 'hidratacao'],
+      jornada: dias([1, 2, 3, 4, 5, 6], [h(9), h(12)], [h(13), h(18)]),
+    },
+    {
+      chave: 'marcos',
+      nome: CREDENCIAIS_DEMO.profissionalA.nome,
+      usuarioEmail: CREDENCIAIS_DEMO.profissionalA.email,
+      servicos: ['corte', 'escova'],
+      jornada: dias([2, 3, 4, 5, 6], [h(10), h(12)], [h(14), h(19)]),
+    },
+    {
+      chave: 'beatriz',
+      nome: 'Beatriz Lima',
+      servicos: ['manicure', 'hidratacao'],
+      jornada: diasUteis([h(9), h(12)], [h(13), h(17)]),
+    },
+  ],
+  clientes: [
+    { chave: 'ana', nome: 'Ana Carolina Souza', telefone: telefoneDemo('11', 11) },
+    { chave: 'bruna', nome: 'Bruna Tavares', telefone: telefoneDemo('11', 12) },
+    { chave: 'carla', nome: 'Carla Menezes', telefone: telefoneDemo('11', 13) },
+    { chave: 'debora', nome: 'Débora Nunes', telefone: telefoneDemo('11', 14) },
+    { chave: 'elisa', nome: 'Elisa Prado', telefone: telefoneDemo('11', 15) },
+    { chave: 'removida', nome: null, telefone: null },
+  ],
+  reservas: [
+    { chave: 'r1', profissional: 'helena', cliente: 'ana', dia: -21, inicioMin: h(10), servicos: ['corte', 'escova'], status: 'concluido' },
+    { chave: 'r2', profissional: 'marcos', cliente: 'bruna', dia: -14, inicioMin: h(14), servicos: ['corte'], status: 'concluido' },
+    { chave: 'r3', profissional: 'beatriz', cliente: 'removida', dia: -9, inicioMin: h(9), servicos: ['manicure'], status: 'concluido' },
+    { chave: 'r4', profissional: 'helena', cliente: 'carla', dia: -7, inicioMin: h(15), servicos: ['coloracao'], status: 'nao_compareceu' },
+    { chave: 'r5', profissional: 'marcos', cliente: 'debora', dia: -5, inicioMin: h(16), servicos: ['escova'], status: 'cancelado' },
+    { chave: 'r6', profissional: 'helena', cliente: 'ana', dia: 3, inicioMin: h(10), servicos: ['corte', 'escova'], status: 'confirmado' },
+    { chave: 'r7', profissional: 'beatriz', cliente: 'elisa', dia: 4, inicioMin: h(14), servicos: ['manicure', 'hidratacao'], status: 'confirmado' },
+    { chave: 'r8', profissional: 'marcos', cliente: 'carla', dia: 5, inicioMin: h(15), servicos: ['corte'], status: 'cancelado' },
+  ],
+  avaliacoes: [
+    { reserva: 'r1', nota: 5, comentario: 'Atendimento impecável e ambiente muito agradável.', nomeExibicao: 'Ana C.' },
+    { reserva: 'r2', nota: 4, nomeExibicao: 'Bruna' },
+    { reserva: 'r3', nota: 5 },
+  ],
+  bloqueios: [
+    { chave: 'b1', profissional: 'marcos', dia: 8, inicioMin: h(14), fimMin: h(16), motivo: 'Curso de atualização' },
+    { chave: 'b2', dia: 12, inicioMin: h(9), fimMin: h(13), motivo: 'Manutenção do salão' },
+  ],
+  fotos: 3,
+  assinatura: 'em_teste',
+};

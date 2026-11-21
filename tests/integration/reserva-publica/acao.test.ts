@@ -100,13 +100,45 @@ describe('reservarAcao', () => {
     expect(await contarLinhas(c.s.salaoId)).toEqual(antes);
   });
 
-  it('horário tomado: redirecionamento para o passo do horário com o aviso (código fechado), sem a chave nem o horário', async () => {
+  it('horário tomado (DEF-1): sem redirecionar, devolve na resposta os horários atualizados e os valores digitados', async () => {
     const c = await criarCenarioReserva();
     await reservarAcao(estadoInicialReserva(CHAVE), formulario(c));
-    const d = await digest(reservarAcao(estadoInicialReserva(randomUUID()), formulario(c, { chave: randomUUID() })));
-    expect(d).toContain(`/${c.s.slugAtual}?s=${c.A}&p=qualquer&data=2026-12-01&aviso=horario_indisponivel`);
-    expect(d.startsWith('NEXT_REDIRECT;')).toBe(true);
-    expect(d).not.toContain('h=');
+    const antes = await contarLinhas(c.s.salaoId);
+    const f = formulario(c, { chave: randomUUID(), nome: 'Maria Atrasada', telefone: '(11) 98765-4321', consentimento_convite: 'on' });
+    const e = await reservarAcao(estadoInicialReserva(randomUUID()), f);
+    expect(e.status).toBe('horario_indisponivel');
+    expect(e.mensagem).toBe('Este horário não está mais disponível. Escolha outro horário.');
+    expect(e.valores).toMatchObject({ nome: 'Maria Atrasada', telefone: '(11) 98765-4321', mensagensReserva: true, conviteAvaliacao: true });
+    // Horários atualizados do dia: o tomado saiu da lista, e há outros.
+    const tomado = sp(DIA, '10:00').toISOString();
+    expect(e.reescolha?.fuso).toBe('America/Sao_Paulo');
+    expect(e.reescolha?.horarios.length).toBeGreaterThan(0);
+    expect(e.reescolha?.horarios).not.toContain(tomado);
+    expect(await contarLinhas(c.s.salaoId)).toEqual(antes);
+  });
+
+  it('reescolha: reenviar com outro horário (Sem preferência) resolve o profissional e confirma', async () => {
+    const c = await criarCenarioReserva();
+    await reservarAcao(estadoInicialReserva(CHAVE), formulario(c));
+    const conflito = await reservarAcao(estadoInicialReserva(randomUUID()), formulario(c, { chave: randomUUID() }));
+    const novo = conflito.reescolha!.horarios[0]!;
+    const f = formulario(c, { chave: randomUUID(), inicio: novo, profissionalId: '', reescolha: '1' });
+    f.delete('profissionalId');
+    const e = await reservarAcao(estadoInicialReserva(randomUUID()), f);
+    expect(e.status).toBe('confirmada');
+    expect(e.resumo?.inicioIso).toBe(novo);
+  });
+
+  it('reescolha com erro de validação continua mostrando os horários e preserva os valores', async () => {
+    const c = await criarCenarioReserva();
+    await reservarAcao(estadoInicialReserva(CHAVE), formulario(c));
+    const conflito = await reservarAcao(estadoInicialReserva(randomUUID()), formulario(c, { chave: randomUUID() }));
+    const f = formulario(c, { chave: randomUUID(), inicio: conflito.reescolha!.horarios[0]!, reescolha: '1', nome: 'A' });
+    const e = await reservarAcao(estadoInicialReserva(randomUUID()), f);
+    expect(e.status).toBe('editando');
+    expect(e.erros.nome).toBeTruthy();
+    expect(e.valores.nome).toBe('A');
+    expect(e.reescolha?.horarios).toEqual(conflito.reescolha!.horarios);
   });
 
   it('slug que mudou durante o fluxo: redireciona para o slug atual no mesmo passo, sem gravar', async () => {

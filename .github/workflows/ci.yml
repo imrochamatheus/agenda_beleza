@@ -123,6 +123,25 @@ jobs:
     name: e2e
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        # Mesma imagem de docker-compose.yml (services.postgres.image): mudar uma exige mudar a outra.
+        image: postgres:17
+        env:
+          # Credenciais de desenvolvimento do .env.example, num container efêmero do job: não são segredo.
+          POSTGRES_USER: agenda
+          POSTGRES_PASSWORD: agenda_dev
+          POSTGRES_DB: agenda_beleza
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U agenda -d agenda_beleza"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      # Base administrativa: o preparar-banco recria `agenda_beleza_test_e2e` a cada execução (papel com CREATEDB).
+      TEST_DATABASE_URL: postgresql://agenda:agenda_dev@localhost:5432/agenda_beleza_test
     steps:
       - uses: actions/checkout@v7
         with:
@@ -143,7 +162,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.versao }}
       # Num cache hit, só instala as bibliotecas do sistema (apt); o Chromium já está no cache.
       - run: npx playwright install --with-deps chromium
-      # Uma única compilação no job: o script faz next build e roda o Playwright (CI=true sobe npm run start).
+      # Uma única compilação no job: o script faz next build, build:node, prepara a base `_e2e` e roda o Playwright.
       - run: npm run test:e2e
       - name: Publicar o relatório do Playwright
         uses: actions/upload-artifact@v7
