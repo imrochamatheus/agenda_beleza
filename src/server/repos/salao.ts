@@ -38,6 +38,13 @@ export interface RepoSalao {
   listarSlugs(ctx: ContextoEscopado): Promise<SlugsDoSalaoDTO>;
   /** Trava a linha do salão (FOR NO KEY UPDATE) e devolve o fuso. Só dentro de emTransacao. */
   travar(ctx: ContextoEscopado): Promise<{ fuso: string }>;
+  /**
+   * D-025 A-2: `SELECT fuso, intervalo_min … FOR SHARE OF sa` (primeira trava da criação de reserva):
+   * conflita só com quem grava regras/slug/perfil/funcionamento (NO KEY UPDATE), nunca com outra
+   * reserva. Devolve o fuso e o intervalo vigentes sob a trava. Sem linha → NaoEncontrado. Só dentro
+   * de emTransacao. O texto "FOR SHARE OF sa" é procurado em pg_stat_activity pelos testes.
+   */
+  travarParaLeitura(ctx: ContextoEscopado): Promise<{ fuso: string; intervaloMin: number }>;
   /** Slug atual, em comando separado da trava. Zero → NaoEncontrado. */
   slugAtual(ctx: ContextoEscopado): Promise<string>;
   /** Grava os seis campos (atualizado_em por @updatedAt); 0 linhas → NaoEncontrado. */
@@ -116,6 +123,20 @@ export function criarRepoSalao(db: Executor): RepoSalao {
         throw new NaoEncontrado();
       }
       return { fuso: linha.fuso };
+    },
+
+    async travarParaLeitura(ctx) {
+      const salaoId = exigirEscopo(ctx);
+      const linhas = await db.$queryRaw<{ fuso: string; intervalo_min: number }[]>`
+        SELECT sa.fuso, sa.intervalo_min
+          FROM salao sa
+         WHERE sa.id = ${salaoId}::uuid
+           FOR SHARE OF sa`;
+      const linha = linhas[0];
+      if (!linha) {
+        throw new NaoEncontrado();
+      }
+      return { fuso: linha.fuso, intervaloMin: linha.intervalo_min };
     },
 
     async slugAtual(ctx) {

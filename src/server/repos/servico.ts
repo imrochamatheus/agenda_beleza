@@ -11,11 +11,18 @@ import type { Executor } from './transacao';
 //
 // ORDEM CANÔNICA DE TRAVAS (D-014 D-14, estendida pela D-015 D-12 e pela D-020 §3.5; obrigação para
 // E3.1/E3.2/E3.4/E3.5):
-//   salao (FOR NO KEY UPDATE: regras, slug, perfil por UPDATE, funcionamento; ver repos/funcionamento.ts)
-//     → profissional(is) (FOR UPDATE | FOR NO KEY UPDATE | FOR SHARE, por id)
+//   salao (FOR NO KEY UPDATE: regras, slug, perfil por UPDATE, funcionamento; ver repos/funcionamento.ts;
+//          FOR SHARE: criar reserva, D-025, e a E3.5 repete; FOR SHARE não conflita com outra reserva)
+//     → profissional(is) (FOR UPDATE | FOR NO KEY UPDATE | FOR SHARE, por id; D-025/DEF-1: a CRIAÇÃO de
+//       reserva toma o profissional com FOR NO KEY UPDATE, que serializa as reservas do mesmo profissional
+//       e evita o 40P01 dos speculative tokens do ON CONFLICT + exclusion. E3.4/E3.5: todo comando que
+//       insira/atualize `reserva` para status ocupante (criar, reagendar, voltar a `confirmado`) faz o
+//       mesmo; cancelar pode manter FOR SHARE. Nunca promover FOR SHARE → FOR NO KEY UPDATE)
 //       → servico(s) (FOR SHARE / FOR NO KEY UPDATE, por id)
-//         → cliente → consentimento (D-023: FOR KEY SHARE na cliente, depois INSERT; ver repos/consentimento.ts)
-//           → servico_profissional / jornada / salao_funcionamento / salao_foto / reserva / reserva_item
+//         → cliente → reserva → reserva_item → consentimento (D-025: a reserva vem ANTES do consentimento;
+//           ambos só tomam FOR KEY SHARE em linhas que a transação já segura por travas mais fortes;
+//           D-023: FOR KEY SHARE na cliente, depois INSERT; ver repos/consentimento.ts)
+//           → servico_profissional / jornada / salao_funcionamento / salao_foto
 //             → mensagem / mensagem_tentativa (D-024: SEMPRE por último; ver repos/mensagem.ts e mensagem-sistema.ts)
 // (D-021: fotos do salão — salao FOR NO KEY UPDATE → salao_foto; ver repos/foto.ts.)
 // Os INSERT com FK para salao só tomam FOR KEY SHARE, que não conflita com FOR NO KEY UPDATE.
@@ -26,6 +33,15 @@ import type { Executor } from './transacao';
 // A trava do serviço é FOR NO KEY UPDATE (D-15), que não conflita com o FOR KEY SHARE de inserções
 // de reserva_item/vínculos. Os marcadores "FOR SHARE OF p" e "FOR NO KEY UPDATE OF s" são procurados
 // em pg_stat_activity pelos testes de concorrência: não altere o texto sem ajustá-los.
+
+export type ServicoTravado = {
+  id: string;
+  nome: string;
+  ativo: boolean;
+  precoCentavos: number;
+  duracaoMin: number;
+  vinculado: boolean;
+};
 
 export interface RepoServico {
   buscarPorId(ctx: ContextoEscopado, id: string): Promise<ServicoDTO>;
@@ -48,6 +64,15 @@ export interface RepoServico {
    * dentro de emTransacao.
    */
   travarProfissionaisParaVinculo(ctx: ContextoEscopado, ids: readonly string[]): Promise<string[]>;
+  /**
+   * D-025 A-3: trava FOR SHARE (ORDER BY s.id) os serviços do salão entre `ids` e devolve preço, duração,
+   * `ativo` e se há vínculo com `profissionalId`. Ids não-UUID são descartados antes (nunca 22P02);
+   * ids inexistentes ou de outro salão simplesmente não voltam (o chamador compara a contagem). Dois
+   * comandos fixos: a trava e, DEPOIS dela, a leitura dos vínculos (snapshot novo: um vínculo gravado
+   * por uma edição que acabou de confirmar já é visto; um EXISTS no mesmo SELECT usaria o snapshot
+   * anterior à espera). Só dentro de emTransacao. O texto "FOR SHARE OF s" é marcador dos testes.
+   */
+  travarParaReserva(ctx: ContextoEscopado, ids: readonly string[], profissionalId: string): Promise<ServicoTravado[]>;
   /** SELECT … FOR NO KEY UPDATE OF s na linha do serviço. Sem linha → NaoEncontrado. */
   travarParaAlteracao(ctx: ContextoEscopado, id: string): Promise<{ id: string; ativo: boolean }>;
   atualizarDados(ctx: ContextoEscopado, id: string, d: DadosServico): Promise<ServicoDTO>;
@@ -189,6 +214,39 @@ export function criarRepoServico(db: Executor): RepoServico {
          ORDER BY p.id
            FOR SHARE OF p`;
       return linhas.map((l) => l.id);
+    },
+
+    async travarParaReserva(ctx, ids, profissionalId) {
+      const salaoId = exigirEscopo(ctx);
+      const validos = ids.filter((id) => ehUuid(id));
+      if (validos.length === 0) {
+        return [];
+      }
+      const linhas = await db.$queryRaw<
+        { id: string; nome: string; ativo: boolean; preco_centavos: number; duracao_min: number }[]
+      >`
+        SELECT s.id::text AS id, s.nome, s.ativo, s.preco_centavos, s.duracao_min
+          FROM servico s
+         WHERE s.salao_id = ${salaoId}::uuid AND s.id = ANY(${validos}::uuid[])
+         ORDER BY s.id
+           FOR SHARE OF s`;
+      const vinculados = new Set<string>();
+      if (ehUuid(profissionalId) && linhas.length > 0) {
+        const v = await db.$queryRaw<{ servico_id: string }[]>`
+          SELECT sp.servico_id::text AS servico_id
+            FROM servico_profissional sp
+           WHERE sp.salao_id = ${salaoId}::uuid AND sp.profissional_id = ${profissionalId}::uuid
+             AND sp.servico_id = ANY(${linhas.map((l) => l.id)}::uuid[])`;
+        v.forEach((x) => vinculados.add(x.servico_id));
+      }
+      return linhas.map((l) => ({
+        id: l.id,
+        nome: l.nome,
+        ativo: l.ativo,
+        precoCentavos: l.preco_centavos,
+        duracaoMin: l.duracao_min,
+        vinculado: vinculados.has(l.id),
+      }));
     },
 
     async travarParaAlteracao(ctx, id) {
