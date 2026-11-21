@@ -36,6 +36,23 @@
   text-decoration: none;
 }
 
+.novaReserva {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  padding: 0 var(--espaco-4);
+  border-radius: var(--raio);
+  background: var(--cor-primaria-forte);
+  color: var(--cor-sobre-primaria);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.novaReserva:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
 .botaoLink[aria-current='true'] {
   background: var(--cor-primaria-forte);
   color: var(--cor-sobre-primaria);

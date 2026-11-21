@@ -23,6 +23,7 @@ export const MENSAGENS_AGENDA = Object.freeze({
   truncada: 'Mostrando as primeiras 200 reservas do período. Filtre por profissional ou use a visão por dia para ver as demais.',
   inativo: 'inativo',
   encaixe: 'Encaixe',
+  novaReserva: 'Nova reserva',
   bloqueio: 'Bloqueio',
   bloqueioDoSalao: 'Bloqueio do salão',
 });

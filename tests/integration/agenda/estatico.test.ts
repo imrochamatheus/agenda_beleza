@@ -41,7 +41,8 @@ describe('CA-17: a página pública nunca importa a leitura da agenda', () => {
 describe('RN-13: somente leitura', () => {
   const dosArquivos = [
     ...arquivos(join(RAIZ, 'src/server/agenda')),
-    ...arquivos(join(RAIZ, 'src/app/painel/agenda')),
+    // D-029: o formulário de reserva manual (agenda/nova) escreve por ação; a agenda em si segue só de leitura.
+    ...arquivos(join(RAIZ, 'src/app/painel/agenda'), (p) => !p.includes('/agenda/nova/')),
     ...arquivos(join(RAIZ, 'src/app/dev/agenda')),
     join(RAIZ, 'src/server/repos/agenda.ts'),
   ].filter(naoTeste);

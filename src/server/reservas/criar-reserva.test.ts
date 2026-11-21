@@ -109,4 +109,17 @@ describe('criarReserva: fase pura, sem banco', () => {
     expect(linhas).not.toMatch(/Ana Souza|91234|\+55|mensagensReserva/);
     expect(linhas).not.toContain(S1);
   });
+
+  it('D-029: decidirEncaixe só com modo encaixe e consentimentoOpcional só com equipe (erro de programação)', async () => {
+    const decidirEncaixe = vi.fn();
+    await expect(criarReserva(equipe, entrada(), { decidirEncaixe })).rejects.toThrow(RangeError);
+    await expect(criarReserva(sistema, entrada(), { consentimentoOpcional: true })).rejects.toThrow(RangeError);
+    expect(decidirEncaixe).not.toHaveBeenCalled();
+    semBanco();
+  });
+
+  it('D-029: com consentimentoOpcional, aceite ausente não é consentimento_ausente', async () => {
+    // Passa da fase pura e só então tenta o banco (espionado: falha ali), provando que não parou no aceite.
+    await expect(criarReserva(equipe, entrada({ aceites: {} }), { consentimentoOpcional: true })).rejects.toThrow(/não deveria ser chamad/);
+  });
 });

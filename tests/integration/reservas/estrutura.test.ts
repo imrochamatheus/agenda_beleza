@@ -96,11 +96,13 @@ describe('CA-26: estrutura', () => {
     }
   });
 
-  it('nada em src/app nem em src/worker importa o módulo, nem passa o gancho aposRevalidar', () => {
+  it('nada em src/app nem em src/worker importa criarReserva, nem passa o gancho aposRevalidar', () => {
+    // D-029: a casca da reserva manual importa a ação, os contratos client-safe e as funções puras de
+    // reserva-equipe; o ponto de entrada `criar-reserva` continua só do servidor (ações e serviços).
     for (const base of ['src/app', 'src/worker']) {
       for (const f of arquivos(join(RAIZ, base)).filter((x) => /\.tsx?$/.test(x) && !/\.test\.tsx?$/.test(x))) {
         const t = readFileSync(f, 'utf8');
-        expect(t, f).not.toMatch(/@\/server\/reservas/);
+        expect(t, f).not.toMatch(/@\/server\/reservas\/criar-reserva/);
         expect(t, f).not.toContain('aposRevalidar');
       }
     }

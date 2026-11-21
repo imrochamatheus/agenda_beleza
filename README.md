@@ -243,6 +243,19 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Fuso:** `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/agenda src/app/painel/agenda tests/integration/agenda/fuso.test.ts || break; done`.
 - **Plano e volume (D-028):** `npx vitest run --project integration tests/integration/agenda/repo.test.ts --silent=false` imprime o `EXPLAIN` da listagem com 60.000 reservas (Index Scan em `reserva_salao_id_profissional_id_inicio_idx`, sem Seq Scan em `reserva`) e `tests/integration/agenda/consultar.test.ts` confere 6 instruções SQL por consulta, qualquer que seja o volume.
 
+## Reserva manual e encaixe
+
+Entrega da D-029 (E3.4). Sem migração, variável de ambiente nem dependência nova.
+
+- **Onde:** `/painel/agenda/nova` (botão "Nova reserva" na agenda, que leva a data e o profissional da vista; `?profissional=`, `?data=AAAA-MM-DD` e `?hora=HH:MM` pré-preenchem). O **gestor** registra para qualquer profissional ativo do salão; o **profissional**, só para si (outro do mesmo salão: 403; de outro salão ou inexistente: 404). Funciona sem JavaScript, sem PRG: o aviso e os erros voltam na resposta do POST, com os dados preservados.
+- **Encaixe:** o servidor (`src/server/reservas/reserva-equipe.ts`, ação `criarReservaManual` com capacidade `agendar`) converte data e hora **locais do salão** em UTC e calcula, sob a trava do profissional, os motivos: `fora_da_jornada` (o atendimento inteiro precisa caber em UM intervalo da jornada do dia; atravessar a meia-noite conta como fora), `bloqueado` (bloqueio próprio ou do salão) e `fora_do_funcionamento` (funcionamento definido; "não informado" nunca é motivo). Com motivo e sem "Confirmo o encaixe", **nada é gravado** e a resposta lista todos os motivos; confirmando, grava `encaixe = true`. Sem motivo grava `encaixe = false`, mesmo fora da grade ou da antecedência de 2 h. Início no passado é sempre recusado.
+- **Sobreposição:** continua recusada sempre (só a exclusion constraint `reserva_sem_sobreposicao` decide; mensagem sem revelar quem ocupa). A equipe não é limitada pelas 3 reservas futuras por número nem pela janela de dias. Risco aceito: bloqueio criado entre a detecção e o INSERT.
+- **Consentimento:** a equipe declara `mensagens_reserva` por uma caixa opcional (texto da D-023). Sem o aceite a reserva é criada, sem linha de consentimento, e a confirmação nasce `nao_enviada` (sem job); com ele, `pendente` e enfileirada depois do commit.
+- **Idempotência:** a chave UUID nasce no render do servidor (campo oculto); o aviso de encaixe não a consome e o duplo envio devolve a mesma reserva.
+- **Demonstração para o E2E:** `/dev/reserva-nova` (`?modo=profissional`), ligada pela `VITRINE_COMPONENTES=true`, com os mesmos componentes e uma ação que só valida (404 com a variável desligada).
+- **Testes e E2E:** `tests/integration/reservas/equipe/` (PostgreSQL real). `npx playwright test e2e/reserva-nova.spec.ts e2e/reserva-nova-sem-js.spec.ts` (build prévio e porta 3000 livre; 375×812, axe 4.14.0, teclado e sem JavaScript).
+- **Estabilidade:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/reservas/equipe/concorrencia.test.ts || break; done` (10 encaixes sobrepostos em paralelo: 1 criada e 9 `horario_indisponivel`); fuso: `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/reservas tests/integration/reservas/equipe || break; done`.
+
 ## Termos, Privacidade e consentimento
 
 - **Páginas:** `/termos` e `/privacidade` (públicas, estáticas, sem JavaScript nem banco). Cada uma mostra a versão, a data de vigência e um aviso destacado de que o **texto é provisório**: são textos próprios, ainda sem revisão jurídica, que precisam ser revisados antes de produção. A Privacidade tem a seção `#avaliacoes` (dados publicados, retirada, denúncia e pedido de anonimização).
@@ -410,7 +423,7 @@ Pipeline da D-024 (E7.1). Ainda não há tela nem rota: as demandas de reserva (
 
 ## Criação de reserva (serviço de domínio)
 
-Entrega da D-025 (E3.2). Ainda não há tela nem rota: a agenda da equipe (E3.4) e a página pública (E4.1/E4.2) chamam `criarReserva(ctx, entrada, deps?)` (`src/server/reservas/criar-reserva.ts`, sem `'use server'` e sem `next/*`). Não há migração nem variável de ambiente nova.
+Entrega da D-025 (E3.2). A reserva manual da equipe (E3.4, ver "Reserva manual e encaixe") e a página pública (E4.1/E4.2) chamam `criarReserva(ctx, entrada, deps?)` (`src/server/reservas/criar-reserva.ts`, sem `'use server'` e sem `next/*`). Não há migração nem variável de ambiente nova.
 
 - **Resultado discriminado, nunca exceção de negócio:** `criada`, `repetida`, `horario_indisponivel` (causa `revalidacao` ou `23P01`), `servico_indisponivel`, `profissional_indisponivel`, `invalido` (campos `servicos`, `inicio`, `nome`, `telefone`, `chave`), `consentimento_ausente`, `chave_reutilizada`, `recusado` (motivo da E4.2) e `salao_indisponivel`. Só 401/403/404 são `ErroDeDominio`; `RangeError` é erro de programação (`agora` inválido, `encaixe` no público).
 - **O que grava, numa só transação (tudo ou nada):** cliente (`upsertCliente`, por salão + telefone E.164), reserva `confirmado` com `revisao 0` e `ocupado_ate = fim + intervalo`, itens em sequência com o **snapshot** de preço e duração lido sob trava, consentimento (D-023) e o registro `pendente` da mensagem de `confirmacao` (D-024). **Depois do commit**, `enfileirarMensagens`: falha da fila nunca desfaz a reserva (a reconciliação a recupera).
