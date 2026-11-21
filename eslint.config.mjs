@@ -207,6 +207,13 @@ export default defineConfig([
       ],
     },
   },
+  // D-026: a rota dinâmica /[slug] passa a casar qualquer caminho de um segmento (ex.: "/termos/" com barra
+  // final), o que faz esta regra de navegação reprovar os <a> de exemplo nos testes de componentes. Ela
+  // vale para o código de produção; os testes só renderizam marcação.
+  {
+    files: TESTES,
+    rules: { '@next/next/no-html-link-for-pages': 'off' },
+  },
   // Artefatos gerados (node_modules já é ignorado por padrão).
   globalIgnores([
     '.next/**',

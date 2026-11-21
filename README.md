@@ -59,6 +59,7 @@ npx playwright test e2e/a11y-base.spec.ts  # só o E2E de acessibilidade (exige 
 npx playwright test e2e/entrar.spec.ts     # só o E2E de /entrar e do proxy (exige build prévio; sem banco)
 npx playwright test e2e/recuperar-senha.spec.ts  # só o E2E da recuperação de senha (exige build prévio; sem banco)
 npx playwright test e2e/fotos.spec.ts e2e/fotos-sem-js.spec.ts  # só o E2E das fotos do salão (exige build prévio; sem banco)
+npx playwright test e2e/reserva-publica.spec.ts e2e/reserva-publica-sem-js.spec.ts  # só o E2E da página pública de reserva (`/dev/reserva`; exige build prévio; sem banco)
 ```
 
 - Os testes de integração usam **somente** `TEST_DATABASE_URL`, nunca `DATABASE_URL`, e recusam rodar se as duas forem iguais. Sem `TEST_DATABASE_URL`, eles falham com uma mensagem que nomeia a variável.
@@ -411,6 +412,19 @@ Entrega da D-025 (E3.2). Ainda não há tela nem rota: a agenda da equipe (E3.4)
 - **Pontos de extensão:** `deps.antesDaReserva` (E4.2: limite de reservas futuras, entre o upsert e o INSERT), `deps.politica` (E6.4: estado da assinatura; hoje `permitirTudo`) e `deps.enfileirar`. `deps.aposRevalidar` é só de teste (barreira de concorrência) e nada em produção o define.
 - **Log:** evento `reserva.criar` só com `reservaId`, `salaoId`, `profissionalId`, `origem`, `modo`, `resultado`, `causa` e `repetida`; nunca nome, telefone, chave, aceites nem mensagem do banco.
 - **Estabilidade:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/reservas/concorrencia.test.ts tests/integration/reservas/idempotencia.test.ts || break; done`; fuso: `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/reservas tests/integration/reservas/fuso.test.ts || break; done`.
+
+## Página pública do salão e reserva
+
+Entrega da D-026 (E4.1). A cliente (sem conta) abre `/<slug>` no celular, vê o perfil do salão e reserva um ou mais serviços com um profissional. Não há migração, variável de ambiente nem dependência nova.
+
+- **Rota:** `src/app/(publico)/[slug]/page.tsx` (dinâmica, `ƒ` no build; `/termos` e `/privacidade` seguem estáticas). O slug é resolvido só por `resolverSalaoPorSlug` (atual ou histórico): **slug histórico responde 308** para `/<slugAtual>` preservando a query; inexistente, malformado, com maiúsculas ou em `SEGMENTOS_RESERVADOS` responde 404 sem consultar o banco. Rotas estáticas têm precedência sobre `[slug]`.
+- **Perfil:** nome (`<h1>`), fotos, descrição, serviços, equipe, horário de funcionamento, endereço, contato, formas de pagamento e comodidades. Campo vazio omite a seção; nada interno (e-mail do gestor, ids além dos necessários) é exposto. Não há seção de avaliações (E4.5).
+- **Fluxo (cada passo é um GET; o último é uma Server Action):** serviços → profissional (ou "Sem preferência") → dia (14 por página) → horário → dados (nome, telefone e consentimento da D-023) → confirmação. O estado vive só na query string (`s` repetido na ordem da lista, `p`, `data`, `h`, `de`, `aviso`); parâmetro inválido volta ao passo anterior, nunca vira 500. Funciona sem JavaScript. Os horários vêm só de `consultarDisponibilidade` (fuso do salão); a UI não os calcula.
+- **Reserva:** `reservarPelaPagina` (`src/server/reserva-publica/servico.ts`) chama `criarReserva` com `modo: 'normal'` (nunca encaixe). `chaveRequisicao` é gerada no render do passo de dados e reenviada em campo oculto: o duplo envio devolve a mesma confirmação. Horário tomado, serviço ou profissional indisponíveis redirecionam para o passo com `?aviso=<código fechado>`; erros por campo ficam na resposta, com os valores digitados.
+- **"Agendamento indisponível":** `agendamentoDisponivel` (`src/server/reserva-publica/agendamento.ts`, função pura e gancho da E6.4) decide por suspensão manual (`salao.suspenso_manual_em`), assinatura (`pendente`, `suspensa`, `encerrada` e `cancelada` após `acesso_ate` bloqueiam; `em_teste`, `ativa` e `em_carencia` permitem; salão sem assinatura é disponível) e ausência de serviço ofertável. Nesse estado a página mostra perfil e fotos, o aviso e nenhum formulário, e a ação recusa antes de qualquer escrita.
+- **Pontos de extensão:** `deps.antesDaReserva` (E4.2: Turnstile e limites) e `deps.politica` (E6.4) de `criarReserva`; esta demanda não implementa nenhum dos dois.
+- **Demonstração para o E2E:** `/dev/reserva` (`?vista=indisponivel` ou `?vista=vazio`), ligada pela `VITRINE_COMPONENTES=true`, com o mesmo componente, dados em memória e uma ação que só valida (404 com a variável desligada).
+- **Testes:** `tests/integration/reserva-publica/` (PostgreSQL real; `http.test.ts` sobe o `next start`, constrói o app se faltar `.next`, e prova o 308 com `fetch(redirect: 'manual')`). Fuso: `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/reserva-publica src/app/dev/reserva tests/integration/reserva-publica || break; done`. Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/reserva-publica/concorrencia.test.ts || break; done`.
 
 ## Interface e acessibilidade
 

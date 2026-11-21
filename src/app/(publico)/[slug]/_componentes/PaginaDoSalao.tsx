@@ -1,0 +1,133 @@
+import { PublicLayout } from '@/components/layout/PublicLayout';
+import { Alert } from '@/components/ui/Alert';
+import { montarHref } from '@/server/reserva-publica/passos';
+import { MENSAGENS_RESERVA_PUBLICA } from '@/server/reserva-publica/tipos';
+import type { DecisaoAgendamento } from '@/server/reserva-publica/agendamento';
+import type { VisaoDoPasso } from '@/server/reserva-publica/tipos';
+import type { FotoPublica } from '@/server/fotos/tipos';
+import type {
+  PerfilPublico,
+  ProfissionalPublico,
+  ServicoPublico,
+} from "@/server/repos/publico";
+
+import type { AcaoReservar } from '../estado';
+import { FormularioDados } from './FormularioDados';
+import {
+  PassoData,
+  PassoHorario,
+  PassoProfissional,
+  PassoServicos,
+  ResumoDaSelecao,
+} from "./Passos";
+import {
+  Descricao,
+  Equipe,
+  Fotos,
+  ListaDeServicos,
+  SecoesDoPerfil,
+} from "./Perfil";
+import estilos from './Salao.module.css';
+
+export type PaginaDoSalaoProps = {
+  /** Caminho da página (GET dos passos): `/<slug>` ou `/dev/reserva`. */
+  base: string;
+  slug: string;
+  perfil: PerfilPublico;
+  fotos: readonly FotoPublica[];
+  servicos: readonly ServicoPublico[];
+  equipe: readonly ProfissionalPublico[];
+  decisao: DecisaoAgendamento;
+  visao: VisaoDoPasso;
+  /** UUID novo por renderização do passo `dados` (idempotência contra duplo envio). */
+  chave: string;
+  acao: AcaoReservar;
+};
+
+function PassoAtual({ props }: { props: PaginaDoSalaoProps }) {
+  const { base, visao, servicos } = props;
+  switch (visao.passo) {
+    case "servicos":
+      return <PassoServicos base={base} servicos={servicos} visao={visao} />;
+    case "profissional":
+      return <PassoProfissional base={base} visao={visao} />;
+    case "data":
+      return <PassoData base={base} visao={visao} />;
+    case "horario":
+      return <PassoHorario base={base} visao={visao} />;
+    case "dados":
+      return (
+        <FormularioDados
+          acao={props.acao}
+          ocultos={{
+            slug: props.slug,
+            s: visao.s,
+            p: visao.p,
+            data: visao.data,
+            profissionalId: visao.profissional.id,
+            inicio: visao.inicioIso,
+            chave: props.chave,
+          }}
+        >
+          <h2 id="reservar">Seus dados</h2>
+          <ResumoDaSelecao
+            selecao={visao.selecao}
+            profissional={visao.profissional.nome}
+            inicioIso={visao.inicioIso}
+            fuso={visao.fuso}
+          />
+          <ul className={estilos.navegacao}>
+            <li>
+              <a
+                href={montarHref(base, {
+                  s: visao.s,
+                  p: visao.p,
+                  data: visao.data,
+                })}
+              >
+                Escolher outro horário
+              </a>
+            </li>
+          </ul>
+        </FormularioDados>
+      );
+  }
+}
+
+/**
+ * Página pública do salão (D-026 CA-1, CA-2): perfil por seções (campo vazio omite a seção), fluxo de
+ * reserva por query string e, sem condição de reservar, o aviso "Agendamento indisponível" sem
+ * formulário. O mesmo componente serve a página real e a vitrine /dev/reserva.
+ */
+export function PaginaDoSalao(props: PaginaDoSalaoProps) {
+  const { perfil, decisao, visao } = props;
+  const noPrimeiroPasso = visao.passo === "servicos";
+  return (
+    <PublicLayout variante="salao" nomeSalao={perfil.nome}>
+      <div className={estilos.pagina}>
+        <h1>{perfil.nome}</h1>
+        <Fotos fotos={props.fotos} />
+        <Descricao texto={perfil.descricao} />
+        {decisao.disponivel ? (
+          <PassoAtual props={props} />
+        ) : (
+          <section className={estilos.secao} aria-labelledby="indisponivel">
+            <Alert
+              variante="aviso"
+              titulo={MENSAGENS_RESERVA_PUBLICA.indisponivelTitulo}
+            >
+              <span id="indisponivel">
+                {MENSAGENS_RESERVA_PUBLICA.indisponivelTexto}
+              </span>
+            </Alert>
+          </section>
+        )}
+        {!decisao.disponivel || !noPrimeiroPasso ? (
+          <ListaDeServicos servicos={props.servicos} />
+        ) : null}
+        <Equipe equipe={props.equipe} />
+        <SecoesDoPerfil perfil={perfil} />
+      </div>
+    </PublicLayout>
+  );
+}
