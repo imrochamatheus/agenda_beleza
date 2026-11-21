@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { ROTAS } from '@/config/navegacao';
-import { editarCliente } from '@/server/clientes/clientes.acao';
+import { anonimizarCliente, editarCliente } from '@/server/clientes/clientes.acao';
 import { MENSAGENS_CLIENTE } from '@/server/clientes/tipos';
 
 import { estadoInicial, lerFormularioCliente } from './estado';
@@ -43,4 +43,26 @@ export async function editarClienteAcao(_anterior: EstadoFormularioCliente, fd: 
     ...estadoInicial({ nome: d.cliente.nome ?? '', telefone: d.cliente.telefoneFormatado ?? '' }),
     sucesso: d.alterada ? MENSAGENS_CLIENTE.salva : MENSAGENS_CLIENTE.semAlteracao,
   };
+}
+
+/** Códigos (lista fechada) de `?exclusao=` no detalhe, depois do PRG da exclusão. */
+export type CodigoExclusao = 'ok' | 'ja_anonimizada' | 'negado';
+
+/**
+ * "Confirmar exclusão" (D-031): lê só o `clienteId`, chama a ação (gestor, capacidade `lgpd`) e termina
+ * SEMPRE em redirect (PRG) ao detalhe com o código do resultado; nunca revela o motivo de um 404.
+ */
+export async function excluirClienteAcao(formData: FormData): Promise<void> {
+  const bruto = formData.get('clienteId');
+  const clienteId = typeof bruto === 'string' ? bruto : '';
+  const rota = clienteId ? ROTAS.excluirCliente(clienteId) : ROTAS.clientes;
+  const r = await anonimizarCliente({ clienteId });
+  if (!r.ok) {
+    if (r.erro === 'nao_autenticado') paraEntrar(rota);
+    if (r.erro === 'acesso_negado') redirect(`${ROTAS.cliente(clienteId)}?exclusao=negado`);
+    redirect(ROTAS.clientes);
+  }
+  revalidatePath(ROTAS.clientes);
+  revalidatePath(ROTAS.cliente(clienteId));
+  redirect(`${ROTAS.cliente(clienteId)}?exclusao=${r.dados.resultado === 'anonimizada' ? 'ok' : 'ja_anonimizada'}`);
 }

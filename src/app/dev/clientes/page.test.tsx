@@ -88,4 +88,25 @@ describe('página /dev/clientes', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Agendamentos' })).toBeTruthy();
   });
+
+  it('vista=excluir: confirmação com o nome, Confirmar e Cancelar de volta ao detalhe; o detalhe tem o link', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ vista: 'excluir' });
+    expect(screen.getByRole('heading', { level: 1, name: 'Excluir cliente' })).toBeTruthy();
+    expect(screen.getByText('Maria Souza')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Confirmar exclusão' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Cancelar' }).getAttribute('href')).toBe('/dev/clientes?vista=detalhe');
+    document.body.innerHTML = '';
+    await renderizar({ vista: 'detalhe' });
+    expect(screen.getByRole('link', { name: 'Excluir cliente' }).getAttribute('href')).toBe('/dev/clientes?vista=excluir');
+  });
+
+  it('vista=anonimizada com ?exclusao=ok mostra o aviso de sucesso; valor desconhecido não mostra', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ vista: 'anonimizada', exclusao: 'ok' });
+    expect(screen.getByRole('status').textContent).toContain('Cliente excluída');
+    document.body.innerHTML = '';
+    await renderizar({ vista: 'anonimizada', exclusao: 'x' });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
 });

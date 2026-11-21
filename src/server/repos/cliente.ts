@@ -12,7 +12,8 @@ import type { Executor } from './transacao';
 // servico_profissional/jornada/reserva/reserva_item. `upsert` é um único INSERT … ON CONFLICT (toma a
 // linha da cliente como NO KEY UPDATE quando já existe) e roda dentro da ordem do chamador. `atualizar`
 // roda dentro de uma transação do serviço que já travou o salão (`saloes.travar`) e então a linha da
-// cliente FOR UPDATE (o telefone é coluna de chave). Nunca capturar erros aqui: a captura do 23505 da
+// cliente FOR UPDATE (o telefone é coluna de chave). `anonimizar` (D-031) segue a mesma ordem e é seguida,
+// na mesma transação, por RepoMensagem.anonimizarDaCliente (mensagem → mensagem_tentativa, por último). Nunca capturar erros aqui: a captura do 23505 da
 // edição × upsert é do serviço, fora da transação.
 
 /** DTO de ClienteDTO a partir de uma linha bruta (snake_case). */
@@ -37,6 +38,8 @@ const paraDTO = (l: LinhaCliente): ClienteDTO => ({
 export type ResultadoAtualizarCliente =
   | { resultado: 'ok'; cliente: ClienteDTO; alterada: boolean }
   | { resultado: 'em_uso'; existente: { id: string; nome: string } };
+
+export type ResultadoAnonimizarCliente = { resultado: 'ok'; cliente: ClienteDTO } | { resultado: 'ja_anonimizada' };
 
 export interface RepoCliente {
   /** Inclui anonimizadas (nome e telefone nulos), RN-16. */
@@ -74,6 +77,12 @@ export interface RepoCliente {
    * que perdeu a corrida contra um upsert (23505), fora da transação desfeita.
    */
   buscarPorTelefone(ctx: ContextoEscopado, telefoneE164: string): Promise<{ id: string; nome: string } | null>;
+  /**
+   * Anonimização (D-031, dentro de emTransacao, depois de `saloes.travar`): SELECT … FOR UPDATE da linha
+   * (inclui anonimizadas; id malformado, inexistente ou de outro salão → NaoEncontrado), já anonimizada →
+   * `ja_anonimizada` sem escrever; senão UM UPDATE de nome, telefone e `anonimizada_em` (o CHECK exige o par).
+   */
+  anonimizar(ctx: ContextoEscopado, id: string, agora: Date): Promise<ResultadoAnonimizarCliente>;
   /** Até `limite` reservas da cliente, da mais recente à mais antiga, com o total. */
   historico(
     ctx: ContextoEscopado,
@@ -215,6 +224,30 @@ export function criarRepoCliente(db: Executor): RepoCliente {
          WHERE id = ${id}::uuid AND salao_id = ${salaoId}::uuid
         RETURNING id, nome, telefone_e164, anonimizada_em, criado_em, atualizado_em`;
       return { resultado: 'ok', cliente: paraDTO(gravadas[0]), alterada: true };
+    },
+
+    async anonimizar(ctx, id, agora) {
+      const salaoId = exigirEscopo(ctx);
+      if (!ehUuid(id)) {
+        throw new NaoEncontrado();
+      }
+      const atuais = await db.$queryRaw<{ id: string; anonimizada_em: Date | null }[]>`
+        SELECT id, anonimizada_em FROM cliente
+         WHERE id = ${id}::uuid AND salao_id = ${salaoId}::uuid
+           FOR UPDATE`;
+      if (atuais.length === 0) {
+        throw new NaoEncontrado();
+      }
+      if (atuais[0].anonimizada_em !== null) {
+        return { resultado: 'ja_anonimizada' };
+      }
+      const gravadas = await db.$queryRaw<LinhaCliente[]>`
+        UPDATE cliente
+           SET nome = NULL, telefone_e164 = NULL, anonimizada_em = ${agora}::timestamptz,
+               atualizado_em = ${agora}::timestamptz
+         WHERE id = ${id}::uuid AND salao_id = ${salaoId}::uuid
+        RETURNING id, nome, telefone_e164, anonimizada_em, criado_em, atualizado_em`;
+      return { resultado: 'ok', cliente: paraDTO(gravadas[0]) };
     },
 
     async buscarPorTelefone(ctx, telefoneE164) {

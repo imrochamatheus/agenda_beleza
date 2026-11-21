@@ -6,15 +6,17 @@ import estilos from '@/app/painel/clientes/Clientes.module.css';
 import { FormularioCliente } from '@/app/painel/clientes/FormularioCliente';
 import { HistoricoCliente } from '@/app/painel/clientes/HistoricoCliente';
 import { ListaClientes } from '@/app/painel/clientes/ListaClientes';
+import { ConfirmarExclusaoCliente } from '@/app/painel/clientes/ConfirmarExclusaoCliente';
+import { Alert } from '@/components/ui/Alert';
 import { PanelLayout } from '@/components/layout/PanelLayout';
 import { formatarTelefone } from '@/lib/format';
 import { ROTAS } from '@/config/navegacao';
-import { MENSAGENS_CLIENTE, LIMITES_CLIENTE } from '@/server/clientes/tipos';
+import { MENSAGENS_CLIENTE, LIMITES_CLIENTE, mensagemDeExclusao } from '@/server/clientes/tipos';
 import type { ListaClientes as Lista } from '@/server/clientes/tipos';
 import { chaveDeBusca, lerBusca, lerPagina } from '@/server/clientes/validacao';
 import { vitrineHabilitada } from '@/server/env';
 
-import { demonstrarEdicaoAcao } from './acoes';
+import { demonstrarEdicaoAcao, demonstrarExclusaoAcao } from './acoes';
 import {
   CLIENTES_DEMONSTRACAO,
   CLIENTE_DETALHE_DEMONSTRACAO,
@@ -24,7 +26,7 @@ import {
 
 // Demonstração das clientes para o E2E sem banco (D-022 §3.6): os MESMOS componentes das páginas reais,
 // com dados fixos e uma ação que só valida. 404 sem VITRINE_COMPONENTES=true (exceto em next dev), lido
-// na requisição, antes de qualquer parâmetro. `?vista=detalhe` mostra a edição e o histórico;
+// na requisição, antes de qualquer parâmetro. `?vista=detalhe` mostra a edição e o histórico; `?vista=excluir`, a confirmação da exclusão (a ação só redireciona);
 // `?vista=anonimizada`, a cliente removida; sem vista, a lista (busca e página em memória, com as mesmas
 // regras do servidor).
 export const dynamic = 'force-dynamic';
@@ -64,6 +66,7 @@ export default async function DemonstracaoClientes({ searchParams }: Props) {
   if (!vitrineHabilitada(process.env)) notFound();
   const params = await searchParams;
   const vista = params.vista;
+  const aviso = mensagemDeExclusao(params.exclusao);
   return (
     <PanelLayout papel="gestor" nomeSalao={NOME_SALAO_DEMONSTRACAO} caminhoAtual={ROTAS.clientes}>
       <div className={estilos.pagina}>
@@ -84,11 +87,24 @@ export default async function DemonstracaoClientes({ searchParams }: Props) {
                 hrefExistente={hrefDetalhe()}
               />
             </section>
+            <p>
+              <a href={`${BASE}?vista=excluir`} className={estilos.link}>
+                Excluir cliente
+              </a>
+            </p>
             <HistoricoCliente itens={HISTORICO_DEMONSTRACAO} total={HISTORICO_DEMONSTRACAO.length} />
           </>
+        ) : vista === 'excluir' ? (
+          <ConfirmarExclusaoCliente
+            acao={demonstrarExclusaoAcao}
+            clienteId="demo-detalhe"
+            nome={CLIENTE_DETALHE_DEMONSTRACAO.nome}
+            hrefCancelar={hrefDetalhe()}
+          />
         ) : vista === 'anonimizada' ? (
           <>
             <h1>{MENSAGENS_CLIENTE.removida}</h1>
+            {aviso ? <Alert variante={aviso.variante}>{aviso.texto}</Alert> : null}
             <p>
               <a href={BASE} className={estilos.link}>
                 Voltar para clientes

@@ -191,6 +191,7 @@ describe('CA-12: rotas e segmentos reservados', () => {
     expect(ROTAS.devBloqueios).toBe('/dev/bloqueios');
     // D-022: o detalhe da cliente codifica o id e ativa "Clientes"; a demonstração fica sob "dev".
     expect(ROTAS.cliente('a b/c')).toBe('/painel/clientes/a%20b%2Fc');
+    expect(ROTAS.excluirCliente('a b/c')).toBe('/painel/clientes/a%20b%2Fc/excluir');
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.cliente('abc'))).toBe(ROTAS.clientes);
     expect(ROTAS.devClientes).toBe('/dev/clientes');
     // D-023: a demonstração do consentimento fica sob "dev"; termos e privacidade já eram reservados.

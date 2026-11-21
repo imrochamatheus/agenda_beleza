@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { estadoInicial } from '@/app/painel/clientes/estado';
 import { MENSAGENS_CLIENTE } from '@/server/clientes/tipos';
 
-import { demonstrarEdicaoAcao } from './acoes';
+import { demonstrarEdicaoAcao, demonstrarExclusaoAcao } from './acoes';
 import { CLIENTE_EXISTENTE_DEMONSTRACAO } from './demonstracao';
 
 // D-022 T-6: a ação de demonstração só valida; desligada a vitrine, não processa nada.
@@ -47,5 +47,18 @@ describe('demonstrarEdicaoAcao', () => {
     expect((await demonstrarEdicaoAcao(base, fd({ nome: ' Maria  Souza', telefone: '11987654321' }))).sucesso).toBe(MENSAGENS_CLIENTE.semAlteracao);
     const r = await demonstrarEdicaoAcao(base, fd({ nome: 'Maria  Lima ', telefone: '21 91234-5678' }));
     expect(r).toMatchObject({ sucesso: MENSAGENS_CLIENTE.salva, valores: { nome: 'Maria Lima', telefone: '(21) 91234-5678' }, erros: {} });
+  });
+});
+
+describe('demonstrarExclusaoAcao', () => {
+  it('ligada: redireciona (PRG) para a vista da cliente removida, sem gravar nada', async () => {
+    ligar();
+    await expect(demonstrarExclusaoAcao()).rejects.toMatchObject({ digest: expect.stringContaining('/dev/clientes?vista=anonimizada&exclusao=ok') });
+  });
+
+  it('desligada: não faz nada', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('VITRINE_COMPONENTES', 'false');
+    await expect(demonstrarExclusaoAcao()).resolves.toBeUndefined();
   });
 });

@@ -233,6 +233,16 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **E2E:** `npx playwright test e2e/clientes.spec.ts e2e/clientes-sem-js.spec.ts` (build prévio e porta 3000 livre).
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/clientes/concorrencia.test.ts || break; done`.
 
+### Excluir cliente (anonimização, LGPD)
+
+- **Onde:** botão "Excluir cliente" no detalhe da cliente ativa (`/painel/clientes/<id>`), só para o **gestor**. Leva à página de confirmação `/painel/clientes/<id>/excluir` (GET só mostra; nada muda). "Confirmar exclusão" é um POST seguido de redirecionamento ao detalhe com o aviso (`?exclusao=ok`); "Cancelar" é um link. Funciona sem JavaScript e nunca ocorre com um único clique. Profissional: "Acesso negado"; cliente de outro salão ou id inválido: 404.
+- **O que acontece (irreversível):** numa única transação, `nome` e `telefone` ficam nulos e `anonimizada_em` recebe o instante da ação; reservas, itens e consentimentos permanecem (a cliente aparece como "Cliente removida"). As mensagens de WhatsApp da cliente em `pendente` ou `falhou` passam a `cancelada_anonimizacao`, e `destinatario_e164`, `parametros` e o `erro_detalhe` das tentativas são apagados em todas elas; `enviando` mantém o estado (o fechamento do envio não grava dado pessoal). A cliente deixa de receber avisos.
+- **Número liberado:** uma nova reserva com o mesmo telefone cria uma cliente nova, sem ligação com a anonimizada. Repetir a exclusão responde "já excluída" sem gravar nada. A ação (`anonimizarCliente`, capacidade `lgpd`) é permitida mesmo com o salão suspenso.
+- **Código:** `src/server/clientes/anonimizar.ts` (`anonimizarCliente(ctx, { clienteId }, agora, deps?)`); gancho `aoAnonimizar` (padrão: nada), chamado dentro da transação depois da limpeza das mensagens, para a E4.5 retirar a avaliação. Ordem de travas: salão `FOR NO KEY UPDATE` → cliente `FOR UPDATE` → `mensagem` → `mensagem_tentativa`. Sem migração (parecer do DBA em `docs/demandas/D-031/dba.md`). Risco aceito: uma mensagem já entregue ao provedor no instante da exclusão não pode ser recolhida.
+- **Fora do escopo:** `email_log` e as tabelas `sim_*` (ver "Limpeza das tabelas dos simulados").
+- **Demonstração e E2E:** `/dev/clientes?vista=excluir` (a ação só redireciona); `npx playwright test e2e/clientes-excluir.spec.ts e2e/clientes-excluir-sem-js.spec.ts` (build prévio e porta 3000 livre).
+- **Estabilidade:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/clientes/anonimizacao-concorrencia.test.ts || break; done`.
+
 ## Agenda da equipe
 
 - **Onde:** `/painel/agenda` (dia e semana) e `/painel/agenda/reservas/<id>` (detalhe), para o **gestor** (todos os profissionais, ativos e inativos, com filtro) e o **profissional** (só a própria agenda). Tudo é somente leitura e por links `GET` (`?data=AAAA-MM-DD&visao=dia|semana&profissional=<id>`): funciona sem JavaScript. Não há ação, migração nem variável de ambiente nova.

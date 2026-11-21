@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
+import { Alert } from '@/components/ui/Alert';
 import { PanelLayout } from '@/components/layout/PanelLayout';
 import { ROTAS } from '@/config/navegacao';
 import { exigirAcessoAoPainel } from '@/server/auth/pagina';
 import { obter } from '@/server/clientes/servico';
-import { MENSAGENS_CLIENTE } from '@/server/clientes/tipos';
+import { MENSAGENS_CLIENTE, mensagemDeExclusao } from '@/server/clientes/tipos';
 import type { DetalheCliente } from '@/server/clientes/tipos';
 import { buscarIdentidadeDoPainel } from '@/server/repos/usuario';
 import { NaoEncontrado } from '@/server/tenant/erros';
@@ -19,14 +20,17 @@ import { HistoricoCliente } from '../HistoricoCliente';
 
 export const metadata: Metadata = { title: 'Cliente', robots: { index: false } };
 
-type Props = { params: Promise<{ id: string }> };
+type Props = {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
 /**
  * Detalhe da cliente (D-022 §3.6; RN-4, RN-10, RN-15): dados, edição e histórico. Ordem: 403 (profissional,
  * "Acesso negado") → 404 (outro salão, inexistente ou id que não é UUID). A cliente anonimizada aparece
  * como "Cliente removida", com o histórico e sem formulário. notFound() fica fora do try.
  */
-export default async function PaginaCliente({ params }: Props) {
+export default async function PaginaCliente({ params, searchParams }: Props) {
   const { id } = await params;
   const acesso = await exigirAcessoAoPainel(ROTAS.cliente(id), ['gestor'], 'cliente.gerir');
   if (acesso.tipo === 'negado') {
@@ -43,6 +47,7 @@ export default async function PaginaCliente({ params }: Props) {
   }
   const { nomeUsuario, nomeSalao } = await buscarIdentidadeDoPainel(acesso.ctx);
   const { cliente, historico, totalReservas } = detalhe;
+  const aviso = mensagemDeExclusao((await searchParams)?.exclusao);
   return (
     <PanelLayout
       papel={acesso.ctx.papel}
@@ -57,6 +62,7 @@ export default async function PaginaCliente({ params }: Props) {
             Voltar para clientes
           </a>
         </p>
+        {aviso ? <Alert variante={aviso.variante}>{aviso.texto}</Alert> : null}
         {cliente.anonimizada ? (
           <p>Os dados de contato desta cliente foram removidos. O histórico de agendamentos foi mantido.</p>
         ) : (
@@ -67,6 +73,11 @@ export default async function PaginaCliente({ params }: Props) {
               id={cliente.id}
               valoresIniciais={{ nome: cliente.nome ?? '', telefone: cliente.telefoneFormatado ?? '' }}
             />
+            <p>
+              <a href={ROTAS.excluirCliente(cliente.id)} className={estilos.link}>
+                Excluir cliente
+              </a>
+            </p>
           </section>
         )}
         <HistoricoCliente itens={historico} total={totalReservas} />

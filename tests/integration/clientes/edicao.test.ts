@@ -176,11 +176,12 @@ describe('CA-5, CA-7, CA-15: acesso e escopo', () => {
 });
 
 describe('CA-16: registro da ação', () => {
-  it('todos os exports são defineAcao de gestor/configurar', () => {
+  it('todos os exports são defineAcao de gestor (editar: configurar; anonimizar, D-031: lgpd)', () => {
     const exportadas = Object.entries(acoes);
-    expect(exportadas.map(([n]) => n)).toEqual(['editarCliente']);
-    for (const [, acao] of exportadas) {
-      expect(metadadosDaAcao(acao)).toEqual({ papeis: ['gestor'], capacidade: 'configurar' });
+    expect(exportadas.map(([n]) => n)).toEqual(['editarCliente', 'anonimizarCliente']);
+    const capacidade = { editarCliente: 'configurar', anonimizarCliente: 'lgpd' } as const;
+    for (const [nome, acao] of exportadas) {
+      expect(metadadosDaAcao(acao)).toEqual({ papeis: ['gestor'], capacidade: capacidade[nome as keyof typeof capacidade] });
     }
   });
 });
