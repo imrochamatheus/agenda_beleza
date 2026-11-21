@@ -1,0 +1,49 @@
+/* Ações do detalhe da reserva (D-030). Só tokens do tema (globals.css); breakpoint único 48rem. */
+.acoes {
+  display: grid;
+  gap: var(--espaco-6);
+  max-width: 40rem;
+}
+
+.secao {
+  display: grid;
+  gap: var(--espaco-3);
+}
+
+.secao h2 {
+  margin: 0;
+}
+
+.linha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-3);
+}
+
+.resultado {
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  font-weight: 600;
+}
+
+.resultado:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.confirmacao {
+  display: grid;
+  gap: var(--espaco-3);
+  padding: var(--espaco-4);
+  border: 2px solid var(--cor-aviso-texto);
+  border-radius: var(--raio);
+  background: var(--cor-aviso-fundo);
+  color: var(--cor-aviso-texto);
+}
+
+.confirmacao p {
+  margin: 0;
+}
