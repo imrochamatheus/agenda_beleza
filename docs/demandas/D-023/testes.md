@@ -66,6 +66,10 @@ Nenhum.
 
 Observações (não são defeitos): o texto jurídico é provisório por decisão, com revisão jurídica pendente antes de produção; o `NaoEncontrado` de id malformado só é provado na integração (já declarado em `dev.md`); a ordem de validação em `registrarConsentimentoDaReserva` devolve `{ ok: false }` para aceite inválido antes de checar a coerência origem × contexto, o que é aceitável pelo contrato (nada é gravado em nenhum caso).
 
+### Complemento (teste de plano acrescentado após a entrega)
+
+`tests/integration/consentimento/vigente.test.ts` ganhou um teste de plano (200 clientes x 25 aceites, ANALYZE, EXPLAIN da consulta de vigente com asserção de uso de `consentimento_vigente_idx` e ausência de Seq Scan e Sort). Reexecutei: 4 testes passando; ele já entra no `test:coverage` medido acima (3887 testes). Confirma de forma independente o meu EXPLAIN exploratório. Observação: `dev.md` está desatualizado nesse ponto (não lista esse teste); não é defeito de produto e não altera o veredito.
+
 ### Limpeza
 
 Testes temporários e a base `zz_d023_mig` removidos; servidor `next start` encerrado (porta 3000 livre); só o postgres no ar; arquivos de configuração restaurados após a prova da guarda.
