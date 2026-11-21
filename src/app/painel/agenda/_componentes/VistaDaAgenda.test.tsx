@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { vistaDemonstracao } from '@/app/dev/agenda/demonstracao';
 import { TEXTO_CLIENTE_REMOVIDA } from '@/server/clientes/tipos';
 
-import { hrefAgenda } from './links';
+import { hrefAgenda, hrefNovaReserva } from './links';
 import { VistaDaAgenda } from './VistaDaAgenda';
 
 // D-028 T-4 (CA-5, CA-7, CA-8, CA-9, CA-12, CA-13, CA-14, CA-17): grade do dia, lista da semana e navegação,
@@ -15,7 +15,7 @@ const hrefReserva = (id: string) => `/r/${id}`;
 
 function renderizar(entrada: Record<string, string> = {}, base = '/painel/agenda') {
   const vista = vistaDemonstracao(entrada, AGORA)!;
-  return render(<VistaDaAgenda vista={vista} base={base} hrefReserva={hrefReserva} />);
+  return render(<VistaDaAgenda vista={vista} base={base} hrefReserva={hrefReserva} baseNovaReserva="/nova" />);
 }
 
 describe('links', () => {
@@ -23,6 +23,22 @@ describe('links', () => {
     expect(hrefAgenda('/x', {})).toBe('/x');
     expect(hrefAgenda('/x', { data: '2026-12-01', visao: 'semana', profissional: 'a b' })).toBe('/x?data=2026-12-01&visao=semana&profissional=a+b');
     expect(hrefAgenda('/x', { profissional: null })).toBe('/x');
+  });
+});
+
+describe('Nova reserva (D-029 CA-15)', () => {
+  it('o link leva a data e o profissional da vista (filtro do gestor ou a única coluna)', () => {
+    const vista = vistaDemonstracao({ data: '2026-12-01' }, AGORA)!;
+    expect(hrefNovaReserva('/nova', { ...vista, profissionalFiltro: null })).toBe('/nova?data=2026-12-01');
+    expect(hrefNovaReserva('/nova', { ...vista, profissionalFiltro: 'abc' })).toBe('/nova?data=2026-12-01&profissional=abc');
+    const unica = { ...vista, profissionais: [], profissionalFiltro: null, colunas: [vista.colunas[0]] };
+    expect(hrefNovaReserva('/nova', unica)).toBe(`/nova?data=2026-12-01&profissional=${vista.colunas[0].id}`);
+  });
+
+  it('a agenda mostra o link "Nova reserva" apontando para a base informada', () => {
+    renderizar();
+    const link = screen.getByRole('link', { name: 'Nova reserva' });
+    expect(link.getAttribute('href')).toBe('/nova?data=2026-12-01');
   });
 });
 
@@ -137,7 +153,7 @@ describe('semana', () => {
 describe('aviso de truncamento', () => {
   it('aparece com role=status e sem colunas mostra a mensagem', () => {
     const vista = { ...vistaDemonstracao({}, AGORA)!, truncada: true, colunas: [] };
-    render(<VistaDaAgenda vista={vista} base="/x" hrefReserva={hrefReserva} />);
+    render(<VistaDaAgenda vista={vista} base="/x" hrefReserva={hrefReserva} baseNovaReserva="/nova" />);
     expect(screen.getByRole('status').textContent).toContain('primeiras 200 reservas');
     expect(screen.getByText('Nenhum profissional com agenda neste período.')).toBeTruthy();
   });

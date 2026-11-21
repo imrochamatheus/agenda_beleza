@@ -63,6 +63,7 @@ export const ROTAS = {
   devFotosEnvio: '/dev/fotos/enviar',
   devReserva: '/dev/reserva',
   devAgenda: '/dev/agenda',
+  devReservaNova: '/dev/reserva-nova',
 } as const;
 
 export type ItemNavegacao = {

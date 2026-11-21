@@ -50,7 +50,8 @@ type SaidaDeNegocio = Extract<
       | 'servico_indisponivel'
       | 'profissional_indisponivel'
       | 'invalido'
-      | 'recusado';
+      | 'recusado'
+      | 'encaixe_requer_confirmacao';
   }
 >;
 type SaidaInterna = SaidaDeNegocio | { resultado: 'chave_repetida' };
@@ -103,8 +104,15 @@ export async function criarReserva(
     return concluir({ resultado: 'invalido', erros: v.erros });
   }
 
+  if (deps.decidirEncaixe && v.modo !== 'encaixe') {
+    throw new RangeError('decidirEncaixe só é aceito com modo encaixe');
+  }
+  if (deps.consentimentoOpcional && ctx.tipo !== 'tenant') {
+    throw new RangeError('consentimentoOpcional só é aceito com contexto de equipe');
+  }
   const aceites = validarConsentimentoDaReserva(entrada.aceites);
-  if (!aceites.ok) {
+  const semConsentimento = !aceites.ok && deps.consentimentoOpcional === true;
+  if (!aceites.ok && !semConsentimento) {
     return concluir({ resultado: 'consentimento_ausente', erros: aceites.erros });
   }
 
@@ -152,6 +160,14 @@ export async function criarReserva(
       const servicos = escolhidos as NonNullable<(typeof escolhidos)[number]>[];
       if (servicos.some((s) => !s.vinculado)) return sair({ resultado: 'profissional_indisponivel' });
 
+      const montado = montarItens(
+        v.inicio,
+        servicos.map((s) => ({ servicoId: s.id, precoCentavos: s.precoCentavos, duracaoMin: s.duracaoMin })),
+        intervaloMin,
+      );
+      if (!montado.ok) throw new Error(`itens da reserva inválidos: ${montado.motivo}`);
+
+      let encaixe = v.modo === 'encaixe';
       if (v.modo === 'normal') {
         const dia = partesLocais(v.inicio, fuso).data;
         let consulta;
@@ -178,14 +194,16 @@ export async function criarReserva(
         await deps.aposRevalidar?.();
       } else if (v.inicio.getTime() < entrada.agora.getTime()) {
         return sair({ resultado: 'invalido', erros: { inicio: MENSAGENS_RESERVA.inicioPassado } });
+      } else if (deps.decidirEncaixe) {
+        const decisao = await deps.decidirEncaixe(ctx, r, {
+          inicio: v.inicio,
+          fim: montado.fim,
+          fuso,
+          profissionalId: v.profissionalId,
+        });
+        if ('motivos' in decisao) return sair({ resultado: 'encaixe_requer_confirmacao', motivos: decisao.motivos });
+        encaixe = decisao.encaixe;
       }
-
-      const montado = montarItens(
-        v.inicio,
-        servicos.map((s) => ({ servicoId: s.id, precoCentavos: s.precoCentavos, duracaoMin: s.duracaoMin })),
-        intervaloMin,
-      );
-      if (!montado.ok) throw new Error(`itens da reserva inválidos: ${montado.motivo}`);
 
       const cliente = await upsertCliente(ctx, { nome: entrada.cliente.nome, telefone: entrada.cliente.telefone }, r);
       if (cliente.resultado !== 'ok') throw new Error('upsert da cliente recusou uma entrada já validada');
@@ -197,7 +215,6 @@ export async function criarReserva(
       }
 
       const origem = ctx.tipo === 'tenant' ? 'equipe' : 'publico';
-      const encaixe = v.modo === 'encaixe';
       const inserida = await r.reservas.criar(ctx, {
         profissionalId: v.profissionalId,
         clienteId,
@@ -215,12 +232,14 @@ export async function criarReserva(
         montado.itens.map(({ servicoId, ordem, precoCentavos, duracaoMin }) => ({ servicoId, ordem, precoCentavos, duracaoMin })),
       );
 
-      const consentimento = await registrarConsentimentoDaReserva(
-        ctx,
-        { clienteId, aceites: entrada.aceites, origem, agora: entrada.agora },
-        r,
-      );
-      if (!consentimento.ok) throw new Error('consentimento recusou aceites já validados');
+      if (!semConsentimento) {
+        const consentimento = await registrarConsentimentoDaReserva(
+          ctx,
+          { clienteId, aceites: entrada.aceites, origem, agora: entrada.agora },
+          r,
+        );
+        if (!consentimento.ok) throw new Error('consentimento recusou aceites já validados');
+      }
 
       const registro = await registrarMensagem(ctx, { reservaId: inserida.id, tipo: 'confirmacao' }, entrada.agora, r);
 

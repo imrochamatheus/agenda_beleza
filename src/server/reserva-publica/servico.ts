@@ -161,6 +161,7 @@ export async function reservarPelaPagina(
     case 'salao_indisponivel':
       return { resultado: 'indisponivel' };
     case 'chave_reutilizada':
+    case 'encaixe_requer_confirmacao': // só da equipe (D-029); inalcançável no fluxo público
       return { resultado: 'recusado', mensagem: MENSAGENS_RESERVA_PUBLICA.recusada };
     case 'recusado':
       return { resultado: 'recusado', mensagem: r.motivo };

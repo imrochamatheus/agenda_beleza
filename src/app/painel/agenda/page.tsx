@@ -47,7 +47,7 @@ export default async function PaginaAgenda({ searchParams }: Props) {
       caminhoAtual={ROTAS.agenda}
       areaUsuario={<AreaUsuario nome={nomeUsuario} />}
     >
-      <VistaDaAgenda vista={vista} base={ROTAS.agenda} hrefReserva={ROTAS.agendaReserva} />
+      <VistaDaAgenda vista={vista} base={ROTAS.agenda} hrefReserva={ROTAS.agendaReserva} baseNovaReserva={ROTAS.novaReserva} />
     </PanelLayout>
   );
 }

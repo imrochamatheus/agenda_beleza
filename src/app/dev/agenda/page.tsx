@@ -43,7 +43,7 @@ export default async function DemonstracaoAgenda({ searchParams }: Props) {
       {reserva ? (
         <DetalheDaReserva reserva={reserva} hrefVoltar={hrefAgenda(ROTAS.devAgenda, {})} />
       ) : (
-        <VistaDaAgenda vista={vista!} base={ROTAS.devAgenda} hrefReserva={hrefReserva} />
+        <VistaDaAgenda vista={vista!} base={ROTAS.devAgenda} hrefReserva={hrefReserva} baseNovaReserva={ROTAS.devReservaNova} />
       )}
     </PanelLayout>
   );
