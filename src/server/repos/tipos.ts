@@ -88,6 +88,15 @@ export type ClienteDTO = {
   atualizadoEm: Date;
 };
 
+/** Reserva no histórico da cliente (D-022 §3.3): nomes atuais, preço e duração do snapshot dos itens. */
+export type ReservaHistoricoDTO = {
+  id: string;
+  inicio: Date;
+  status: StatusReserva;
+  profissionalNome: string;
+  itens: { servicoNome: string; ordem: number; precoCentavos: number; duracaoMin: number }[];
+};
+
 export type ReservaItemDTO = {
   servicoId: string;
   ordem: number;

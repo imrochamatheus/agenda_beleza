@@ -19,6 +19,7 @@ export const OPERACOES = [
   'servico.gerir',
   'profissional.gerir',
   'cliente.gerir',
+  'cliente.contato',
   'salao.configurar',
   'assinatura.gerir',
   'plataforma.administrar',
@@ -46,6 +47,8 @@ export const MATRIZ: Readonly<Record<Operacao, Linha>> = Object.freeze({
   'servico.gerir': linha('salao', 'negado', 'negado'),
   'profissional.gerir': linha('salao', 'negado', 'negado'),
   'cliente.gerir': linha('salao', 'negado', 'negado'),
+  // D-022 D-5: o profissional só lê o contato de quem tem reserva com ele (o serviço restringe).
+  'cliente.contato': linha('salao', 'proprio', 'negado'),
   'salao.configurar': linha('salao', 'negado', 'negado'),
   'assinatura.gerir': linha('salao', 'negado', 'negado'),
   'plataforma.administrar': linha('negado', 'negado', 'plataforma'),

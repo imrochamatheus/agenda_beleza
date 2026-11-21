@@ -23,6 +23,7 @@ const ESPERADO: Record<Operacao, [Escopo, Escopo, Escopo]> = {
   'servico.gerir': ['salao', 'negado', 'negado'],
   'profissional.gerir': ['salao', 'negado', 'negado'],
   'cliente.gerir': ['salao', 'negado', 'negado'],
+  'cliente.contato': ['salao', 'proprio', 'negado'],
   'salao.configurar': ['salao', 'negado', 'negado'],
   'assinatura.gerir': ['salao', 'negado', 'negado'],
   'plataforma.administrar': ['negado', 'negado', 'plataforma'],
