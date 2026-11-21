@@ -20,6 +20,10 @@ const FILA = ['src/server/queue/**'];
 const DEV = ['src/app/dev/**'];
 // D-021 (A-9): o sharp só é importado pelo módulo de imagem.
 const IMAGEM = ['src/server/imagem/**'];
+// D-018 (A-1): o domínio puro (src/domain/**) não importa camadas de servidor, UI, banco, fila nem
+// SDKs; a única exceção é a conversão de fuso (src/server/tempo/fuso). Também não lê o relógio nem usa
+// métodos de data em hora local.
+const DOMINIO = ['src/domain/**'];
 // Restringe uma pasta (`x/**`) ou um arquivo aos arquivos de código.
 const comExtensao = (padroes) =>
   padroes.map((p) => (p.endsWith('/**') ? `${p}/*.{ts,tsx,mts,js,mjs}` : p));
@@ -102,6 +106,17 @@ const IMAGEM_SHARP = [
   },
 ];
 
+// D-018 (A-1): fora de `@/server/tempo/fuso`, o domínio não importa `@/server/**`, `@/app/**`,
+// `@/components/**`, `next`, `react` nem caminhos relativos que saiam da pasta.
+const MENSAGEM_DOMINIO =
+  'D-018: o domínio (src/domain) é puro; a única importação externa permitida é @/server/tempo/fuso.';
+const DOMINIO_IMPORTS = [
+  { regex: '^@/server/(?!tempo/fuso$)', message: MENSAGEM_DOMINIO },
+  { regex: '^@/(app|components)(/|$)', message: MENSAGEM_DOMINIO },
+  { regex: '^(next|react|react-dom)(/|$)', message: MENSAGEM_DOMINIO },
+  { regex: '^\\.\\.(/|$)', message: MENSAGEM_DOMINIO },
+];
+
 const restringirImports = (...grupos) => ({
   'no-restricted-imports': ['error', { patterns: grupos.flat() }],
 });
@@ -111,14 +126,37 @@ const restringirImports = (...grupos) => ({
 const HOSTS_PROVEDOR = '/challenges\\.cloudflare\\.com|api\\.mercadopago\\.com|graph\\.facebook\\.com/';
 const MENSAGEM_HOST = 'RN-16: chamadas a provedores ficam nos adaptadores de src/server/integrations.';
 
+// D-018 (A-1): o domínio não lê o relógio nem usa métodos de data em hora local.
+const MENSAGEM_RELOGIO = 'D-018: o domínio não lê o relógio; receba `agora` por parâmetro.';
+const MENSAGEM_LOCAL = 'D-018: métodos de data em hora local são proibidos no domínio; use @/server/tempo/fuso ou getUTC*.';
+const METODOS_LOCAIS =
+  '/^(getDay|getDate|getMonth|getFullYear|getYear|getHours|getMinutes|getSeconds|getMilliseconds|setDate|setMonth|setFullYear|setHours|setMinutes|setSeconds|setMilliseconds|getTimezoneOffset|toLocaleString|toLocaleDateString|toLocaleTimeString|toDateString|toTimeString)$/';
+
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
   // Geral: tudo que não está nas pastas com permissões próprias nem é teste.
   {
     files: [CODIGO],
-    ignores: [...INTEGRACOES, ...ACESSO_AO_BANCO, ...WORKER, ...FILA, ...DEV, ...IMAGEM, ...TESTES],
+    ignores: [...INTEGRACOES, ...ACESSO_AO_BANCO, ...WORKER, ...FILA, ...DEV, ...IMAGEM, ...DOMINIO, ...TESTES],
     rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES, PG_BOSS, IMAGEM_SHARP),
+  },
+  // Domínio (D-018 A-1): sem banco, SDKs, adaptadores, fila, imagem nem camadas de servidor/UI.
+  {
+    files: comExtensao(DOMINIO),
+    ignores: TESTES,
+    rules: {
+      ...restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES, PG_BOSS, IMAGEM_SHARP, DOMINIO_IMPORTS),
+      'no-restricted-syntax': [
+        'error',
+        { selector: `Literal[value=${HOSTS_PROVEDOR}]`, message: MENSAGEM_HOST },
+        { selector: `TemplateElement[value.raw=${HOSTS_PROVEDOR}]`, message: MENSAGEM_HOST },
+        { selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']", message: MENSAGEM_RELOGIO },
+        { selector: "NewExpression[callee.name='Date'][arguments.length=0]", message: MENSAGEM_RELOGIO },
+        { selector: "CallExpression[callee.name='Date']", message: MENSAGEM_RELOGIO },
+        { selector: `CallExpression[callee.property.name=${METODOS_LOCAIS}]`, message: MENSAGEM_LOCAL },
+      ],
+    },
   },
   // Integrações: podem usar SDKs e os próprios adaptadores, mas acessam o banco só via repos.
   {
@@ -160,7 +198,7 @@ export default defineConfig([
   // mesclar aqui (este bloco substituiria o dele).
   {
     files: [CODIGO],
-    ignores: [...INTEGRACOES, ...TESTES, 'eslint.config.mjs'],
+    ignores: [...INTEGRACOES, ...DOMINIO, ...TESTES, 'eslint.config.mjs'],
     rules: {
       'no-restricted-syntax': [
         'error',

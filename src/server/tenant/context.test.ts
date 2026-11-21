@@ -9,6 +9,7 @@ import {
   ehCapacidade,
   ehPapelDeSalao,
   exigirEscopo,
+  exigirLeituraDeAgenda,
   exigirPublico,
 } from './context';
 import type { ContextoEscopado, PublicoContext } from './context';
@@ -142,5 +143,32 @@ describe('papéis e capacidades', () => {
     expect(ehPapelDeSalao('profissional')).toBe(true);
     expect(ehPapelDeSalao('super_admin')).toBe(false);
     expect(ehPapelDeSalao(null)).toBe(false);
+  });
+});
+
+describe('exigirLeituraDeAgenda (D-018 A-2)', () => {
+  it('aceita publico, tenant e sistema e devolve o salaoId', () => {
+    const tenant = criarTenantContext({ usuarioId: USUARIO, papel: 'gestor', salaoId: SALAO, profissionalId: null });
+    expect(exigirLeituraDeAgenda(criarPublicoContext(SALAO, 'x'))).toBe(SALAO);
+    expect(exigirLeituraDeAgenda(tenant)).toBe(SALAO);
+    expect(exigirLeituraDeAgenda(contextoDeSistema(SALAO, 'teste'))).toBe(SALAO);
+  });
+
+  it('recusa admin, objeto forjado, salaoId inválido, null e undefined', () => {
+    const recusados: unknown[] = [
+      criarAdminContext(USUARIO),
+      { tipo: 'publico', salaoId: 'x' },
+      { tipo: 'tenant', salaoId: 'nao-uuid' },
+      { tipo: 'outro', salaoId: SALAO },
+      { salaoId: SALAO },
+      null,
+      undefined,
+      'publico',
+    ];
+    for (const ctx of recusados) {
+      expect(() => exigirLeituraDeAgenda(ctx as PublicoContext)).toThrow(
+        'leitura de agenda exige PublicoContext, TenantContext ou SistemaContext',
+      );
+    }
   });
 });

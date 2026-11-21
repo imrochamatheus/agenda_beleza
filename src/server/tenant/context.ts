@@ -53,6 +53,9 @@ export type AdminContext = Marcado<{ readonly tipo: 'admin'; readonly usuarioId:
 /** Únicos contextos aceitos pelos repositórios de tenant. */
 export type ContextoEscopado = TenantContext | SistemaContext;
 
+/** Leituras de agenda (disponibilidade): página pública, equipe e sistema. Nunca admin (D-018 A-2). */
+export type ContextoDeLeituraDeAgenda = PublicoContext | ContextoEscopado;
+
 export function ehPapelDeSalao(v: unknown): v is PapelDeSalao {
   return (PAPEIS_DE_SALAO as readonly unknown[]).includes(v);
 }
@@ -133,6 +136,23 @@ export function exigirPublico(ctx: PublicoContext): string {
   const c = ctx as unknown as { tipo?: unknown; salaoId?: unknown } | null | undefined;
   if (typeof c !== 'object' || c === null || c.tipo !== 'publico' || !ehUuid(c.salaoId)) {
     throw new Error('leitura pública exige PublicoContext');
+  }
+  return c.salaoId;
+}
+
+/**
+ * Guarda das leituras de agenda (D-018 A-2): só `publico`, `tenant` e `sistema` com salaoId UUID.
+ * Admin, objeto forjado ou salaoId inválido é erro de programação (Error, 500). Devolve o salaoId.
+ */
+export function exigirLeituraDeAgenda(ctx: ContextoDeLeituraDeAgenda): string {
+  const c = ctx as unknown as { tipo?: unknown; salaoId?: unknown } | null | undefined;
+  if (
+    typeof c !== 'object' ||
+    c === null ||
+    (c.tipo !== 'publico' && c.tipo !== 'tenant' && c.tipo !== 'sistema') ||
+    !ehUuid(c.salaoId)
+  ) {
+    throw new Error('leitura de agenda exige PublicoContext, TenantContext ou SistemaContext');
   }
   return c.salaoId;
 }

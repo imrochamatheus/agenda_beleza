@@ -14,6 +14,7 @@ Hoje a funcionalidade é **inexistente**. Evidências:
   - `src/server/jornadas/leitura.ts:19` `lerSemana(ctx: ContextoEscopado, profissionalId)`: jornada em forma canônica (D-015 RN-5), hora de parede, 0 = domingo. Uma consulta por profissional.
   - `src/server/bloqueios/leitura.ts:19` `lerBloqueios(ctx: ContextoEscopado, periodo, { profissionalId? })`: bloqueios do profissional **mais** os do salão (`profissional_id IS NULL`), intersecção semiaberta (`src/server/repos/bloqueio.ts:214,222-223`), usa o predicado `tstzrange(inicio, fim, '[)') && …` compatível com `bloqueio_periodo_idx` (`prisma/migrations/20261118000200_restricoes_sql/migration.sql:134-135`).
   - `src/server/repos/publico.ts:53` `listarServicosPublicos(ctx: PublicoContext)`: serviços ativos com ao menos um profissional ativo vinculado (D-014 RN-7), "a ÚNICA leitura de serviços ofertáveis para E3.1" (`:49-51`). Recebe `PublicoContext`, enquanto `lerSemana`/`lerBloqueios` recebem `ContextoEscopado` (`TenantContext | SistemaContext`, `src/server/tenant/context.ts:54`).
+- (Revisão D-020) O horário de funcionamento já está em `main`: `src/server/salao/funcionamento-leitura.ts:22` `lerFuncionamento(ctx)` devolve `{ definido: false }` ou `{ definido: true, semana }` (7 dias, índice = `diaSemana`, 0 = domingo, dia sem intervalos = fechado, intervalos canônicos de hora de parede); `COLUNAS_FUNCIONAMENTO` (`src/server/repos/funcionamento.ts:54`) é o fragmento SQL de leitura em um único comando, já reutilizado por `repos/publico.ts:144,169`.
 - Esquema relevante (`prisma/schema.prisma`): `salao` (`fuso`, `grade_min` 15, `antecedencia_min` 120 **em minutos**, `janela_dias` 60, `intervalo_min` 0; `:125-133`), `servico_profissional` (`:285-298`), `jornada` (`:302-316`; `CHECK 0 <= inicio_min < fim_min <= 1440`, migração `20261118000200`, `:100`), `bloqueio` (`:319-333`), `reserva` (`inicio`, `fim`, `ocupado_ate`, `status`, `encaixe`; `:381-414`).
 - Constraint de não sobreposição (`prisma/migrations/20261118000100_reserva_exclusion/migration.sql:32-37`):
   `EXCLUDE USING gist (profissional_id WITH =, tstzrange(inicio, ocupado_ate, '[)') WITH &&) WHERE (status IN ('confirmado', 'concluido', 'nao_compareceu'))`, e `reserva_ordem_chk`: `fim > inicio AND ocupado_ate >= fim`.
@@ -48,7 +49,7 @@ Da issue (decididas, refinadas na redação):
 - **RN-1** (issue RN-1; `PLAN.md:34`; D-014 obrigação): profissionais elegíveis = `profissional.ativo = true` do salão **e** vinculados (`servico_profissional`) a **todos** os serviços escolhidos, que devem estar todos entre os ofertáveis de `listarServicosPublicos` (ativos e com ao menos um profissional ativo). Ordem da lista: nome, depois id.
 - **RN-2** (issue RN-2; `CLAUDE.md` "Multi-service bookings"): duração total = soma de `duracao_min`; preço total = soma de `preco_centavos`, ambos com os valores **vigentes** no momento da consulta. O snapshot é gravado só na E3.2.
 - **RN-3** (issue RN-3; D-001 `dev.md:80`): um início `i` com fim `f = i + duração total` (tempo decorrido real, em UTC) é válido para o profissional P se, e somente se:
-  - (a) `[i, f)` está inteiramente contido em **um único** intervalo de jornada de P daquela data local, convertido em instantes (RN-9);
+  - (a) `[i, f)` está inteiramente contido em **um único** intervalo de jornada de P daquela data local, convertido em instantes (RN-9), **e, quando o salão tem funcionamento informado, num único intervalo de jornada ∩ funcionamento (RN-20, RN-21)**;
   - (b) `[i, f)` não intersecta `[b.inicio, b.fim)` de nenhum bloqueio de P nem do salão (encostar não bloqueia);
   - (c) `[i, f + intervalo vigente)` não intersecta `[r.inicio, r.ocupado_ate)` de nenhuma reserva de P com `status IN ('confirmado','concluido','nao_compareceu')` (mesma expressão e predicado da constraint, S1). O intervalo **não** precisa caber na jornada nem fora de bloqueios.
 - **RN-4** (issue RN-4): os inícios oferecidos são horas de parede cujo minuto do dia local é múltiplo de `grade_min`, contado a partir de 00:00 local (não a partir do início da jornada). Ex.: jornada 09:05–12:00 com grade 15 → primeiro início 09:15.
@@ -163,3 +164,70 @@ Nenhuma.
 - **D-10** (§6): sem exigência de transação/snapshot único para as leituras; a inconsistência possível equivale à corrida natural com a E3.2.
 - **D-11** (§8): o serviço deve servir ao contexto público (E4.1) e ao de sistema/equipe (E3.2/E3.4), sempre escopado ao salão; a forma (aceitar `PublicoContext` e derivar o escopo, ou variante de leitura de ofertáveis para `ContextoEscopado`) é do arquiteto, mantendo `listarServicosPublicos` como a fonte da regra de ofertáveis (D-014).
 - **D-12** (CA-27): limite de 2 s para a função pura, verificável e generoso; a métrica principal de desempenho é estrutural (CA-25, CA-26).
+
+## 10. Revisão D-019/D-020 — horário de funcionamento do salão
+
+Fontes: `docs/trinks-alinhamento.md` (DT-6; §7.3), issue #27 (seção "Revisão D-019": RN-R1, CA-R1..CA-R4), `docs/demandas/D-020/` e o código em `main` (`src/server/salao/funcionamento-leitura.ts:22`, `src/server/repos/funcionamento.ts:54`, `src/server/repos/publico.ts:144,169`). Obrigação registrada no `CLAUDE.md` pela D-020: a E3.1 deve usar `lerFuncionamento` ou `COLUNAS_FUNCIONAMENTO`.
+
+**O que mudou.** Até aqui a validade de um início dependia só da jornada (RN-3a). O funcionamento público passa a limitar em conjunto com a jornada (DT-6). RN-1..RN-19 e CA-1..CA-27 ficam como estão, exceto o texto da RN-3(a) (acima) e o contexto do §1 (acréscimo). Salão sem funcionamento informado se comporta exatamente como antes (CA-1..CA-27 continuam valendo sem alteração).
+
+**Fora do escopo (reafirmado):** o encaixe da equipe (E3.4) não usa esta função e continua permitido fora do funcionamento, com o aviso previsto (DT-6; trinks-alinhamento §7.3 "Encaixe preservado"). Esta demanda não altera `lerFuncionamento`, o repositório de funcionamento nem a tela de configuração.
+
+### Regras de negócio novas
+
+- **RN-20** (DT-6; issue RN-R1): estados do funcionamento. (i) **Não informado** (`definido: false`): não limita; vale só a jornada. (ii) **Informado** com intervalos: para a data local `d` (dia da semana `w`), a janela oferecível de P é jornada(P, w) ∩ funcionamento(w). (iii) **Informado com todos os dias fechados** (`definido: true`, os 7 dias sem intervalos): nenhum horário para nenhum profissional em nenhuma data (não se confunde com "não informado"). Dia fechado no funcionamento = sem horários naquele dia, ainda que haja jornada.
+- **RN-21** (DT-6; RN-3a revisada): um início `i` com fim `f` é válido somente se `[i, f)` está inteiramente contido em **um único** intervalo de jornada ∩ funcionamento da data local. A interseção é feita em **minutos de parede** do mesmo dia local e fuso (ambos são hora de parede do `salao.fuso`), par a par, descartando vazios; os intervalos resultantes são convertidos em instantes pela mesma regra da RN-9 (fim 1440 = 00:00 do dia seguinte, só por `src/server/tempo/fuso.ts`, sem segunda implementação). Atendimento que cabe no funcionamento mas cruza a pausa da jornada (ou o contrário) não é oferecido, porque os dois limites valem ao mesmo tempo.
+- **RN-22** (RN-4, RN-10 inalteradas): a grade continua contada a partir de 00:00 local, não do início da interseção; o tratamento de horário de verão (RN-10) e a regra de não atravessar a meia-noite (RN-11) valem sobre a interseção. Funcionamento até 24:00 (1440) é fim válido; não une dias.
+- **RN-23** (RN-3b, RN-3c, RN-7 inalteradas): bloqueios e reservas continuam sendo avaliados em instantes sobre os inícios que sobraram da RN-21. O intervalo (RN-3c) continua sem precisar caber na jornada nem no funcionamento.
+- **RN-24** (RN-12, RN-13 estendidas): o funcionamento é lido do salão a cada consulta (valor vigente) e, como a jornada, é hora de parede: após troca de fuso vale com os mesmos minutos no novo fuso (D-020 e D-017 RN-16); nada é recalculado nem reinterpretado nas reservas existentes.
+- **RN-25** (RN-14): o funcionamento lido é sempre o do salão do contexto; funcionamento de outro salão nunca entra no cálculo.
+- **RN-26** (RN-19 estendida): o funcionamento entra na leitura **sem aumentar o número de instruções SQL por chamada**. Forma recomendada: na leitura das regras do salão (`lerRegras`, hoje uma instrução sobre `salao`), projetar também `COLUNAS_FUNCIONAMENTO` (alias `s` para `salao`) e converter com `funcionamentoDaLinha`/`montarSemana`, mantendo a contagem constante e igual à de antes da revisão. Não se chama `lerFuncionamento` como leitura extra se isso somar uma instrução (a menos que o arquiteto demonstre que o total continua constante e documentado). A leitura é por salão, não por profissional nem por data.
+- **RN-27** (RN-18): a função pura recebe o funcionamento como parâmetro (`{ definido: false } | { definido: true, semana }`) e continua sem banco e sem relógio. Mesma entrada, mesma saída.
+
+### Critérios de aceitação novos
+
+Salvo indicação: `America/Sao_Paulo`, grade 15, antecedência 2 h, janela 60, intervalo 0, data futura dentro da janela, `agora` bem anterior. Unidade = função pura; integração = PostgreSQL real.
+
+- **CA-28** (CA-R1; RN-21; unidade): Dado funcionamento 10:00–18:00 e jornada 09:00–19:00 no dia, quando se pede 60 min, então o primeiro início é 10:00 e o último 17:00 (17:15 não).
+- **CA-29** (CA-R2; RN-20; unidade e integração): Dado o dia da semana fechado no funcionamento (informado) e jornada nesse dia, quando se consulta uma data desse dia, então a lista é vazia (o profissional continua no resultado, RN-8); um dia aberto adjacente tem horários.
+- **CA-30** (CA-R3; RN-21; unidade): Dado funcionamento 09:00–12:00 e 13:00–18:00 e jornada 08:00–18:00, quando se pedem 90 min, então 11:00 não é oferecido e 13:00 é; 09:00 também é, e 10:30 é o último da manhã.
+- **CA-31** (CA-R4; RN-20; unidade e integração): Dado um salão sem funcionamento informado (`definido: false`), quando se consulta, então a saída é idêntica (`toEqual`) à calculada só com a jornada, e idêntica à de antes da revisão (os CA-1..CA-27 passam sem alteração). Dado `definido: false` com linhas residuais em `salao_funcionamento`, o resultado também não limita (a leitura só agrega linhas se `funcionamento_definido`).
+- **CA-32** (RN-20; unidade e integração): Dado funcionamento informado com todos os 7 dias fechados e jornada todos os dias, quando se consulta qualquer data da janela, então não há horários para nenhum profissional.
+- **CA-33** (RN-21; unidade): Dado jornada 09:00–12:00 e 13:00–18:00 e funcionamento 09:00–18:00 (sem pausa), quando se pede 90 min, então 11:00 não é oferecido (cruza a pausa da jornada) e 13:00 é; dado a pausa só no funcionamento e jornada contínua, o resultado é o mesmo.
+- **CA-34** (RN-21; unidade): Dado jornada 08:00–20:00 e funcionamento 09:00–11:00, 12:00–14:00 e 15:00–19:00 (vários intervalos), serviço de 60 min, quando se calcula, então os inícios são 09:00, 09:15, …, 10:00; 12:00, …, 13:00; 15:00, …, 18:00, e nenhum cruza uma pausa; um intervalo de funcionamento sem jornada correspondente (jornada 08:00–10:00 e funcionamento 15:00–19:00) não gera horário.
+- **CA-35** (RN-21, RN-22; unidade): Dado funcionamento 18:00–24:00 em D e 00:00–02:00 em D+1 e jornada 18:00–24:00 em D, serviço de 60 min, quando se consulta D, então o último início é 23:00 (fim 00:00 local de D+1, via `instanteDeHoraLocal(D+1, 0)`) e 23:15 não é oferecido, mesmo com funcionamento em D+1 (RN-11); a consulta de D+1 não herda horário de D.
+- **CA-36** (RN-21, RN-22, RN-10; unidade, DST): Dado `America/New_York`, 08/03/2026 (salto), jornada 00:00–04:00 e funcionamento 00:00–04:00, serviço de 60 min, então os inícios são os do CA-17 (nenhum rótulo 02:xx; 03:00 incluído); dado funcionamento 01:00–04:00, então os inícios são 01:00, 01:15, 01:30, 01:45 e 03:00. Dado 01/11/2026 (recuo), jornada e funcionamento 00:00–04:00, então os 13 inícios do CA-18; com funcionamento 01:00–04:00, rótulos 01:00 a 03:00, sem duplicados, só a primeira ocorrência de 01:00–01:45.
+- **CA-37** (RN-21, RN-9; unidade): Dado jornada 09:00–12:00 e funcionamento 09:05–11:00, grade 15, serviço de 30 min, então o primeiro início é 09:15 e o último 10:30 (grade a partir de 00:00; a interseção `[09:05, 11:00)` limita o fim); os minutos de parede só viram instantes por `fuso.ts` (verificável por teste de análise estática ou por revisão: o módulo de domínio não contém aritmética de fuso própria).
+- **CA-38** (RN-23; unidade e integração): Dado funcionamento 09:00–18:00, jornada 09:00–18:00, um bloqueio e uma reserva ativa dentro do funcionamento, então os inícios são os do CA-13/CA-3 sobre a interseção; um bloqueio ou reserva **fora** do funcionamento (por exemplo, encaixe às 08:00–09:00) não afeta os inícios dentro dele, e a reserva de encaixe fora do funcionamento continua ocupando o profissional se invadir a janela (intervalo, RN-3c).
+- **CA-39** (RN-24; integração): Dado funcionamento 09:00–12:00 e jornada 09:00–12:00 criados em `America/Sao_Paulo`, quando o fuso muda para `America/Manaus` e se consulta, então o primeiro início é 09:00 local = 13:00Z (mesmos minutos de parede; o instante muda).
+- **CA-40** (RN-25; integração): Dado S1 sem funcionamento informado e S2 com todos os dias fechados (ou com funcionamento curto), quando se consulta S1, então o resultado de S1 não muda e é igual ao obtido sem os dados de S2; e quando S1 tem funcionamento informado e S2 não, S2 não é limitado pelo de S1.
+- **CA-41** (RN-26; integração): Dado o instrumento de contagem do CA-26, quando se consulta 1 profissional × 1 data e 10 profissionais × 61 datas, em salão com funcionamento informado **e** em salão sem ele, então as quatro chamadas emitem o mesmo número de consultas, igual ao número de antes da revisão; nenhuma consulta é emitida por data nem por profissional para ler o funcionamento.
+- **CA-42** (RN-27; unidade): Dado a mesma entrada com funcionamento informado avaliada duas vezes, com bloqueios e reservas em ordem embaralhada, então as saídas são idênticas e `vi.useFakeTimers` em outra data não altera o resultado (extensão do CA-24).
+- **CA-43** (RN-20, RN-21; unidade): Dado funcionamento informado cujo único intervalo do dia é menor que a duração total (ex.: 09:00–09:30 e serviço de 60 min), então não há horários e não há erro; funcionamento 09:00–10:00 e serviço de 60 min dá exatamente 09:00.
+- **CA-44** (RN-21; unidade): Dado profissional com a janela de jornada ∩ funcionamento vazia num dia (jornada 13:00–18:00, funcionamento 09:00–12:00), então lista vazia para ele e o profissional continua no resultado (RN-8).
+
+Correspondência com a issue: CA-R1 = CA-28; CA-R2 = CA-29; CA-R3 = CA-30; CA-R4 = CA-31. Correspondência com `trinks-alinhamento.md` §7.3: "Funcionamento ∩ jornada" = CA-28, "Dia fechado" = CA-29, "Intervalos parciais" = CA-30, "Encaixe preservado" = fora (E3.4; ver CA-38 para a ocupação).
+
+### Casos limite acrescentados
+
+- Troca de `funcionamento_definido` de verdadeiro para falso (ou o inverso) entre duas consultas: vale o estado vigente na consulta, sem cache (RN-24).
+- Funcionamento alterado depois de reservas existentes: as reservas continuam válidas e ocupando (RN-7, RN-24); só novas ofertas mudam.
+- Salão suspenso, cliente anonimizada, permissões: sem mudança (§6); o funcionamento é lido sem checagem de papel (API própria para a E3.1).
+- Funcionamento e jornada com a mesma pausa em horários diferentes: a interseção pode gerar vários intervalos curtos no mesmo dia (CA-34); cada um é avaliado isoladamente.
+- Salão com fuso de DST: a interseção em minutos de parede pode incluir hora inexistente/repetida; vale RN-10 sobre os candidatos (CA-36).
+
+### Dependências e impactos da revisão
+
+- Dependências novas: D-020/E2.6 (`lerFuncionamento`, `COLUNAS_FUNCIONAMENTO`, `salao_funcionamento`, `funcionamento_definido`), em `main`. #75 (E2.6) deixa de bloquear.
+- Dados: sem migração. O DBA só precisa confirmar que projetar `COLUNAS_FUNCIONAMENTO` na leitura das regras do salão não altera o plano nem o número de instruções (a subconsulta usa `salao_id`; verificar índice em `salao_funcionamento`). Se `lerRegras` passar de Prisma Client a SQL bruto, o arquiteto documenta.
+- Infraestrutura/CI: nenhum.
+- Cobertura: o novo módulo de interseção entra no gate de 90%.
+
+### Dúvidas
+
+- **Bloqueantes:** nenhuma.
+- **Não bloqueantes (suposições adotadas):**
+  - **D-13** (RN-26): o funcionamento é lido na mesma instrução das regras do salão via `COLUNAS_FUNCIONAMENTO`, para manter a contagem de consultas constante; a decisão final de forma é do arquiteto.
+  - **D-14** (RN-21): a interseção é feita em minutos de parede, antes da conversão em instantes. É equivalente à interseção em instantes, porque os dois conjuntos são do mesmo dia local e fuso, e evita duas conversões por intervalo.
+  - **D-15** (RN-20): "informado com todos os dias fechados" nunca é tratado como "não informado"; o discriminador é só `definido`.
+  - **D-16** (§3): o encaixe da equipe fora do funcionamento é preservado e fica fora desta demanda (E3.4).
