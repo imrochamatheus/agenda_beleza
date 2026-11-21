@@ -33,9 +33,11 @@ const base = (o: Partial<EstadoReserva>): EstadoReserva => ({
   ...o,
 });
 
+const HUMANO = { modo: 'simulado', chaveDoSite: '', tokenSimulado: 'XXXX.DUMMY.TOKEN.XXXX', controleDeTeste: false } as const;
+
 async function enviar(estado: EstadoReserva) {
   const acao = vi.fn(async () => estado);
-  render(<FormularioDados acao={acao} ocultos={OCULTOS} />);
+  render(<FormularioDados acao={acao} ocultos={OCULTOS} humano={HUMANO} />);
   fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
   await waitFor(() => expect(acao).toHaveBeenCalledTimes(1));
   return acao;

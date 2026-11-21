@@ -50,6 +50,10 @@ export type EntradaReservaPublica = {
   telefone: unknown;
   aceites: unknown;
   chaveRequisicao: string;
+  /** IP já extraído por `extrairIp` (D-027); nunca o cabeçalho cru. */
+  ip: string;
+  /** Token do widget Turnstile (`cf-turnstile-response`); null se ausente. */
+  tokenHumano: string | null;
 };
 
 export type ResultadoReservaPublica =
@@ -58,13 +62,17 @@ export type ResultadoReservaPublica =
   | { resultado: 'invalido'; erros: ErrosReservaPublica }
   | { resultado: 'indisponivel' }
   | { resultado: 'slug_mudou'; slugAtual: string }
-  | { resultado: 'recusado'; mensagem: string };
+  | { resultado: 'recusado'; mensagem: string }
+  /** Limite de IP ou de número excedido (D-027); a mensagem não revela qual. */
+  | { resultado: 'limitado'; mensagem: string };
 
 /** Visão (view-model) de cada passo, já resolvida no servidor. Datas civis como 'AAAA-MM-DD'. */
 export type ServicoEscolhido = { id: string; nome: string; precoCentavos: number; duracaoMin: number };
 export type Selecao = { servicos: ServicoEscolhido[]; duracaoTotalMin: number; precoTotalCentavos: number };
 
 export type VisaoDoPasso =
+  /** Consulta de horários limitada por IP (D-027): nenhum horário foi calculado. */
+  | { passo: 'limitado' }
   | { passo: 'servicos'; aviso: CodigoAviso | null }
   | { passo: 'profissional'; s: string[]; selecao: Selecao; profissionais: { id: string; nome: string }[]; aviso: CodigoAviso | null }
   | {

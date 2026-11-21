@@ -130,7 +130,7 @@ describe('iniciarWorker', () => {
         {
           evento: 'worker.iniciado',
           em: '2026-11-18T12:00:00.000Z',
-          filas: ['assinatura-prazos', 'exemplo', 'reconciliar-mensagens', 'whatsapp-reserva'],
+          filas: ['assinatura-prazos', 'exemplo', 'limpar-rate-limit', 'reconciliar-mensagens', 'whatsapp-reserva'],
         },
         { evento: 'worker.heartbeat', em: '2026-11-18T12:00:00.000Z' },
       ]);
@@ -172,12 +172,16 @@ describe('iniciarWorker', () => {
         'updateQueue:whatsapp-reserva',
         'createQueue:reconciliar-mensagens',
         'updateQueue:reconciliar-mensagens',
+        'createQueue:limpar-rate-limit',
+        'updateQueue:limpar-rate-limit',
         'work:exemplo',
         'work:assinatura-prazos',
         'work:whatsapp-reserva',
         'work:reconciliar-mensagens',
+        'work:limpar-rate-limit',
         'schedule:assinatura-prazos',
         'schedule:reconciliar-mensagens',
+        'schedule:limpar-rate-limit',
         'getSchedules',
       ]);
       const retry = { retryLimit: 2, retryDelay: 5, retryBackoff: false };
@@ -191,6 +195,7 @@ describe('iniciarWorker', () => {
       );
       expect(fila.schedule).toHaveBeenCalledWith('assinatura-prazos', '*/5 * * * *', {}, { tz: 'UTC', ...retry });
       expect(fila.schedule).toHaveBeenCalledWith('reconciliar-mensagens', '* * * * *', {}, { tz: 'UTC', ...retry });
+      expect(fila.schedule).toHaveBeenCalledWith('limpar-rate-limit', '17 * * * *', {}, { tz: 'UTC', ...retry });
     });
 
     it('sem intervaloBuscaSegundos usa o padrão da biblioteca (não passa a opção)', async () => {

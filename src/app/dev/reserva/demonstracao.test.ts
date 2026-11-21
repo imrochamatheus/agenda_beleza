@@ -15,6 +15,8 @@ const ENTRADA: EntradaReservaPublica = {
   telefone: '11987654321',
   aceites: {},
   chaveRequisicao: 'x',
+  ip: 'desconhecido',
+  tokenHumano: null,
 };
 
 describe('demonstrarReserva', () => {

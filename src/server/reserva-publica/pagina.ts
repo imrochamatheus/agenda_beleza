@@ -2,6 +2,7 @@
 // do `PublicoContext` do slug; horários só de `consultarDisponibilidade` (RN-7), nunca recalculados aqui.
 import { datasDoPeriodo, limitesDaJanela } from '@/domain/disponibilidade';
 import { consultarDisponibilidade, listarProfissionaisElegiveis } from '@/server/disponibilidade/servico';
+import { limitarPorIp } from '@/server/protecao/limite';
 import { lerFotosPublicas } from '@/server/fotos/leitura';
 import type { FotoPublica } from '@/server/fotos/tipos';
 import { repos } from '@/server/repos';
@@ -168,4 +169,22 @@ export async function carregarPasso(
   const escolhido = doDia.get(passo.h.getTime());
   if (escolhido === undefined) return { passo: 'horario', ...base, horarios, aviso: 'horario_indisponivel' };
   return { passo: 'dados', ...base, inicioIso: passo.h.toISOString(), profissional: escolhido };
+}
+
+/**
+ * Como `carregarPasso`, mas os passos que calculam disponibilidade (data, horário e dados) consomem o
+ * limite de consultas do IP (D-027 RN-9). Excedido: `{ passo: 'limitado' }` e NENHUM cálculo é feito (CA-14).
+ * Serviços e profissional não calculam horários e não consomem cota.
+ */
+export async function carregarPassoComLimite(
+  ctx: PublicoContext,
+  passo: PassoLido,
+  contexto: { servicos: readonly ServicoPublico[]; regras: RegrasDaPagina; agora: Date; ip: string },
+  limitar: typeof limitarPorIp = limitarPorIp,
+): Promise<VisaoDoPasso> {
+  if (passo.passo !== 'servicos' && passo.passo !== 'profissional') {
+    const r = await limitar(contexto.ip, 'disponibilidade', contexto.agora);
+    if (!r.permitido) return { passo: 'limitado' };
+  }
+  return carregarPasso(ctx, passo, contexto);
 }

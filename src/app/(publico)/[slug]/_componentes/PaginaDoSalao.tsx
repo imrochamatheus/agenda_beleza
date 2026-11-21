@@ -4,6 +4,8 @@ import { montarHref } from '@/server/reserva-publica/passos';
 import { MENSAGENS_RESERVA_PUBLICA } from '@/server/reserva-publica/tipos';
 import type { DecisaoAgendamento } from '@/server/reserva-publica/agendamento';
 import type { VisaoDoPasso } from '@/server/reserva-publica/tipos';
+import type { DadosDoWidget } from '@/server/protecao/widget-tipos';
+import { MENSAGENS_PROTECAO } from '@/server/protecao/tipos';
 import type { FotoPublica } from '@/server/fotos/tipos';
 import type {
   PerfilPublico,
@@ -42,11 +44,21 @@ export type PaginaDoSalaoProps = {
   /** UUID novo por renderização do passo `dados` (idempotência contra duplo envio). */
   chave: string;
   acao: AcaoReservar;
+  /** Widget de verificação humana da etapa de dados (D-027). */
+  humano: DadosDoWidget;
 };
 
 function PassoAtual({ props }: { props: PaginaDoSalaoProps }) {
   const { base, visao, servicos } = props;
   switch (visao.passo) {
+    case "limitado":
+      return (
+        <section className={estilos.secao} aria-labelledby="limitado">
+          <Alert variante="aviso">
+            <span id="limitado">{MENSAGENS_PROTECAO.limitado}</span>
+          </Alert>
+        </section>
+      );
     case "servicos":
       return <PassoServicos base={base} servicos={servicos} visao={visao} />;
     case "profissional":
@@ -59,6 +71,7 @@ function PassoAtual({ props }: { props: PaginaDoSalaoProps }) {
       return (
         <FormularioDados
           acao={props.acao}
+          humano={props.humano}
           ocultos={{
             slug: props.slug,
             s: visao.s,

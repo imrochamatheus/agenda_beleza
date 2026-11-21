@@ -8,7 +8,7 @@ import { REGISTRO } from '@/worker/handlers/registry';
 import { urlDoWorker } from '../../support/db';
 import { abrirBossDeTeste, fecharBoss, iniciarWorkerDeTeste } from '../../support/fila';
 
-// CA-8 (RN-16): agendamentos idempotentes em UTC e remoção de órfãos; CA-7 (parte): as 4 filas existem.
+// CA-8 (RN-16): agendamentos idempotentes em UTC e remoção de órfãos; CA-7 (parte): as 5 filas existem.
 // Roda igual com TZ=America/Sao_Paulo (o fuso do cron é sempre UTC).
 
 let boss: PgBoss;
@@ -40,12 +40,13 @@ async function iniciarEParar(definicoes?: readonly DefinicaoFila[]) {
 }
 
 describe('CA-8: agendamentos', () => {
-  it('iniciar, parar e iniciar de novo deixa exatamente 2 agendamentos, em UTC, sem duplicata', async () => {
+  it('iniciar, parar e iniciar de novo deixa exatamente 3 agendamentos, em UTC, sem duplicata', async () => {
     await iniciarEParar();
     const primeiro = await agendamentos();
     await iniciarEParar();
     const esperado = [
       { name: 'assinatura-prazos', key: '', cron: '*/5 * * * *', timezone: 'UTC' },
+      { name: 'limpar-rate-limit', key: '', cron: '17 * * * *', timezone: 'UTC' },
       { name: 'reconciliar-mensagens', key: '', cron: '* * * * *', timezone: 'UTC' },
     ];
     expect(primeiro).toEqual(esperado);
@@ -58,6 +59,7 @@ describe('CA-8: agendamentos', () => {
     expect(filas.rows).toEqual([
       { name: 'assinatura-prazos', policy: 'exclusive' },
       { name: 'exemplo', policy: 'standard' },
+      { name: 'limpar-rate-limit', policy: 'exclusive' },
       { name: 'reconciliar-mensagens', policy: 'exclusive' },
       { name: 'whatsapp-reserva', policy: 'exclusive' },
     ]);
@@ -67,11 +69,12 @@ describe('CA-8: agendamentos', () => {
     const semCron = REGISTRO.map((d) => (d.fila === 'assinatura-prazos' ? { ...d, cron: undefined } : d));
     await iniciarEParar(semCron);
     expect(await agendamentos()).toEqual([
+      { name: 'limpar-rate-limit', key: '', cron: '17 * * * *', timezone: 'UTC' },
       { name: 'reconciliar-mensagens', key: '', cron: '* * * * *', timezone: 'UTC' },
     ]);
     // E volta quando o cron reaparece.
     await iniciarEParar();
-    expect((await agendamentos()).map((a) => a.name)).toEqual(['assinatura-prazos', 'reconciliar-mensagens']);
+    expect((await agendamentos()).map((a) => a.name)).toEqual(['assinatura-prazos', 'limpar-rate-limit', 'reconciliar-mensagens']);
   }, 60_000);
 
   it('um agendamento órfão (fila fora do registro) é removido', async () => {
@@ -79,6 +82,6 @@ describe('CA-8: agendamentos', () => {
     await boss.schedule('fila-antiga', '0 * * * *', {}, { tz: 'UTC' });
     expect((await agendamentos()).map((a) => a.name)).toContain('fila-antiga');
     await iniciarEParar();
-    expect((await agendamentos()).map((a) => a.name)).toEqual(['assinatura-prazos', 'reconciliar-mensagens']);
+    expect((await agendamentos()).map((a) => a.name)).toEqual(['assinatura-prazos', 'limpar-rate-limit', 'reconciliar-mensagens']);
   }, 60_000);
 });

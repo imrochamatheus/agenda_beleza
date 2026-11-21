@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import PaginaPublicaDoSalao, { generateMetadata } from '@/app/(publico)/[slug]/page';
 import { consultarDisponibilidade } from '@/server/disponibilidade/servico';
@@ -16,11 +16,26 @@ import { AGORA, DIA, criarCenarioReserva, definirFuncionamento, definirJornada, 
 import { definirAssinatura } from '../../support/reserva-publica';
 import type { CenarioReserva } from '../../support/reservas';
 
+
+// D-027: a ação e a página leem o IP em `headers()`; fora de uma requisição o Next lança. O IP vem de
+// `x-forwarded-for` (TRUSTED_PROXY_HOPS=1) e muda a cada leitura, para os limites não vazarem entre casos.
+const { proximoIp } = vi.hoisted(() => {
+  let n = 0;
+  return { proximoIp: () => `192.0.2.${(++n % 250) + 1}` };
+});
+vi.mock('next/headers', () => ({
+  headers: async () => new Headers({ 'x-forwarded-for': proximoIp() }),
+}));
+
 // D-026 T-3: CA-1, CA-2, CA-3, CA-4 (página), CA-5, CA-6, CA-13 contra o PostgreSQL real. A página é a
 // função real da rota, chamada com `params`/`searchParams` e renderizada para HTML estático.
 
 beforeEach(() => {
   vi.spyOn(console, 'info').mockImplementation(() => {});
+  vi.stubEnv('TRUSTED_PROXY_HOPS', '1');
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 afterAll(() => {
   vi.restoreAllMocks();

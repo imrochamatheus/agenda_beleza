@@ -20,14 +20,14 @@ const VALORES = { nome: 'Maria', telefone: '(11) 98765-4321', mensagensReserva: 
 
 describe('lerFormulario (CA-10)', () => {
   it('lê os campos, a ordem dos serviços e o consentimento estrito', () => {
-    const { entrada, valores } = lerFormulario(fd(COMPLETO));
+    const { entrada, valores } = lerFormulario(fd(COMPLETO), '203.0.113.9');
     expect(entrada).toMatchObject({ slug: 'bela', servicoIds: [A, B], profissionalId: A, inicio: H, chaveRequisicao: CHAVE, nome: 'Maria' });
     expect(entrada.aceites).toEqual({ mensagensReserva: 'on', conviteAvaliacao: null });
     expect(valores).toEqual(VALORES);
   });
 
   it('ausentes viram texto vazio; o eco é cortado nos tetos', () => {
-    const { entrada, valores } = lerFormulario(fd({ nome: 'x'.repeat(500), telefone: '9'.repeat(500) }));
+    const { entrada, valores } = lerFormulario(fd({ nome: 'x'.repeat(500), telefone: '9'.repeat(500) }), '203.0.113.9');
     expect(entrada.servicoIds).toEqual([]);
     expect(entrada.slug).toBe('');
     expect(valores.nome).toHaveLength(100);
@@ -38,7 +38,7 @@ describe('lerFormulario (CA-10)', () => {
   it('arquivos no lugar de texto são ignorados', () => {
     const f = new FormData();
     f.append('nome', new Blob(['a']), 'a.txt');
-    expect(lerFormulario(f).entrada.nome).toBe('');
+    expect(lerFormulario(f, '203.0.113.9').entrada.nome).toBe('');
   });
 });
 

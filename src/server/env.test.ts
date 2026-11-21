@@ -423,3 +423,35 @@ describe('D-009 (CA-18): VITRINE_COMPONENTES e vitrineHabilitada', () => {
   });
 });
 
+
+describe('proteção da página pública (D-027)', () => {
+  const base = { DATABASE_URL: URL_VALIDA };
+
+  it('CA-15: TRUSTED_PROXY_HOPS inválido falha nomeando a variável', () => {
+    for (const v of ['-1', '11', 'abc', '1.5', '1e1']) {
+      expect(falhaDe({ ...base, TRUSTED_PROXY_HOPS: v }).variaveis).toEqual(['TRUSTED_PROXY_HOPS']);
+    }
+    expect(() => validarEnv({ ...base, TRUSTED_PROXY_HOPS: '10' })).not.toThrow();
+  });
+
+  it('limites e janela inválidos são nomeados', () => {
+    expect(falhaDe({ ...base, PROTECAO_LIMITE_NUMERO: '0', PROTECAO_JANELA_SEGUNDOS: '10' }).variaveis).toEqual([
+      'PROTECAO_JANELA_SEGUNDOS',
+      'PROTECAO_LIMITE_NUMERO',
+    ]);
+  });
+
+  it('RATE_LIMIT_SEGREDO: obrigatório (≥ 32) só em produção; curto é recusado sempre', () => {
+    expect(() => validarEnv(base)).not.toThrow();
+    expect(falhaDe({ ...base, NODE_ENV: 'production' }).variaveis).toEqual(['RATE_LIMIT_SEGREDO']);
+    expect(() => validarEnv({ ...base, NODE_ENV: 'production', RATE_LIMIT_SEGREDO: 'x'.repeat(32) })).not.toThrow();
+    expect(falhaDe({ ...base, RATE_LIMIT_SEGREDO: 'curto' }).variaveis).toEqual(['RATE_LIMIT_SEGREDO']);
+  });
+
+  it('o .env.example traz os padrões e o segredo vazio', () => {
+    expect(exemplo.TRUSTED_PROXY_HOPS).toBe('0');
+    expect(exemplo.RATE_LIMIT_SEGREDO).toBe('');
+    expect(exemplo.PROTECAO_JANELA_SEGUNDOS).toBe('900');
+    expect(exemplo.PROTECAO_LIMITE_IP_RESERVA).toBe('10');
+  });
+});

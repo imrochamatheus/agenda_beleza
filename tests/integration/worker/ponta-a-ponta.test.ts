@@ -63,16 +63,16 @@ afterAll(async () => {
 });
 
 describe('CA-7: registro de produção', () => {
-  it('worker.iniciado lista exatamente as 4 filas, e elas existem no pg-boss', async () => {
+  it('worker.iniciado lista exatamente as 5 filas, e elas existem no pg-boss', async () => {
     expect(w.saidas).toEqual([]);
     expect(w.log.doTipo('worker.iniciado')).toEqual([
-      expect.objectContaining({ filas: ['assinatura-prazos', 'exemplo', 'reconciliar-mensagens', 'whatsapp-reserva'] }),
+      expect.objectContaining({ filas: ['assinatura-prazos', 'exemplo', 'limpar-rate-limit', 'reconciliar-mensagens', 'whatsapp-reserva'] }),
     ]);
     // A-4 do DBA: a fila interna __pgboss__* (criada pelo schedule) fica fora da contagem.
     const filas = await sql.query<{ name: string }>(
       "SELECT name FROM pgboss.queue WHERE name NOT LIKE '\\_\\_pgboss\\_\\_%' ORDER BY name",
     );
-    expect(filas.rows.map((r) => r.name)).toEqual(['assinatura-prazos', 'exemplo', 'reconciliar-mensagens', 'whatsapp-reserva']);
+    expect(filas.rows.map((r) => r.name)).toEqual(['assinatura-prazos', 'exemplo', 'limpar-rate-limit', 'reconciliar-mensagens', 'whatsapp-reserva']);
   });
 });
 

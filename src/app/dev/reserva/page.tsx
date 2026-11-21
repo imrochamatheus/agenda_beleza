@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { PaginaDoSalao } from '@/app/(publico)/[slug]/_componentes/PaginaDoSalao';
 import { ROTAS } from '@/config/navegacao';
+import { widgetHumano } from '@/server/protecao/widget';
 import { vitrineHabilitada } from '@/server/env';
 import { lerPasso } from '@/server/reserva-publica/passos';
 import type { ParametrosBrutos } from '@/server/reserva-publica/passos';
@@ -13,7 +14,7 @@ import { EQUIPE_DEMO, FUSO_DEMO, JANELA_DEMO, PERFIL_DEMO, PERFIL_VAZIO_DEMO, SE
 
 // Demonstração da página pública de reserva para o E2E sem banco (D-026 §8): o MESMO componente da página
 // real, com dados em memória e uma ação que só valida. 404 sem VITRINE_COMPONENTES=true (exceto em next
-// dev), lido na requisição, antes de qualquer parâmetro. `?vista=indisponivel` e `?vista=vazio`.
+// dev), lido na requisição, antes de qualquer parâmetro. `?vista=indisponivel`, `?vista=vazio` e `?vista=limitado`.
 export const dynamic = 'force-dynamic';
 
 const METADADOS: Metadata = {
@@ -44,7 +45,8 @@ export default async function DemonstracaoReserva({ searchParams }: Props) {
       servicos={SERVICOS_DEMO}
       equipe={vista === 'vazio' ? [] : EQUIPE_DEMO}
       decisao={vista === 'indisponivel' ? { disponivel: false, motivo: 'assinatura' } : { disponivel: true }}
-      visao={visaoDemonstracao(passo, hoje, agora)}
+      visao={vista === 'limitado' ? { passo: 'limitado' } : visaoDemonstracao(passo, hoje, agora)}
+      humano={widgetHumano(process.env)}
       chave={crypto.randomUUID()}
       acao={demonstrarReservaAcao}
     />
