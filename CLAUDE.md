@@ -124,23 +124,25 @@ Política do gate de cobertura (vigente):
 
 ## Squad de agentes e orquestração
 
-A sessão principal é o **líder**: ela coordena, mas não implementa a demanda. Os papéis ficam em `.claude/agents/`: `analista-requisitos`, `arquiteto-software`, `dba`, `devops`, `desenvolvedor` e `tester`. Todos ficam disponíveis, mas só participam de uma demanda quando ela precisa deles.
+A sessão principal é o **líder**: ela coordena, mas não implementa a demanda. Os papéis ficam em `.claude/agents/`: `analista-requisitos`, `web-designer`, `arquiteto-software`, `dba`, `devops`, `desenvolvedor` e `tester`. Todos ficam disponíveis, mas só participam de uma demanda quando ela precisa deles.
 
 ### Fluxo de cada demanda
 
 ```
-demanda → analista-requisitos → arquiteto-software → (dba / devops, se houver impacto)
+demanda → analista-requisitos → (web-designer, se houver impacto visual)
+        → arquiteto-software → (dba / devops, se houver impacto)
         → desenvolvedor → tester ─┬─ APROVADO → líder confere os gates e encerra
                                   └─ REPROVADO → desenvolvedor corrige → tester retesta (repete)
                                      └─ mesma classe de falha recorrente → arquiteto (+ dba/devops) revisa o desenho
 ```
 
-1. O líder atribui o ID `D-NNN` (sequencial) e cria `docs/demandas/D-NNN/`. Os artefatos são `spec.md` (analista), `design.md` (arquiteto), `dba.md`, `devops.md`, `dev.md` e `testes.md`.
+1. O líder atribui o ID `D-NNN` (sequencial) e cria `docs/demandas/D-NNN/`. Os artefatos são `spec.md` (analista), `web-design.md` (web-designer, só em demandas com impacto visual), `design.md` (arquiteto), `dba.md`, `devops.md`, `dev.md` e `testes.md`.
 2. O **analista** produz a especificação. O líder só leva perguntas ao usuário quando o analista sinaliza uma dúvida bloqueante.
-3. O **arquiteto** produz o desenho e as tarefas `T-n`, cada uma com responsável, dependências, arquivos sob posse, entregável e critério de conclusão.
-4. O **DBA** e o **DevOps** só entram quando o desenho aponta impacto em dados ou em infraestrutura/CI. Se o arquiteto dispensar algum dos dois, registre o motivo.
-5. O **desenvolvedor** implementa e testa. O **tester** valida de forma independente e dá o veredito.
-6. Um defeito reabre a tarefa do desenvolvedor. A demanda nunca é encerrada só porque houve uma tentativa de correção.
+3. O **web-designer** só é acionado quando a demanda tem **impacto visual** (tela nova, mudança de layout, de componente, de conteúdo ou de estados da interface; prioridades: landing `/`, página pública do salão e da reserva, painel inicial, listas e formulários), logo depois do analista e antes do arquiteto. Ele examina a tela real, o código, os tokens e, quando possível, capturas em várias larguras, e entrega `web-design.md` (diagnóstico, direção visual, sistema de tokens e tipografia, especificação por tela e estado em desktop e celular, arquivos afetados e critérios objetivos de revisão visual). Não altera código; a implementação é do desenvolvedor. Em demandas sem impacto visual o líder dispensa a etapa e registra o motivo em `design.md`.
+4. O **arquiteto** recebe `spec.md` e, quando houver, `web-design.md` (pela transferência padrão do líder) e produz o desenho técnico e as tarefas `T-n`, cada uma com responsável, dependências, arquivos sob posse, entregável e critério de conclusão. Ele mapeia a proposta visual em tarefas e testes (componentes, CSS, vitrine `/dev/*`, E2E, axe) e decide o que for conflito técnico: se a proposta colidir com uma restrição técnica ou um requisito, o arquiteto devolve o conflito ao líder, que reaciona o web-designer para ajustá-la.
+5. O **DBA** e o **DevOps** só entram quando o desenho aponta impacto em dados ou em infraestrutura/CI. Se o arquiteto dispensar algum dos dois, registre o motivo.
+6. O **desenvolvedor** implementa e testa; nas demandas visuais segue o `web-design.md`, e as restrições de CSS valem sempre (cores literais só no `:root` de `src/app/globals.css`, ponto de quebra único `@media (min-width: 48rem)`, foco visível, sem JavaScript obrigatório). O **tester** valida de forma independente, inclusive os critérios de revisão visual do `web-design.md`, e dá o veredito.
+7. Um defeito reabre a tarefa do desenvolvedor; um defeito de usabilidade, hierarquia, contraste ou responsividade que exija rever a proposta volta ao web-designer. A demanda nunca é encerrada só porque houve uma tentativa de correção.
 
 ### Tarefas
 O líder registra cada tarefa na ferramenta de tarefas da sessão: com Agent Teams ativo, a lista compartilhada da equipe; sem ele, a ferramenta de tarefas da sessão principal. Cada tarefa tem **responsável, dependências, estado (pendente/em andamento/bloqueada/concluída), entregável e critério de conclusão**. Só paralelize tarefas independentes **e** sem arquivos em comum; cada arquivo tem um único responsável por rodada.
