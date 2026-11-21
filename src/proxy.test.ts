@@ -49,18 +49,42 @@ describe('CA-9: proxy do painel', () => {
     expect(proxy(requisicao('/painel', 'outro=valor')).status).toBe(307);
   });
 
-  it.each(['/', '/entrar', '/api/health', '/salao-x', '/painelx', '/admin'])('CA-9: %s não é interceptado', (caminho) => {
+  it.each(['/', '/entrar', '/api/health', '/salao-x', '/painelx', '/adminx'])('CA-9: %s não é interceptado', (caminho) => {
     expect(segue(proxy(requisicao(caminho)))).toBe(true);
   });
 
-  it('CA-9: matcher só do painel', () => {
-    expect(config).toEqual({ matcher: ['/painel', '/painel/:path*'] });
+  it('CA-9: matcher do painel e (D-034) do admin', () => {
+    expect(config).toEqual({ matcher: ['/painel', '/painel/:path*', '/admin', '/admin/:path*'] });
   });
 
-  it('R-6: proxy.ts só importa next/server, auth/cookie e navegacao', () => {
+  it('R-6: proxy.ts só importa next/server, os módulos puros de cookie e navegacao', () => {
     const fonte = readFileSync(fileURLToPath(new URL('./proxy.ts', import.meta.url)), 'utf8');
     const imports = [...fonte.matchAll(/^import[^;]*?from\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]);
-    expect([...new Set(imports)].sort()).toEqual(['@/config/navegacao', '@/server/auth/cookie', 'next/server']);
+    expect([...new Set(imports)].sort()).toEqual(['@/config/navegacao', '@/server/auth/admin/cookie-admin', '@/server/auth/cookie', 'next/server']);
     expect(fonte).not.toMatch(/\brequire\(|import\(/);
+  });
+});
+
+describe('D-034 CA-4: proxy do admin', () => {
+  it.each(['/admin', '/admin/saloes', '/admin/x/y?z=1'])('%s sem cookie → 307 para /admin/entrar', (caminho) => {
+    const req = requisicao(caminho);
+    const r = proxy(req);
+    expect(r.status).toBe(307);
+    expect(destino(r, req)).toBe('/admin/entrar');
+  });
+
+  it('/admin/entrar nunca é interceptado (nem /admin/entrar/x)', () => {
+    expect(segue(proxy(requisicao('/admin/entrar')))).toBe(true);
+    expect(segue(proxy(requisicao('/admin/entrar/x')))).toBe(true);
+  });
+
+  it('com ab_admin ou ab_sessao (a página decide o 403) → segue, sem validar o valor', () => {
+    expect(segue(proxy(requisicao('/admin', 'ab_admin=qualquer')))).toBe(true);
+    expect(segue(proxy(requisicao('/admin/saloes', 'ab_sessao=de-gestor')))).toBe(true);
+  });
+
+  it('cookie vazio ou de outro nome → 307', () => {
+    expect(proxy(requisicao('/admin', 'ab_admin=')).status).toBe(307);
+    expect(proxy(requisicao('/admin', 'outro=valor')).status).toBe(307);
   });
 });

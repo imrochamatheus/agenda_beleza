@@ -19,6 +19,8 @@ const exemplo = parseEnv(readFileSync(caminhoExemplo, 'utf8')) as Record<string,
 
 const URL_VALIDA = 'postgresql://agenda:segredo123@localhost:5432/agenda_beleza';
 
+const CHAVE_TOTP = Buffer.alloc(32, 7).toString('base64');
+
 function falhaDe(fonte: Record<string, string | undefined>): ErroDeAmbiente {
   try {
     validarEnv(fonte);
@@ -443,18 +445,31 @@ describe('proteção da página pública (D-027)', () => {
 
   it('RATE_LIMIT_SEGREDO: obrigatório (≥ 32) só em produção; curto é recusado sempre', () => {
     expect(() => validarEnv(base)).not.toThrow();
-    expect(falhaDe({ ...base, NODE_ENV: 'production', AVALIACAO_SEGREDO: 'y'.repeat(32) }).variaveis).toEqual(['RATE_LIMIT_SEGREDO']);
-    expect(() => validarEnv({ ...base, NODE_ENV: 'production', RATE_LIMIT_SEGREDO: 'x'.repeat(32), AVALIACAO_SEGREDO: 'y'.repeat(32) })).not.toThrow();
+    expect(falhaDe({ ...base, NODE_ENV: 'production', AVALIACAO_SEGREDO: 'y'.repeat(32), ADMIN_TOTP_CHAVE: CHAVE_TOTP }).variaveis).toEqual(['RATE_LIMIT_SEGREDO']);
+    expect(() => validarEnv({ ...base, NODE_ENV: 'production', RATE_LIMIT_SEGREDO: 'x'.repeat(32), AVALIACAO_SEGREDO: 'y'.repeat(32), ADMIN_TOTP_CHAVE: CHAVE_TOTP })).not.toThrow();
     expect(falhaDe({ ...base, RATE_LIMIT_SEGREDO: 'curto' }).variaveis).toEqual(['RATE_LIMIT_SEGREDO']);
   });
 
   it('AVALIACAO_SEGREDO: obrigatório (≥ 32) só em produção; curto é recusado sempre', () => {
     const prod = { ...base, NODE_ENV: 'production', RATE_LIMIT_SEGREDO: 'x'.repeat(32) };
     expect(() => validarEnv(base)).not.toThrow();
-    expect(falhaDe(prod).variaveis).toEqual(['AVALIACAO_SEGREDO']);
-    expect(() => validarEnv({ ...prod, AVALIACAO_SEGREDO: 'y'.repeat(32) })).not.toThrow();
+    expect(falhaDe({ ...prod, ADMIN_TOTP_CHAVE: CHAVE_TOTP }).variaveis).toEqual(['AVALIACAO_SEGREDO']);
+    expect(() => validarEnv({ ...prod, AVALIACAO_SEGREDO: 'y'.repeat(32), ADMIN_TOTP_CHAVE: CHAVE_TOTP })).not.toThrow();
     expect(falhaDe({ ...base, AVALIACAO_SEGREDO: 'curto' }).variaveis).toEqual(['AVALIACAO_SEGREDO']);
     expect(exemplo.AVALIACAO_SEGREDO).toBe('');
+  });
+
+  it('ADMIN_TOTP_CHAVE: obrigatória em produção; só 32 bytes (base64 ou 64 hex); SUPERADMIN_* validadas se presentes', () => {
+    const prod = { ...base, NODE_ENV: 'production', RATE_LIMIT_SEGREDO: 'x'.repeat(32), AVALIACAO_SEGREDO: 'y'.repeat(32) };
+    expect(falhaDe(prod).variaveis).toEqual(['ADMIN_TOTP_CHAVE']);
+    expect(() => validarEnv({ ...prod, ADMIN_TOTP_CHAVE: CHAVE_TOTP })).not.toThrow();
+    expect(() => validarEnv({ ...prod, ADMIN_TOTP_CHAVE: 'ab'.repeat(32) })).not.toThrow();
+    expect(() => validarEnv({ ...base, ADMIN_TOTP_CHAVE: 'ab'.repeat(16) })).toThrow();
+    expect(falhaDe({ ...base, ADMIN_TOTP_CHAVE: 'curta' }).variaveis).toEqual(['ADMIN_TOTP_CHAVE']);
+    expect(() => validarEnv(base)).not.toThrow();
+    expect(falhaDe({ ...base, SUPERADMIN_PASSWORD: 'curta' }).variaveis).toEqual(['SUPERADMIN_PASSWORD']);
+    expect(falhaDe({ ...base, SUPERADMIN_EMAIL: 'x' }).variaveis).toEqual(['SUPERADMIN_EMAIL']);
+    expect(exemplo.ADMIN_TOTP_CHAVE).toBe('');
   });
 
   it('o .env.example traz os padrões e o segredo vazio', () => {

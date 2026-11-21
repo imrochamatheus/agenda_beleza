@@ -99,12 +99,23 @@ const PG_BOSS = [
 ];
 
 // D-021 (A-9): sharp (decodificação e reprocessamento de imagem) só em src/server/imagem.
-const IMAGEM_SHARP = [
+const SOMENTE_SHARP = [
   {
     regex: '^sharp(/|$)',
     message: 'D-021: processe imagens pelo módulo de src/server/imagem (sharp só ali).',
   },
 ];
+
+// D-034: qrcode-generator só em src/server/auth/admin/qr.ts.
+const QR_ARQUIVO = ['src/server/auth/admin/qr.ts'];
+const QR_RESTRITO = [
+  {
+    regex: '^qrcode-generator(/|$)',
+    message: 'D-034: gere o QR pelo módulo src/server/auth/admin/qr.ts (qrcode-generator só ali).',
+  },
+];
+
+const IMAGEM_SHARP = [...SOMENTE_SHARP, ...QR_RESTRITO];
 
 // D-018 (A-1): fora de `@/server/tempo/fuso`, o domínio não importa `@/server/**`, `@/app/**`,
 // `@/components/**`, `next`, `react` nem caminhos relativos que saiam da pasta.
@@ -138,8 +149,14 @@ export default defineConfig([
   // Geral: tudo que não está nas pastas com permissões próprias nem é teste.
   {
     files: [CODIGO],
-    ignores: [...INTEGRACOES, ...ACESSO_AO_BANCO, ...WORKER, ...FILA, ...DEV, ...IMAGEM, ...DOMINIO, ...TESTES],
+    ignores: [...INTEGRACOES, ...ACESSO_AO_BANCO, ...WORKER, ...FILA, ...DEV, ...IMAGEM, ...DOMINIO, ...QR_ARQUIVO, ...TESTES],
     rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES, PG_BOSS, IMAGEM_SHARP),
+  },
+  // D-034: o módulo do QR usa o qrcode-generator, mas não banco, SDKs, adaptadores, fila nem imagem.
+  {
+    files: QR_ARQUIVO,
+    ignores: TESTES,
+    rules: restringirImports(PRISMA, SDK_PROVEDOR, ADAPTADORES, PG_BOSS, SOMENTE_SHARP),
   },
   // Domínio (D-018 A-1): sem banco, SDKs, adaptadores, fila, imagem nem camadas de servidor/UI.
   {

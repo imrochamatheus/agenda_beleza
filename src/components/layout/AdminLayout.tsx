@@ -14,6 +14,8 @@ export type AdminLayoutProps = {
   children: ReactNode;
   /** Rótulo visível que distingue a área da plataforma. */
   rotuloArea?: string;
+  /** Sem o menu: enquanto as telas do menu não existem (D-034, /admin mínima não aponta para 404). */
+  semNavegacao?: boolean;
 };
 
 /** Layout do super admin (D-009 RN-12, RN-16). */
@@ -22,6 +24,7 @@ export function AdminLayout({
   areaUsuario,
   children,
   rotuloArea = 'Administração da plataforma',
+  semNavegacao = false,
 }: AdminLayoutProps) {
   return (
     <Estrutura
@@ -34,7 +37,9 @@ export function AdminLayout({
       }
       complementoCabecalho={areaUsuario}
       navegacao={
-        <MenuNavegacao itens={NAVEGACAO_ADMIN} rotulo="Navegação da administração" caminhoAtual={caminhoAtual} />
+        semNavegacao ? undefined : (
+          <MenuNavegacao itens={NAVEGACAO_ADMIN} rotulo="Navegação da administração" caminhoAtual={caminhoAtual} />
+        )
       }
     >
       {children}

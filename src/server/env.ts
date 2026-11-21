@@ -19,6 +19,12 @@ function inteiroEntre(min: number, max: number) {
     .pipe(z.int().min(min).max(max));
 }
 
+/** Chave de 32 bytes em base64 (44 caracteres) ou 64 dígitos hexadecimais (D-034). Nunca cita o valor. */
+export function chaveTotpValida(valor: string): boolean {
+  if (/^[0-9a-fA-F]{64}$/.test(valor)) return true;
+  return /^[A-Za-z0-9+/_-]+={0,2}$/.test(valor) && Buffer.from(valor, 'base64').length === 32;
+}
+
 /**
  * Variáveis base lidas pelo runtime da app e do worker, mais os 4 seletores.
  * As variáveis de cada provedor NÃO entram aqui: são lidas por `lerConfigReal` do módulo
@@ -48,6 +54,11 @@ export const esquemaEnv = z.object({
   RATE_LIMIT_SEGREDO: z.string().min(32).optional(),
   // Segredo HMAC dos links de avaliação (D-032); obrigatório só em produção (validarEnv). Não entra no Env.
   AVALIACAO_SEGREDO: z.string().min(32).optional(),
+  // Chave AES-256-GCM dos segredos TOTP do super admin (D-034); obrigatória só em produção (validarEnv). Não entra no Env.
+  ADMIN_TOTP_CHAVE: z.string().refine(chaveTotpValida).optional(),
+  // Conta do super admin criada por `npm run superadmin:criar` (D-034); só validadas se presentes. Não entram no Env.
+  SUPERADMIN_EMAIL: z.email().optional(),
+  SUPERADMIN_PASSWORD: z.string().min(12).max(1024).optional(),
   PROTECAO_JANELA_SEGUNDOS: inteiroEntre(60, 86400).default(900),
   PROTECAO_LIMITE_IP_RESERVA: inteiroEntre(1, 100000).default(10),
   PROTECAO_LIMITE_IP_DISPONIBILIDADE: inteiroEntre(1, 100000).default(60),
@@ -191,6 +202,9 @@ export function validarEnv(fonte: Record<string, string | undefined>): Env {
   }
   if (entrada.NODE_ENV === 'production' && entrada.AVALIACAO_SEGREDO === undefined) {
     erros.push('AVALIACAO_SEGREDO');
+  }
+  if (entrada.NODE_ENV === 'production' && entrada.ADMIN_TOTP_CHAVE === undefined) {
+    erros.push('ADMIN_TOTP_CHAVE');
   }
 
   if (erros.length > 0 || !base.success || !email || !turnstile || !mercadoPago || !whatsapp || !armazenamento) {

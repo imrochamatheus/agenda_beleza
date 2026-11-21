@@ -147,6 +147,9 @@ const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
   ['avaliacao_comentario_chk', 'avaliacao', 'c'],
   ['avaliacao_nome_exibicao_chk', 'avaliacao', 'c'],
   ['avaliacao_versao_termos_chk', 'avaliacao', 'c'],
+  // D-034 (migração 20261123000000_totp_ultimo_passo)
+  ['usuario_totp_ativado_chk', 'usuario', 'c'],
+  ['usuario_totp_passo_chk', 'usuario', 'c'],
 ];
 
 // [nome, tabela, único]
@@ -424,6 +427,7 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261121200000_tipo_mensagem_convite_avaliacao', antes: false, ok: true },
       { migration_name: '20261121200100_mensagem_reconciliacao', antes: false, ok: true },
       { migration_name: '20261122000000_avaliacao', antes: false, ok: true },
+      { migration_name: '20261123000000_totp_ultimo_passo', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,

@@ -325,6 +325,14 @@ describe('CA-18: Referrer-Policy por cabeçalho HTTP (next.config.ts)', () => {
     expect(regras).toEqual([
       { source: '/confirmar-email', headers: [{ key: 'Referrer-Policy', value: 'strict-origin' }] },
       { source: '/redefinir-senha', headers: [{ key: 'Referrer-Policy', value: 'strict-origin' }] },
+      // D-034: nada de /admin em cache nem indexado (sem política de referrer: não há token na URL).
+      {
+        source: '/admin/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex' },
+        ],
+      },
       // D-032: a rota do convite de avaliação (token no caminho) acrescenta cache e indexação.
       {
         source: '/:slug/avaliar/:token',

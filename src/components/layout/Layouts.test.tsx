@@ -169,4 +169,10 @@ describe('AdminLayout (CA-17, RN-12, RN-16)', () => {
     expect(within(screen.getByRole('banner')).getByText('Admin')).toBeTruthy();
     expect(document.querySelector('[aria-current]')).toBeNull();
   });
+
+  it('semNavegacao omite o menu (D-034: /admin não aponta para telas inexistentes)', () => {
+    render(<AdminLayout semNavegacao>x</AdminLayout>);
+    expect(screen.queryByRole('navigation', { name: 'Navegação da administração', hidden: true })).toBeNull();
+    expect(screen.queryAllByRole('link', { hidden: true }).map((a) => a.getAttribute('href'))).not.toContain('/admin/saloes');
+  });
 });

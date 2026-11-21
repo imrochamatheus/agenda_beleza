@@ -18,8 +18,8 @@ describe('vocabulário', () => {
     for (const a of ACOES_AUDITAVEIS) {
       expect(a).toMatch(FORMATO_ACAO);
       expect(a.length).toBeLessThanOrEqual(64);
-      // `login.*` incide sobre a entidade `usuario`; as demais, sobre a entidade do prefixo.
-      const prefixo = a.split('.')[0] === 'login' ? 'usuario' : a.split('.')[0];
+      // `login.*` e `totp.*` incidem sobre a entidade `usuario` (D-034); as demais, sobre a do prefixo.
+      const prefixo = ['login', 'totp'].includes(a.split('.')[0]) ? 'usuario' : a.split('.')[0];
       expect(ENTIDADES_AUDITAVEIS as readonly string[]).toContain(prefixo);
     }
   });

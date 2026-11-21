@@ -1,0 +1,33 @@
+/* Formulários de /admin/entrar (D-034). Só tokens do tema (globals.css). */
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 28rem;
+}
+
+.qr {
+  width: min(100%, 15rem);
+  background: white;
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  padding: var(--espaco-2);
+}
+
+.qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chave {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--texto-lg);
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+}
+
+.passos {
+  display: grid;
+  gap: var(--espaco-4);
+  max-width: 28rem;
+}
