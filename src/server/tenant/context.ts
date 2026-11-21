@@ -131,6 +131,19 @@ export function exigirEscopo(ctx: ContextoEscopado): string {
   return c.salaoId;
 }
 
+/**
+ * Guarda de operações de plataforma (D-033): só `AdminContext` congelado, criado por
+ * `criarAdminContext`, com usuarioId UUID. Qualquer outra coisa (tenant, sistema, público, objeto
+ * forjado com `as`) é erro de programação: lança Error (500). Devolve o usuarioId do admin.
+ */
+export function exigirAdmin(ctx: unknown): string {
+  const c = ctx as { tipo?: unknown; usuarioId?: unknown } | null | undefined;
+  if (typeof c !== 'object' || c === null || !Object.isFrozen(c) || c.tipo !== 'admin' || !ehUuid(c.usuarioId)) {
+    throw new Error('operação de plataforma exige AdminContext');
+  }
+  return c.usuarioId;
+}
+
 /** Guarda das leituras públicas: só `PublicoContext`. Devolve o salaoId. */
 export function exigirPublico(ctx: PublicoContext): string {
   const c = ctx as unknown as { tipo?: unknown; salaoId?: unknown } | null | undefined;

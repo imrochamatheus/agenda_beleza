@@ -8,6 +8,7 @@ import {
   criarTenantContext,
   ehCapacidade,
   ehPapelDeSalao,
+  exigirAdmin,
   exigirEscopo,
   exigirLeituraDeAgenda,
   exigirPublico,
@@ -169,6 +170,29 @@ describe('exigirLeituraDeAgenda (D-018 A-2)', () => {
       expect(() => exigirLeituraDeAgenda(ctx as PublicoContext)).toThrow(
         'leitura de agenda exige PublicoContext, TenantContext ou SistemaContext',
       );
+    }
+  });
+});
+
+describe('exigirAdmin (D-033, CA-6)', () => {
+  it('devolve o usuarioId de um AdminContext legítimo', () => {
+    expect(exigirAdmin(criarAdminContext(USUARIO))).toBe(USUARIO);
+  });
+
+  it('recusa tenant, sistema, público, nulo, objeto forjado, não congelado e usuarioId inválido', () => {
+    const tenant = criarTenantContext({ usuarioId: USUARIO, papel: 'gestor', salaoId: SALAO, profissionalId: null });
+    for (const ctx of [
+      tenant,
+      contextoDeSistema(SALAO, 'x'),
+      criarPublicoContext(SALAO, 's'),
+      null,
+      undefined,
+      'admin',
+      { tipo: 'admin', usuarioId: USUARIO },
+      Object.freeze({ tipo: 'admin', usuarioId: 'nao-uuid' }),
+      Object.freeze({ tipo: 'admin' }),
+    ]) {
+      expect(() => exigirAdmin(ctx)).toThrow('operação de plataforma exige AdminContext');
     }
   });
 });

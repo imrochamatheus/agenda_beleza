@@ -303,6 +303,15 @@ Entrega da D-032 (E4.5). Migração `20261122000000_avaliacao` (tabelas `avaliac
 - **E2E:** `npx playwright test e2e/avaliacao.spec.ts e2e/avaliacao-sem-js.spec.ts` (build prévio e porta 3000 livre; sem banco; idioma do navegador em inglês).
 - **Estabilidade:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/avaliacoes/concorrencia.test.ts || break; done`; fuso: `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/lib/format.test.ts src/server/avaliacoes tests/integration/avaliacoes || break; done`; pipeline com worker real: `npx vitest run --project integration tests/integration/avaliacoes/convite.test.ts`.
 
+## Auditoria (serviço de escrita, E8.1)
+
+`src/server/auditoria/` registra as ações do super admin na tabela `auditoria` (somente inserção: triggers do banco rejeitam UPDATE/DELETE/TRUNCATE). Não há tela nem consulta ainda (E8.3).
+
+- `registrarAuditoria(ctx: AdminContext, entrada, r)` grava na MESMA transação da mutação (`r` obrigatório): se a gravação falha, a mutação é desfeita. O ator é sempre `ctx.usuarioId` e o resultado, `sucesso`.
+- `registrarFalhaAuditoria(entrada)` grava `falha` em conexão própria; chame no `catch`, depois do rollback.
+- `acao` e `entidade` vêm de listas fechadas em `tipos.ts` (acrescente por PR). `antes`/`depois`: JSON puro, até 6 níveis e 16 KiB; chaves suspeitas de segredo (`senha`, `token`, `totp`, ...) fazem a gravação FALHAR, nunca são redigidas. Grave só campos de negócio escolhidos, sem PII em valores livres.
+- Testes: `npx vitest run src/server/auditoria` e `npx vitest run --project integration tests/integration/auditoria`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.
