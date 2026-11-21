@@ -2,6 +2,8 @@ import { criarRepoAgenda } from './agenda';
 import type { RepoAgenda } from './agenda';
 import { criarRepoAuditoria } from './auditoria';
 import type { RepoAuditoria } from './auditoria';
+import { criarRepoAssinatura } from './assinatura';
+import type { RepoAssinatura } from './assinatura';
 import { criarRepoAvaliacao } from './avaliacao';
 import type { RepoAvaliacao } from './avaliacao';
 import { criarRepoBloqueio } from './bloqueio';
@@ -35,7 +37,7 @@ import { criarRepoServico } from './servico';
 import type { RepoServico } from './servico';
 import type { Executor } from './transacao';
 
-export type { RepoAgenda, RepoAuditoria, RepoAvaliacao, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDenuncia, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoReservaAlteracao, RepoSalao, RepoServico };
+export type { RepoAgenda, RepoAssinatura, RepoAuditoria, RepoAvaliacao, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDenuncia, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoReservaAlteracao, RepoSalao, RepoServico };
 
 /** Repositórios de tenant: toda operação recebe ContextoEscopado e filtra salao_id (RN-8). */
 export interface Repos {
@@ -67,6 +69,8 @@ export interface Repos {
   denuncias: RepoDenuncia;
   /** Auditoria de plataforma, somente inserção (D-033): só `registrarAuditoria` a usa. */
   auditoria: RepoAuditoria;
+  /** Assinatura do salão: trava, pagamentos e transições (D-037). */
+  assinaturas: RepoAssinatura;
 }
 
 /** Conjunto ligado a um executor (cliente ou transação). Uso interno: emTransacao e repos(). */
@@ -89,6 +93,7 @@ export function criarRepos(db: Executor): Repos {
     avaliacoes: criarRepoAvaliacao(db),
     denuncias: criarRepoDenuncia(db),
     auditoria: criarRepoAuditoria(db),
+    assinaturas: criarRepoAssinatura(db),
   };
 }
 

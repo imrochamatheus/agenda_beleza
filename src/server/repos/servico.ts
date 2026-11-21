@@ -11,6 +11,8 @@ import type { Executor } from './transacao';
 //
 // ORDEM CANÔNICA DE TRAVAS (D-014 D-14, estendida pela D-015 D-12 e pela D-020 §3.5; obrigação para
 // E3.1/E3.2/E3.4/E3.5):
+//   (D-037: `salao → assinatura (FOR NO KEY UPDATE) → assinatura_pagamento → assinatura_transicao`;
+//    aplicarEventoAssinatura e o job só tomam a assinatura, nunca salao nem profissional; ver repos/assinatura.ts)
 //   salao (FOR NO KEY UPDATE: regras, slug, perfil por UPDATE, funcionamento; ver repos/funcionamento.ts;
 //          FOR SHARE: criar reserva, D-025, e a E3.5 repete; FOR SHARE não conflita com outra reserva)
 //     → profissional(is) (FOR UPDATE | FOR NO KEY UPDATE | FOR SHARE, por id; D-025/DEF-1: a CRIAÇÃO de

@@ -5,3 +5,6 @@ export const PRECO_MENSAL_CENTAVOS = 7900;
 
 /** Duração do período de teste, em dias. */
 export const DIAS_TESTE = 30;
+
+/** Carência após a primeira falha de cobrança (e após o fim do teste sem pagamento), em dias (D-037). */
+export const DIAS_CARENCIA = 3;
