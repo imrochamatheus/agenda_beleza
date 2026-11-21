@@ -46,6 +46,8 @@ export const esquemaEnv = z.object({
   // Proteção da página pública (D-027). `RATE_LIMIT_SEGREDO` é obrigatório só em produção (validarEnv).
   TRUSTED_PROXY_HOPS: inteiroEntre(0, 10).default(0),
   RATE_LIMIT_SEGREDO: z.string().min(32).optional(),
+  // Segredo HMAC dos links de avaliação (D-032); obrigatório só em produção (validarEnv). Não entra no Env.
+  AVALIACAO_SEGREDO: z.string().min(32).optional(),
   PROTECAO_JANELA_SEGUNDOS: inteiroEntre(60, 86400).default(900),
   PROTECAO_LIMITE_IP_RESERVA: inteiroEntre(1, 100000).default(10),
   PROTECAO_LIMITE_IP_DISPONIBILIDADE: inteiroEntre(1, 100000).default(60),
@@ -186,6 +188,9 @@ export function validarEnv(fonte: Record<string, string | undefined>): Env {
 
   if (entrada.NODE_ENV === 'production' && entrada.RATE_LIMIT_SEGREDO === undefined) {
     erros.push('RATE_LIMIT_SEGREDO');
+  }
+  if (entrada.NODE_ENV === 'production' && entrada.AVALIACAO_SEGREDO === undefined) {
+    erros.push('AVALIACAO_SEGREDO');
   }
 
   if (erros.length > 0 || !base.success || !email || !turnstile || !mercadoPago || !whatsapp || !armazenamento) {

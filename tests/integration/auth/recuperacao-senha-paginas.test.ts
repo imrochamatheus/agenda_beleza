@@ -325,6 +325,15 @@ describe('CA-18: Referrer-Policy por cabeçalho HTTP (next.config.ts)', () => {
     expect(regras).toEqual([
       { source: '/confirmar-email', headers: [{ key: 'Referrer-Policy', value: 'strict-origin' }] },
       { source: '/redefinir-senha', headers: [{ key: 'Referrer-Policy', value: 'strict-origin' }] },
+      // D-032: a rota do convite de avaliação (token no caminho) acrescenta cache e indexação.
+      {
+        source: '/:slug/avaliar/:token',
+        headers: [
+          { key: 'Referrer-Policy', value: 'strict-origin' },
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex' },
+        ],
+      },
     ]);
     expect(JSON.stringify(regras)).not.toContain('no-referrer');
     expect(regras.map((r) => r.source)).not.toContain('/recuperar-senha');

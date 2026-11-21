@@ -8,13 +8,16 @@ import { NaoEncontrado } from '@/server/tenant/erros';
 import type { EntradaAnonimizarCliente, ResultadoAnonimizar } from './tipos';
 
 // Anonimização da cliente (D-031, E5.2; RN-1..RN-10). Sem next/*. Uma transação READ COMMITTED:
-// salão FOR NO KEY UPDATE → cliente FOR UPDATE + UPDATE → mensagens e tentativas (por último) → hook.
+// salão FOR NO KEY UPDATE → cliente FOR UPDATE + UPDATE → mensagens e tentativas → hook (D-032: avaliações e convites, por último).
 // Nunca captura 23505/23514: o serviço já trava e valida. Log só com ids e contagens.
 
 /** Gancho da E4.5 (RN-10): roda DENTRO da transação, depois da limpeza das mensagens. */
 export type AoAnonimizar = (ctx: ContextoEscopado, d: { clienteId: string; agora: Date }, r: Repos) => Promise<void>;
 
-export const aoAnonimizarPadrao: AoAnonimizar = async () => {};
+/** D-032 RN-10: apaga nome e comentário das avaliações da cliente e invalida seus convites (por último). */
+export const aoAnonimizarPadrao: AoAnonimizar = async (ctx, { clienteId, agora }, r) => {
+  await r.avaliacoes.anonimizarDaCliente(ctx, clienteId, agora);
+};
 
 /** Pontos de injeção (testes): o gancho e uma parada entre a trava e a escrita. */
 export type DepsAnonimizar = {

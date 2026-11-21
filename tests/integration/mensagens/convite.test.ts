@@ -94,7 +94,7 @@ describe('CA-11: mesmo pipeline, link nunca gravado nem registrado', () => {
     expect(p.logs().join('\n')).not.toContain(LINK);
   });
 
-  it('sem gerador configurado (estado de produção até a E4.5) → falhou/link_indisponivel, reenviável', async () => {
+  it('gerador padrão do worker (D-032) sem convite possível (salão sem slug atual) → falhou/link_indisponivel', async () => {
     await p.encerrar();
     p = await criarPipeline();
     const s = await criarCenarioMensagem({ status: 'concluido', consentimentoConvite: true });

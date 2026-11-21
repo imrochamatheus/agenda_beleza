@@ -12,7 +12,7 @@ export type CaixasConsentimentoProps = {
   idPrefixo?: string;
 };
 
-function Texto({ finalidade }: { finalidade: Finalidade }) {
+export function TextoDeConsentimento({ finalidade }: { finalidade: Finalidade }) {
   return (
     <>
       {TEXTOS_CONSENTIMENTO[finalidade].map((parte: ParteDeTexto, i) =>
@@ -40,7 +40,7 @@ export function CaixasConsentimento({ erros, valores, idPrefixo = 'consentimento
       <Checkbox
         id={`${idPrefixo}-mensagens`}
         name={CAMPOS_CONSENTIMENTO.mensagensReserva}
-        rotulo={<Texto finalidade="mensagens_reserva" />}
+        rotulo={<TextoDeConsentimento finalidade="mensagens_reserva" />}
         obrigatorio
         erro={erros?.mensagensReserva}
         defaultChecked={valores?.mensagensReserva === true}
@@ -48,7 +48,7 @@ export function CaixasConsentimento({ erros, valores, idPrefixo = 'consentimento
       <Checkbox
         id={`${idPrefixo}-convite`}
         name={CAMPOS_CONSENTIMENTO.conviteAvaliacao}
-        rotulo={<Texto finalidade="convite_avaliacao" />}
+        rotulo={<TextoDeConsentimento finalidade="convite_avaliacao" />}
         defaultChecked={valores?.conviteAvaliacao === true}
       />
     </>

@@ -1,3 +1,4 @@
+import { gerarLinkAvaliacao } from '@/server/avaliacoes/convite';
 import { integracoes } from '@/server/integrations/registry';
 import { enviarMensagem } from '@/server/mensagens/envio';
 import type { DependenciasEnvio } from '@/server/mensagens/envio';
@@ -12,7 +13,7 @@ import { definirHandler } from './tipos';
  * retentativas restantes devolve a mensagem a `pendente` e lança `ErroReenvioAgendado` (mensagem
  * fixa, sem causa) para o pg-boss reagendar com o backoff de `QUEUE_RETRY_*`; nos demais casos o job
  * termina `completed` e o estado oficial fica em `mensagem.estado`. Só escreve em `mensagem` e
- * `mensagem_tentativa`. Produção: porta do registro e SEM gerador do link (a E4.5 o injeta aqui).
+ * `mensagem_tentativa`. Produção: porta do registro e o gerador real do link de avaliação (D-032, `gerarLinkAvaliacao`).
  */
 export function criarWhatsappReserva(deps: Partial<DependenciasEnvio> = {}) {
   return definirHandler(FILA.whatsappReserva, {
@@ -22,7 +23,7 @@ export function criarWhatsappReserva(deps: Partial<DependenciasEnvio> = {}) {
         { atual: ctx.tentativa, maxima: ctx.tentativasMaximas },
         {
           whatsapp: deps.whatsapp ?? (() => integracoes().whatsapp),
-          gerarLink: deps.gerarLink,
+          gerarLink: deps.gerarLink ?? gerarLinkAvaliacao,
           agora: deps.agora ?? (() => new Date()),
           sistema: deps.sistema,
           log: deps.log ?? ((evento, campos) => ctx.log(evento, campos)),

@@ -289,3 +289,25 @@ export function formatarInteiro(n: number): string {
   }
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
+
+/**
+ * Nota média com uma casa e vírgula (D-032): 4.3 → '4,3'; 5 → '5,0'. Espera o valor já arredondado
+ * pelo banco (`round(avg, 1)`); entre 1 e 5, senão RangeError. Montado por texto, sem Intl.
+ */
+export function formatarNota(n: number): string {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 1 || n > 5) {
+    throw new RangeError(`formatarNota: nota entre 1 e 5 esperada (recebido: ${String(n)})`);
+  }
+  return n.toFixed(1).replace('.', ',');
+}
+
+const MESES = [
+  'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
+];
+
+/** 'novembro de 2026' no fuso (IANA) do salão (D-032 RN-8); nunca o dia exato. */
+export function formatarMesAno(instante: Date, fuso?: string): string {
+  const p = partes(instante, fuso);
+  return `${MESES[Number(p.month) - 1]} de ${p.year}`;
+}

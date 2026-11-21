@@ -24,6 +24,8 @@ import type { Executor } from './transacao';
 //           D-023: FOR KEY SHARE na cliente, depois INSERT; ver repos/consentimento.ts)
 //           → servico_profissional / jornada / salao_funcionamento / salao_foto
 //             → mensagem / mensagem_tentativa (D-024: SEMPRE por último; ver repos/mensagem.ts e mensagem-sistema.ts)
+//               → avaliacao_convite / avaliacao (D-032, depois de reserva e cliente: o ENVIO toma reserva FOR SHARE → cliente
+//                 FOR SHARE → convite FOR UPDATE; a anonimização, cliente FOR UPDATE → mensagem → avaliação/convite; ver repos/avaliacao.ts)
 // (D-021: fotos do salão — salao FOR NO KEY UPDATE → salao_foto; ver repos/foto.ts.)
 // Os INSERT com FK para salao só tomam FOR KEY SHARE, que não conflita com FOR NO KEY UPDATE.
 // - Editar serviço: profissionais escolhidos FOR SHARE → serviço FOR NO KEY UPDATE → UPDATE do

@@ -13,6 +13,8 @@ import type {
   ServicoPublico,
 } from "@/server/repos/publico";
 
+import type { AvaliacoesPublicas } from '@/server/avaliacoes/tipos';
+
 import type { AcaoReservar } from '../estado';
 import { FormularioDados } from './FormularioDados';
 import {
@@ -29,6 +31,7 @@ import {
   ListaDeServicos,
   SecoesDoPerfil,
 } from "./Perfil";
+import { SecaoAvaliacoes } from './SecaoAvaliacoes';
 import estilos from './Salao.module.css';
 
 export type PaginaDoSalaoProps = {
@@ -46,6 +49,8 @@ export type PaginaDoSalaoProps = {
   acao: AcaoReservar;
   /** Widget de verificação humana da etapa de dados (D-027). */
   humano: DadosDoWidget;
+  /** Avaliações verificadas (D-032); ausente na vitrine de reserva. */
+  avaliacoes?: AvaliacoesPublicas;
 };
 
 function PassoAtual({ props }: { props: PaginaDoSalaoProps }) {
@@ -139,6 +144,7 @@ export function PaginaDoSalao(props: PaginaDoSalaoProps) {
           <ListaDeServicos servicos={props.servicos} />
         ) : null}
         <Equipe equipe={props.equipe} />
+        {props.avaliacoes ? <SecaoAvaliacoes avaliacoes={props.avaliacoes} /> : null}
         <SecoesDoPerfil perfil={perfil} />
       </div>
     </PublicLayout>

@@ -17,6 +17,8 @@ export const ROTAS = {
   termos: '/termos',
   privacidade: '/privacidade',
   salaoPublico: (slug: string) => `/${seg(slug)}`,
+  /** Link individual do convite de avaliação (D-032): o token vai no caminho. */
+  avaliar: (slug: string, token: string) => `/${seg(slug)}/avaliar/${seg(token)}`,
   // painel
   painel: '/painel',
   agenda: '/painel/agenda',
@@ -58,6 +60,7 @@ export const ROTAS = {
   devConfiguracoes: '/dev/configuracoes',
   devClientes: '/dev/clientes',
   devConsentimento: '/dev/consentimento',
+  devAvaliacao: '/dev/avaliacao',
   devPerfil: '/dev/perfil',
   devFuncionamento: '/dev/funcionamento',
   devFotos: '/dev/fotos',
@@ -141,13 +144,14 @@ function primeiroSegmento(caminho: string): string {
 
 /**
  * Primeiros segmentos de todas as rotas (exceto /[slug]) + 'api' + '_next' (RN-15).
- * Para E1.1/E2.5 recusarem slugs de salão que colidiriam com uma rota.
+ * Para E1.1/E2.5 recusarem slugs de salão que colidiriam com uma rota. `salaoPublico` e `avaliar`
+ * (D-032) começam pelo slug do salão, não por um segmento fixo: ficam de fora.
  */
 export const SEGMENTOS_RESERVADOS: ReadonlySet<string> = new Set(
   [
     ...Object.entries(ROTAS)
-      .filter(([chave]) => chave !== 'salaoPublico')
-      .map(([, rota]) => (typeof rota === 'function' ? rota('x') : rota))
+      .filter(([chave]) => chave !== 'salaoPublico' && chave !== 'avaliar')
+      .map(([, rota]) => (typeof rota === 'function' ? (rota as (x: string) => string)('x') : rota))
       .map(primeiroSegmento)
       .filter((s) => s !== ''),
     'api',

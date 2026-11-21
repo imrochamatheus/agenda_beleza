@@ -1,5 +1,7 @@
 import { criarRepoAgenda } from './agenda';
 import type { RepoAgenda } from './agenda';
+import { criarRepoAvaliacao } from './avaliacao';
+import type { RepoAvaliacao } from './avaliacao';
 import { criarRepoBloqueio } from './bloqueio';
 import type { RepoBloqueio } from './bloqueio';
 import { criarRepoCliente } from './cliente';
@@ -29,7 +31,7 @@ import { criarRepoServico } from './servico';
 import type { RepoServico } from './servico';
 import type { Executor } from './transacao';
 
-export type { RepoAgenda, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoReservaAlteracao, RepoSalao, RepoServico };
+export type { RepoAgenda, RepoAvaliacao, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoReservaAlteracao, RepoSalao, RepoServico };
 
 /** Repositórios de tenant: toda operação recebe ContextoEscopado e filtra salao_id (RN-8). */
 export interface Repos {
@@ -55,6 +57,8 @@ export interface Repos {
   mensagens: RepoMensagem;
   /** Leituras da agenda da equipe (D-028), somente leitura. */
   agenda: RepoAgenda;
+  /** Avaliações verificadas e convites por link (D-032). */
+  avaliacoes: RepoAvaliacao;
 }
 
 /** Conjunto ligado a um executor (cliente ou transação). Uso interno: emTransacao e repos(). */
@@ -74,6 +78,7 @@ export function criarRepos(db: Executor): Repos {
     disponibilidade: criarRepoDisponibilidade(db),
     mensagens: criarRepoMensagem(db),
     agenda: criarRepoAgenda(db),
+    avaliacoes: criarRepoAvaliacao(db),
   };
 }
 
