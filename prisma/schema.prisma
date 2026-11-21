@@ -190,6 +190,7 @@ model Salao {
   fotos                SalaoFoto[]
   avaliacoes           Avaliacao[]
   avaliacaoConvites    AvaliacaoConvite[]
+  avaliacaoDenuncias   AvaliacaoDenuncia[]
 
   @@map("salao")
 }
@@ -903,11 +904,48 @@ model Avaliacao {
   retiradaPor        String?   @map("retirada_por") @db.Uuid
   criadoEm           DateTime  @default(now()) @map("criado_em") @db.Timestamptz(6)
 
-  salao   Salao   @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  reserva Reserva @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
-  cliente Cliente @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  salao     Salao               @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reserva   Reserva             @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  cliente   Cliente             @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  denuncias AvaliacaoDenuncia[]
 
+  @@unique([salaoId, id])
   @@index([salaoId, criadoEm(sort: Desc), id], map: "avaliacao_publica_idx")
   @@index([salaoId, clienteId])
   @@map("avaliacao")
+}
+
+enum MotivoDenunciaAvaliacao {
+  ofensivo
+  falso
+  spam
+  dados_pessoais
+  outro
+
+  @@map("motivo_denuncia_avaliacao")
+}
+
+/// D-035 (E8.4). CHECKs em SQL bruto: avaliacao_denuncia_texto_chk, _ip_hash_chk, _resolucao_chk, _estado_chk.
+/// Índices parciais em SQL bruto (WHERE resolvida_em IS NULL): avaliacao_denuncia_pendente_uniq (único em
+/// avaliacao_id, ip_hash), avaliacao_denuncia_fila_idx, avaliacao_denuncia_fila_global_idx, avaliacao_denuncia_avaliacao_pendente_idx.
+model AvaliacaoDenuncia {
+  id           String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId      String                  @map("salao_id") @db.Uuid
+  avaliacaoId  String                  @map("avaliacao_id") @db.Uuid
+  motivo       MotivoDenunciaAvaliacao
+  texto        String?
+  /// HMAC do IP (nunca o IP).
+  ipHash       String                  @map("ip_hash")
+  criadoEm     DateTime                @default(now()) @map("criado_em") @db.Timestamptz(6)
+  resolvidaEm  DateTime?               @map("resolvida_em") @db.Timestamptz(6)
+  /// Sem FK (como retirada_por).
+  resolvidaPor String?                 @map("resolvida_por") @db.Uuid
+  /// 'retirada' | 'mantida'.
+  resolucao    String?
+
+  salao     Salao     @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  avaliacao Avaliacao @relation(fields: [salaoId, avaliacaoId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([salaoId, avaliacaoId, criadoEm(sort: Desc)])
+  @@map("avaliacao_denuncia")
 }

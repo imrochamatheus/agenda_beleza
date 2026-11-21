@@ -34,6 +34,8 @@ const TABELAS = [
   // D-032: avaliações verificadas e convites por link.
   'avaliacao',
   'avaliacao_convite',
+  // D-035: denúncias de avaliações.
+  'avaliacao_denuncia',
   'bloqueio',
   'cliente',
   'consentimento',
@@ -81,6 +83,7 @@ const ENUMS: Record<string, string[]> = {
   tipo_mensagem: ['confirmacao', 'remarcacao', 'cancelamento', 'convite_avaliacao'],
   estado_mensagem: ['pendente', 'enviando', 'enviada', 'falhou', 'nao_enviada', 'substituida', 'cancelada_anonimizacao'],
   resultado_tentativa: ['sucesso', 'falha'],
+  motivo_denuncia_avaliacao: ['ofensivo', 'falso', 'spam', 'dados_pessoais', 'outro'],
   resultado_auditoria: ['sucesso', 'falha'],
   sim_mp_estado_assinatura: ['pendente', 'autorizada', 'cancelada'],
   sim_mp_status_pagamento: ['aprovado', 'recusado'],
@@ -147,6 +150,11 @@ const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
   ['avaliacao_comentario_chk', 'avaliacao', 'c'],
   ['avaliacao_nome_exibicao_chk', 'avaliacao', 'c'],
   ['avaliacao_versao_termos_chk', 'avaliacao', 'c'],
+  // D-035 (migração 20261124000000_avaliacao_denuncia)
+  ['avaliacao_denuncia_texto_chk', 'avaliacao_denuncia', 'c'],
+  ['avaliacao_denuncia_ip_hash_chk', 'avaliacao_denuncia', 'c'],
+  ['avaliacao_denuncia_resolucao_chk', 'avaliacao_denuncia', 'c'],
+  ['avaliacao_denuncia_estado_chk', 'avaliacao_denuncia', 'c'],
   // D-034 (migração 20261123000000_totp_ultimo_passo)
   ['usuario_totp_ativado_chk', 'usuario', 'c'],
   ['usuario_totp_passo_chk', 'usuario', 'c'],
@@ -162,6 +170,10 @@ const INDICES_SQL_BRUTO: [string, string, boolean][] = [
   ['mensagem_pendentes_idx', 'mensagem', false],
   ['mensagem_reconciliacao_idx', 'mensagem', false],
   ['bloqueio_periodo_idx', 'bloqueio', false],
+  ['avaliacao_denuncia_pendente_uniq', 'avaliacao_denuncia', true],
+  ['avaliacao_denuncia_fila_idx', 'avaliacao_denuncia', false],
+  ['avaliacao_denuncia_fila_global_idx', 'avaliacao_denuncia', false],
+  ['avaliacao_denuncia_avaliacao_pendente_idx', 'avaliacao_denuncia', false],
 ];
 
 // tgtype: 27 = BEFORE | ROW | DELETE | UPDATE; 34 = BEFORE | TRUNCATE (por instrução).
@@ -185,6 +197,7 @@ const FKS_COMPOSTAS = [
   'consentimento_salao_id_cliente_id_fkey',
   'convite_salao_id_profissional_id_fkey',
   'profissional_salao_id_usuario_id_fkey',
+  'avaliacao_denuncia_salao_id_avaliacao_id_fkey',
 ];
 
 describe('CA-1: catálogo depois do migrate deploy', () => {
@@ -351,12 +364,12 @@ describe('CA-1: o Prisma não acusa drift', () => {
 });
 
 describe('CA-15: integridade referencial e identificadores', () => {
-  it('CA-15: as 44 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
+  it('CA-15: as 46 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
     const r = await linhas<{ nome: string; del: string; upd: string }>(
       `SELECT conname AS nome, confdeltype::text AS del, confupdtype::text AS upd
        FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace`,
     );
-    expect(r).toHaveLength(44); // 37 até a D-007 + salao_funcionamento_salao_id_fkey (D-020) + salao_foto_salao_id_fkey (D-021) + 5 da D-032
+    expect(r).toHaveLength(46); // 37 até a D-007 + salao_funcionamento_salao_id_fkey (D-020) + salao_foto_salao_id_fkey (D-021) + 5 da D-032 + 2 da D-035
     expect(r.filter((f) => f.del !== 'r' || f.upd !== 'r')).toEqual([]);
   });
 
@@ -428,6 +441,7 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261121200100_mensagem_reconciliacao', antes: false, ok: true },
       { migration_name: '20261122000000_avaliacao', antes: false, ok: true },
       { migration_name: '20261123000000_totp_ultimo_passo', antes: false, ok: true },
+      { migration_name: '20261124000000_avaliacao_denuncia', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,

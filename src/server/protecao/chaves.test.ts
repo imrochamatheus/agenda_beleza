@@ -26,3 +26,18 @@ describe('chaves (CA-9)', () => {
     expect(chaveNumero('s', '+5511987654321')).toMatch(/^pub:reserva:tel:[0-9a-f]{64}$/);
   });
 });
+
+describe('hashIpDenuncia (D-035)', () => {
+  it('HMAC hexadecimal: não contém o IP, é estável, e depende do IP e do segredo', async () => {
+    const { hashIpDenuncia } = await import('./chaves');
+    const h = hashIpDenuncia('203.0.113.7', SEGREDO);
+    expect(h).toMatch(/^[0-9a-f]{64}$/);
+    expect(h).not.toContain('203.0.113.7');
+    expect(hashIpDenuncia('203.0.113.7', SEGREDO)).toBe(h);
+    expect(hashIpDenuncia('203.0.113.8', SEGREDO)).not.toBe(h);
+    expect(hashIpDenuncia('203.0.113.7', 't'.repeat(32))).not.toBe(h);
+    // Distinto do SHA-256 puro de chaveIp (que um IPv4 reverteria por força bruta).
+    expect(h).not.toBe(chaveIp('denuncia', '203.0.113.7').split(':').pop());
+    expect(hashIpDenuncia('203.0.113.7')).toMatch(/^[0-9a-f]{64}$/);
+  });
+});

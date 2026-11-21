@@ -16,7 +16,9 @@ import { NaoEncontrado } from '@/server/tenant/erros';
 
 import { lerAvaliacoesPublicas } from '@/server/avaliacoes/leitura';
 
-import { reservarAcao } from './acoes';
+import { PARAMETRO_DENUNCIA, VALOR_DENUNCIA_RECEBIDA } from '@/config/denuncia';
+
+import { denunciarAcao, reservarAcao } from './acoes';
 import { PaginaDoSalao } from './_componentes/PaginaDoSalao';
 
 // Página pública /<slug> (D-026): dinâmica (searchParams), sem loading.tsx nem Suspense acima do
@@ -95,6 +97,7 @@ export default async function PaginaPublicaDoSalao({ params, searchParams }: Pro
       chave={crypto.randomUUID()}
       humano={widgetHumano()}
       avaliacoes={avaliacoes}
+      denuncia={{ acao: denunciarAcao, recebida: consulta[PARAMETRO_DENUNCIA] === VALOR_DENUNCIA_RECEBIDA }}
       acao={reservarAcao}
     />
   );

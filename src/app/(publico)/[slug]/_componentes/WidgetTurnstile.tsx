@@ -13,7 +13,7 @@ import type { DadosDoWidget } from '@/server/protecao/widget-tipos';
  * deixa enviar um token inválido, também sem JavaScript. Real: o widget oficial injeta o campo, então
  * exige JavaScript (sem ele a reserva é recusada, falha fechada).
  */
-export function WidgetTurnstile({ dados }: { dados: DadosDoWidget }) {
+export function WidgetTurnstile({ dados, id = 'turnstile-simulado' }: { dados: DadosDoWidget; /** Distinto por formulário quando há vários na página (D-035). */ id?: string }) {
   useEffect(() => {
     if (dados.modo !== 'real' || document.querySelector(`script[src="${SCRIPT}"]`)) return;
     const s = document.createElement('script');
@@ -29,8 +29,8 @@ export function WidgetTurnstile({ dados }: { dados: DadosDoWidget }) {
   if (dados.controleDeTeste) {
     return (
       <div>
-        <label htmlFor="turnstile-simulado">Verificação simulada (somente desenvolvimento)</label>
-        <select id="turnstile-simulado" name="cf-turnstile-response" defaultValue={dados.tokenSimulado}>
+        <label htmlFor={id}>Verificação simulada (somente desenvolvimento)</label>
+        <select id={id} name="cf-turnstile-response" defaultValue={dados.tokenSimulado}>
           <option value={dados.tokenSimulado}>Token válido</option>
           <option value={TOKEN_INVALIDO_DE_TESTE}>Token inválido</option>
           <option value="">Sem token</option>

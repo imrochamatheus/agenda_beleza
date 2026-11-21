@@ -1,5 +1,5 @@
-import type { ContextoEscopado } from '@/server/tenant/context';
-import { exigirEscopo } from '@/server/tenant/context';
+import type { AdminContext, ContextoEscopado } from '@/server/tenant/context';
+import { exigirAdmin, exigirEscopo } from '@/server/tenant/context';
 import { NaoEncontrado } from '@/server/tenant/erros';
 
 import { ehUuid } from './ids';
@@ -17,6 +17,8 @@ export type ConviteLocalizado = { conviteId: string; reservaId: string };
 export type ReservaTravada = { status: StatusReserva; clienteId: string };
 export type ClienteTravado = { nome: string | null; anonimizadaEm: Date | null };
 export type ConviteTravado = { usadoEm: Date | null; invalidadoEm: Date | null; expiraEm: Date };
+
+export type AvaliacaoParaModerar = { salaoId: string; retiradaEm: Date | null; retiradaPor: string | null };
 
 export type NovaAvaliacao = {
   reservaId: string;
@@ -50,6 +52,15 @@ export interface RepoAvaliacao {
   inserir(ctx: ContextoEscopado, d: NovaAvaliacao): Promise<boolean>;
   /** UPDATE … WHERE usado_em IS NULL; `false` se outro já usou. */
   marcarUsado(ctx: ContextoEscopado, conviteId: string, agora: Date): Promise<boolean>;
+  /**
+   * Moderação (D-035), plataforma: `avaliacao … FOR UPDATE` por id (nunca o salão). A PRIMEIRA trava da
+   * transação de retirar/restaurar/arquivar; `null` se não existe. Quem chama confere o estado.
+   */
+  travarParaModerar(ctx: AdminContext, avaliacaoId: string): Promise<AvaliacaoParaModerar | null>;
+  /** `retirada_em = agora`, `retirada_por = admin`, só se ainda visível; `false` se já retirada. */
+  retirar(ctx: AdminContext, avaliacaoId: string, agora: Date): Promise<boolean>;
+  /** Zera as duas colunas, só se retirada; `false` se já visível. */
+  restaurar(ctx: AdminContext, avaliacaoId: string): Promise<boolean>;
   /**
    * RN-10: apaga nome e comentário das avaliações da cliente e invalida os convites das suas reservas.
    * Roda na transação da anonimização, depois do cliente e das mensagens.
@@ -149,6 +160,36 @@ export function criarRepoAvaliacao(db: Executor): RepoAvaliacao {
       const n = await db.$executeRaw`
         UPDATE avaliacao_convite SET usado_em = ${agora}::timestamptz
          WHERE salao_id = ${salaoId}::uuid AND id = ${conviteId}::uuid AND usado_em IS NULL`;
+      return n === 1;
+    },
+
+    async travarParaModerar(ctx, avaliacaoId) {
+      exigirAdmin(ctx);
+      if (!ehUuid(avaliacaoId)) return null;
+      const linhas = await db.$queryRaw<{ salao_id: string; retirada_em: Date | null; retirada_por: string | null }[]>`
+        SELECT salao_id::text AS salao_id, retirada_em, retirada_por::text AS retirada_por FROM avaliacao
+         WHERE id = ${avaliacaoId}::uuid
+           FOR UPDATE`;
+      return linhas.length === 0
+        ? null
+        : { salaoId: linhas[0].salao_id, retiradaEm: linhas[0].retirada_em, retiradaPor: linhas[0].retirada_por };
+    },
+
+    async retirar(ctx, avaliacaoId, agora) {
+      const adminId = exigirAdmin(ctx);
+      if (!ehUuid(avaliacaoId)) return false;
+      const n = await db.$executeRaw`
+        UPDATE avaliacao SET retirada_em = ${agora}::timestamptz, retirada_por = ${adminId}::uuid
+         WHERE id = ${avaliacaoId}::uuid AND retirada_em IS NULL`;
+      return n === 1;
+    },
+
+    async restaurar(ctx, avaliacaoId) {
+      exigirAdmin(ctx);
+      if (!ehUuid(avaliacaoId)) return false;
+      const n = await db.$executeRaw`
+        UPDATE avaliacao SET retirada_em = NULL, retirada_por = NULL
+         WHERE id = ${avaliacaoId}::uuid AND retirada_em IS NOT NULL`;
       return n === 1;
     },
 

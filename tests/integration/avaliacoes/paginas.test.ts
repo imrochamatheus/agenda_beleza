@@ -208,7 +208,13 @@ describe('CA-5: não existe rota que receba reserva + telefone', () => {
 
   it('a única rota de avaliação é /{slug}/avaliar/[token]; nenhuma pasta de rota avaliar usa reserva ou telefone', () => {
     const rotas = arquivos('src/app').filter((p) => /\/(page|route)\.tsx?$/.test(p) && /avalia/i.test(p));
-    expect(rotas.sort()).toEqual(['src/app/(publico)/[slug]/avaliar/[token]/page.tsx', 'src/app/dev/avaliacao/page.tsx']);
+    // As telas de /admin/avaliacoes (D-035) são do super admin: moderação, não envio de avaliação.
+    expect(rotas.sort()).toEqual([
+      'src/app/(publico)/[slug]/avaliar/[token]/page.tsx',
+      'src/app/admin/avaliacoes/[id]/page.tsx',
+      'src/app/admin/avaliacoes/page.tsx',
+      'src/app/dev/avaliacao/page.tsx',
+    ]);
     for (const p of arquivos('src/app/(publico)/[slug]/avaliar')) {
       expect(readFileSync(p, 'utf8'), p).not.toMatch(/telefone|reservaId|reserva_id/i);
     }

@@ -61,8 +61,10 @@ describe('CA-3: link válido', () => {
     const pub = await lerAvaliacoesPublicas(ctxPublico(s));
     expect(pub.total).toBeGreaterThanOrEqual(1);
     expect(pub.itens.find((i) => i.nome === 'Maria S.' && i.comentario === 'Muito bom atendimento')).toMatchObject({ nota: 4, mesAno: 'novembro de 2026' });
-    // O DTO público não traz identificadores.
-    expect(Object.keys(pub.itens[0]).sort()).toEqual(['comentario', 'mesAno', 'nome', 'nota']);
+    // O DTO público não traz identificadores de cliente ou reserva; só o id da própria avaliação (UUID
+    // aleatório, D-035), usado pelo formulário de denúncia.
+    expect(Object.keys(pub.itens[0]).sort()).toEqual(['comentario', 'id', 'mesAno', 'nome', 'nota']);
+    expect(pub.itens[0].id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('nota sem comentário é publicável; nome único fica só o nome', async () => {

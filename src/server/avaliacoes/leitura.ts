@@ -15,6 +15,7 @@ export async function lerAvaliacoesPublicas(ctx: PublicoContext, limite = LIMITE
     total: l.total,
     media: l.media,
     itens: l.itens.map((i) => ({
+      id: i.id,
       nome: i.nome,
       nota: i.nota,
       comentario: i.comentario,

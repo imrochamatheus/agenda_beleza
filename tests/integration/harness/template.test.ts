@@ -43,6 +43,7 @@ const MIGRACOES = [
   '20261121200100_mensagem_reconciliacao',
   '20261122000000_avaliacao',
   '20261123000000_totp_ultimo_passo',
+  '20261124000000_avaliacao_denuncia',
 ];
 
 describe('CA-17: a guarda roda antes de qualquer conexão (prepararExecucao)', () => {
