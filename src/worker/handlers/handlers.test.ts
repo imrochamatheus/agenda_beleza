@@ -16,12 +16,13 @@ function contexto(sinal: AbortSignal = new AbortController().signal) {
 }
 
 describe('REGISTRO (RN-8, CA-7)', () => {
-  it('tem exatamente as 4 filas de produção, com as políticas dos contratos e os crons padrão (D-3)', () => {
+  it('tem exatamente as 5 filas de produção, com as políticas dos contratos e os crons padrão (D-3)', () => {
     expect(REGISTRO.map((d) => [d.fila, d.politica, d.cron ?? null])).toEqual([
       ['exemplo', 'standard', null],
       ['assinatura-prazos', 'exclusive', '*/5 * * * *'],
       ['whatsapp-reserva', 'exclusive', null],
       ['reconciliar-mensagens', 'exclusive', '* * * * *'],
+      ['limpar-rate-limit', 'exclusive', '17 * * * *'],
     ]);
   });
 

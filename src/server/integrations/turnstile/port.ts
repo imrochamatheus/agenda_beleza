@@ -25,3 +25,9 @@ export const TAMANHO_MAXIMO_TOKEN = 2048;
 export function tokenTurnstileAceitavel(token: string | null | undefined): token is string {
   return typeof token === 'string' && token.trim() !== '' && token.length <= TAMANHO_MAXIMO_TOKEN;
 }
+
+/** Token fictício documentado pela Cloudflare, aceito só pelo adaptador simulado (README). */
+export const TOKEN_TURNSTILE_SIMULADO = 'XXXX.DUMMY.TOKEN.XXXX';
+
+/** Script oficial do widget (carregado pelo navegador no modo real; D-027). */
+export const URL_SCRIPT_TURNSTILE = 'https://challenges.cloudflare.com/turnstile/v0/api.js';

@@ -55,6 +55,7 @@ function montar(o: Partial<PaginaDoSalaoProps> = {}) {
     visao: { passo: 'servicos', aviso: null },
     chave: '44444444-4444-4444-8444-444444444444',
     acao: vi.fn(async (anterior) => anterior),
+    humano: { modo: 'simulado', chaveDoSite: '', tokenSimulado: 'XXXX.DUMMY.TOKEN.XXXX', controleDeTeste: false },
     ...o,
   };
   return render(<PaginaDoSalao {...props} />);

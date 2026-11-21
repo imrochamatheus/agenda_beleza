@@ -2,6 +2,13 @@
 // recusa antes de qualquer escrita se o salão não aceita reservas (CA-4) e chama `criarReserva` com
 // `modo: 'normal'` fixo e o contexto de sistema `reserva_publica`. Todo resultado vira um desfecho
 // pt-BR discriminado; nenhum é 500.
+import { limitarPorIp, limitarPorNumero } from '@/server/protecao/limite';
+import { criarAntesDaReserva } from '@/server/protecao/futuras';
+import { MENSAGENS_PROTECAO } from '@/server/protecao/tipos';
+import { verificarHumano } from '@/server/protecao/turnstile';
+import { normalizarTelefoneBr } from '@/lib/telefone';
+import { repos } from '@/server/repos';
+import { ehUuid } from '@/server/repos/ids';
 import { criarReserva } from '@/server/reservas/criar-reserva';
 import type { DependenciasCriarReserva, ReservaCriada, ResultadoCriarReserva } from '@/server/reservas/tipos';
 import { lerRotulosDaReserva, resolverSalaoPorSlug } from '@/server/repos/publico';
@@ -45,10 +52,23 @@ async function montarResumo(
   };
 }
 
+/** Pontos de injeção da proteção (só testes); em produção valem os módulos reais. */
+export type DependenciasProtecao = {
+  limitarPorIp?: typeof limitarPorIp;
+  limitarPorNumero?: typeof limitarPorNumero;
+  verificarHumano?: typeof verificarHumano;
+};
+
+/**
+ * Ordem (D-027 RN-7): slug/salão indisponível (antes de consumir cota) → IP → Turnstile → telefone →
+ * número (só se a chave de requisição ainda não gravou reserva) → transação (limite de futuras em
+ * `antesDaReserva`). Todo bloqueio acontece antes de qualquer escrita de cliente/reserva.
+ */
 export async function reservarPelaPagina(
   e: EntradaReservaPublica,
   agora: Date,
   deps: DependenciasCriarReserva = {},
+  protecao: DependenciasProtecao = {},
 ): Promise<ResultadoReservaPublica> {
   const generico: ResultadoReservaPublica = { resultado: 'invalido', erros: { servicos: MENSAGENS_RESERVA_PUBLICA.generico } };
   if (!slugPlausivel(e.slug)) return generico;
@@ -76,6 +96,31 @@ export async function reservarPelaPagina(
   const inicio = lerHorario(e.inicio);
   if (inicio === null) return { resultado: 'invalido', erros: { inicio: MENSAGENS_RESERVA.inicio } };
 
+  const limitado: ResultadoReservaPublica = { resultado: 'limitado', mensagem: MENSAGENS_PROTECAO.limitado };
+  const porIp = await (protecao.limitarPorIp ?? limitarPorIp)(e.ip, 'reserva', agora);
+  if (!porIp.permitido) {
+    registrar('limitado_ip', salaoId);
+    return limitado;
+  }
+  if (!(await (protecao.verificarHumano ?? verificarHumano)(e.tokenHumano, e.ip))) {
+    registrar('humano_recusado', salaoId);
+    return { resultado: 'recusado', mensagem: MENSAGENS_PROTECAO.humano };
+  }
+
+  const chave = typeof e.chaveRequisicao === 'string' && ehUuid(e.chaveRequisicao) ? e.chaveRequisicao.toLowerCase() : null;
+  const e164 = normalizarTelefoneBr(e.telefone);
+  if (e164 !== null) {
+    // A repetição da mesma requisição não consome cota do número (idempotência, D-027 §7).
+    const ja = chave === null ? null : await repos().reservas.buscarPorChave(contextoDeSistema(salaoId, 'reserva_publica'), chave);
+    if (ja === null) {
+      const porNumero = await (protecao.limitarPorNumero ?? limitarPorNumero)(salaoId, e164, agora);
+      if (!porNumero.permitido) {
+        registrar('limitado_numero', salaoId);
+        return limitado;
+      }
+    }
+  }
+
   const r: ResultadoCriarReserva = await criarReserva(
     contextoDeSistema(salaoId, 'reserva_publica'),
     {
@@ -88,7 +133,11 @@ export async function reservarPelaPagina(
       modo: 'normal',
       agora,
     },
-    { politica: () => decisao.disponivel ? { permitido: true } : { permitido: false, motivo: 'indisponivel' }, ...deps },
+    {
+      politica: () => decisao.disponivel ? { permitido: true } : { permitido: false, motivo: 'indisponivel' },
+      antesDaReserva: criarAntesDaReserva({ chave, agora }),
+      ...deps,
+    },
   );
   registrar(r.resultado, salaoId);
 

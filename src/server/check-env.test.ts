@@ -168,3 +168,12 @@ describe('descreverModos', () => {
     ).toBe('armazenamento=simulado, email=real, mp=simulado, turnstile=real, whatsapp=simulado');
   });
 });
+
+describe('D-027 CA-15', () => {
+  it('TRUSTED_PROXY_HOPS inválido: código 1 nomeando a variável, sem o valor', () => {
+    const r = executar({ TRUSTED_PROXY_HOPS: 'dois' });
+    expect(r.codigo).toBe(1);
+    expect(nomeadas(r.error[0])).toEqual(['TRUSTED_PROXY_HOPS']);
+    expect(r.tudo).not.toContain('dois');
+  });
+});

@@ -16,9 +16,9 @@ function falha(fila: string, dados: unknown): ErroPayloadInvalido {
 }
 
 describe('FILA e CONTRATOS (RN-8)', () => {
-  it('têm exatamente as 4 filas de produção, com nomes únicos', () => {
+  it('têm exatamente as 5 filas de produção, com nomes únicos', () => {
     const nomes = Object.values(FILA);
-    expect(nomes.sort()).toEqual(['assinatura-prazos', 'exemplo', 'reconciliar-mensagens', 'whatsapp-reserva']);
+    expect(nomes.sort()).toEqual(['assinatura-prazos', 'exemplo', 'limpar-rate-limit', 'reconciliar-mensagens', 'whatsapp-reserva']);
     expect(new Set(nomes).size).toBe(nomes.length);
     expect(Object.keys(CONTRATOS).sort()).toEqual(nomes.sort());
   });

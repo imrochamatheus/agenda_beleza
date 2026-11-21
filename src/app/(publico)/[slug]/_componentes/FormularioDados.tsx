@@ -7,11 +7,13 @@ import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
 import { formatarDataHora, formatarDuracao, formatarMoeda } from '@/lib/format';
+import type { DadosDoWidget } from '@/server/protecao/widget-tipos';
 import { MENSAGENS_RESERVA_PUBLICA } from '@/server/reserva-publica/tipos';
 
 import { estadoInicialReserva } from '../estado';
 import type { AcaoReservar } from '../estado';
 import estilos from './Salao.module.css';
+import { WidgetTurnstile } from './WidgetTurnstile';
 
 export type OcultosDaReserva = {
   slug: string;
@@ -32,9 +34,11 @@ export type OcultosDaReserva = {
 export function FormularioDados({
   acao,
   ocultos,
+  humano,
   children,
 }: {
   acao: AcaoReservar;
+  humano: DadosDoWidget;
   ocultos: OcultosDaReserva;
   /** Cabeçalho do passo (título, resumo, voltar): só aparece enquanto edita; a confirmação o substitui. */
   children?: ReactNode;
@@ -147,6 +151,7 @@ export function FormularioDados({
           erros={erros}
           valores={valores}
         />
+        <WidgetTurnstile dados={humano} />
         <div className={estilos.acoes}>
           <Button type="submit" ocupado={pendente} rotuloOcupado="Reservando…">
             Confirmar reserva

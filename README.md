@@ -422,9 +422,29 @@ Entrega da D-026 (E4.1). A cliente (sem conta) abre `/<slug>` no celular, vê o 
 - **Fluxo (cada passo é um GET; o último é uma Server Action):** serviços → profissional (ou "Sem preferência") → dia (14 por página) → horário → dados (nome, telefone e consentimento da D-023) → confirmação. O estado vive só na query string (`s` repetido na ordem da lista, `p`, `data`, `h`, `de`, `aviso`); parâmetro inválido volta ao passo anterior, nunca vira 500. Funciona sem JavaScript. Os horários vêm só de `consultarDisponibilidade` (fuso do salão); a UI não os calcula.
 - **Reserva:** `reservarPelaPagina` (`src/server/reserva-publica/servico.ts`) chama `criarReserva` com `modo: 'normal'` (nunca encaixe). `chaveRequisicao` é gerada no render do passo de dados e reenviada em campo oculto: o duplo envio devolve a mesma confirmação. Horário tomado, serviço ou profissional indisponíveis redirecionam para o passo com `?aviso=<código fechado>`; erros por campo ficam na resposta, com os valores digitados.
 - **"Agendamento indisponível":** `agendamentoDisponivel` (`src/server/reserva-publica/agendamento.ts`, função pura e gancho da E6.4) decide por suspensão manual (`salao.suspenso_manual_em`), assinatura (`pendente`, `suspensa`, `encerrada` e `cancelada` após `acesso_ate` bloqueiam; `em_teste`, `ativa` e `em_carencia` permitem; salão sem assinatura é disponível) e ausência de serviço ofertável. Nesse estado a página mostra perfil e fotos, o aviso e nenhum formulário, e a ação recusa antes de qualquer escrita.
-- **Pontos de extensão:** `deps.antesDaReserva` (E4.2: Turnstile e limites) e `deps.politica` (E6.4) de `criarReserva`; esta demanda não implementa nenhum dos dois.
+- **Pontos de extensão:** `deps.antesDaReserva` (usado pela proteção, ver a próxima seção) e `deps.politica` (E6.4) de `criarReserva`.
 - **Demonstração para o E2E:** `/dev/reserva` (`?vista=indisponivel` ou `?vista=vazio`), ligada pela `VITRINE_COMPONENTES=true`, com o mesmo componente, dados em memória e uma ação que só valida (404 com a variável desligada).
 - **Testes:** `tests/integration/reserva-publica/` (PostgreSQL real; `http.test.ts` sobe o `next start`, constrói o app se faltar `.next`, e prova o 308 com `fetch(redirect: 'manual')`). Fuso: `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/reserva-publica src/app/dev/reserva tests/integration/reserva-publica || break; done`. Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/reserva-publica/concorrencia.test.ts || break; done`.
+
+## Proteção da página pública
+
+Entrega da D-027 (E4.2). Sem migração. Módulo `src/server/protecao/` sobre `rate_limit_janela` (`incrementarJanela`, janela fixa em UTC). Ordem na reserva: salão indisponível (não consome cota) → limite por IP → Turnstile → limite por número → transação, com o limite de **3 reservas futuras confirmadas por número e salão** conferido em `antesDaReserva` (depois do upsert que trava a cliente: tentativas paralelas do mesmo número se serializam aí e a segunda enxerga a primeira; a requisição repetida, com a mesma chave, nunca é recusada nem consome o número).
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `TRUSTED_PROXY_HOPS` | `0` | 0 a 10. `0` ignora `X-Forwarded-For`; o App Router não expõe o IP do socket, então **todos caem no balde `desconhecido`** (limite global). Atrás de proxy/CDN, informe quantos (ex.: `1`): vale a N-ésima entrada de `X-Forwarded-For` contada da direita. Valor inválido falha no `check-env` |
+| `RATE_LIMIT_SEGREDO` | vazio | HMAC das chaves por número (mínimo 32 caracteres). **Obrigatório com `NODE_ENV=production`**; fora dela há um padrão de desenvolvimento. O compose local traz um valor próprio. Trocá-lo zera as contagens por número |
+| `PROTECAO_JANELA_SEGUNDOS` | `900` | janela fixa (60 a 86400); permite rajada de até 2x na virada |
+| `PROTECAO_LIMITE_IP_RESERVA` / `_DISPONIBILIDADE` / `_AVALIACAO` / `_DENUNCIA` | `10` / `60` / `5` / `5` | por IP e janela |
+| `PROTECAO_LIMITE_NUMERO` | `5` | tentativas de reserva por número e salão na janela |
+
+- **Chaves:** `pub:<escopo>:ip:<sha256(ip)>` e `pub:reserva:tel:<HMAC(RATE_LIMIT_SEGREDO, salaoId:E.164)>`; nunca IP nem telefone em claro. A chamada K+1 é negada.
+- **API reutilizável (E4.5, E8.4):** `limitarPorIp(ip, 'avaliacao' | 'denuncia', agora)` devolve `{ permitido: true }` ou `{ permitido: false, reiniciaEm }`; escopos não compartilham contador. O IP vem de `extrairIp(headers, hops)`.
+- **Sem 429 HTTP na página:** a página GET e a Server Action não fixam status; o limite aparece como aviso em pt-BR ("Muitas tentativas…") e, na consulta limitada, nenhum horário é calculado. O 429 real só caberia em route handler.
+- **Turnstile:** verificação no servidor pela porta, com falha fechada. Simulado: campo `cf-turnstile-response` com o token documentado (campo oculto, funciona sem JavaScript; na vitrine `/dev/reserva` há um seletor para token inválido ou ausente). Real: script oficial com `TURNSTILE_SITE_KEY`; **exige JavaScript**.
+- **Limpeza:** o worker apaga de hora em hora (UTC, minuto 17, fila `limpar-rate-limit`) as janelas anteriores a `agora - (maior janela + 1 h)`, em lotes de 1000; idempotente.
+- **Efeito colateral aceito:** mais de `PROTECAO_LIMITE_NUMERO` envios idênticos simultâneos do mesmo número, antes de qualquer commit, ficam limitados.
+- **Testes:** `tests/integration/protecao/`. Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/protecao/concorrencia.test.ts || break; done`. E2E: `npx playwright test e2e/protecao.spec.ts e2e/protecao-sem-js.spec.ts`.
 
 ## Interface e acessibilidade
 

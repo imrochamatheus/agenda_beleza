@@ -43,9 +43,26 @@ export const esquemaEnv = z.object({
   // Vitrine /dev/componentes (D-009 D-1). Só valida o formato (falha cedo com TRUE, 1, sim...);
   // a página lê a variável na requisição por `vitrineHabilitada`. Não entra no Env.
   VITRINE_COMPONENTES: z.enum(['true', 'false']).default('false'),
+  // Proteção da página pública (D-027). `RATE_LIMIT_SEGREDO` é obrigatório só em produção (validarEnv).
+  TRUSTED_PROXY_HOPS: inteiroEntre(0, 10).default(0),
+  RATE_LIMIT_SEGREDO: z.string().min(32).optional(),
+  PROTECAO_JANELA_SEGUNDOS: inteiroEntre(60, 86400).default(900),
+  PROTECAO_LIMITE_IP_RESERVA: inteiroEntre(1, 100000).default(10),
+  PROTECAO_LIMITE_IP_DISPONIBILIDADE: inteiroEntre(1, 100000).default(60),
+  PROTECAO_LIMITE_IP_AVALIACAO: inteiroEntre(1, 100000).default(5),
+  PROTECAO_LIMITE_IP_DENUNCIA: inteiroEntre(1, 100000).default(5),
+  PROTECAO_LIMITE_NUMERO: inteiroEntre(1, 100000).default(5),
 });
 
 export type ConfigIntegracao<C> = { modo: 'simulado' } | { modo: 'real'; config: C };
+
+export type ConfigProtecao = {
+  /** Entradas confiáveis do `X-Forwarded-For` contadas da direita; 0 ignora o cabeçalho. */
+  proxyHops: number;
+  janelaSegundos: number;
+  limiteIp: { reserva: number; disponibilidade: number; avaliacao: number; denuncia: number };
+  limiteNumero: number;
+};
 
 export type Env = {
   DATABASE_URL: string;
@@ -167,7 +184,11 @@ export function validarEnv(fonte: Record<string, string | undefined>): Env {
   const whatsapp = lerIntegracao(entrada, MODULOS.whatsapp, erros);
   const armazenamento = lerIntegracao(entrada, MODULOS.armazenamento, erros);
 
-  if (!base.success || !email || !turnstile || !mercadoPago || !whatsapp || !armazenamento) {
+  if (entrada.NODE_ENV === 'production' && entrada.RATE_LIMIT_SEGREDO === undefined) {
+    erros.push('RATE_LIMIT_SEGREDO');
+  }
+
+  if (erros.length > 0 || !base.success || !email || !turnstile || !mercadoPago || !whatsapp || !armazenamento) {
     throw new ErroDeAmbiente(erros);
   }
   return {
@@ -180,6 +201,50 @@ export function validarEnv(fonte: Record<string, string | undefined>): Env {
     },
     integracoes: { email, turnstile, mercadoPago, whatsapp, armazenamento },
   };
+}
+
+type DadosProtecao = Pick<
+  z.output<typeof esquemaEnv>,
+  | 'TRUSTED_PROXY_HOPS'
+  | 'PROTECAO_JANELA_SEGUNDOS'
+  | 'PROTECAO_LIMITE_IP_RESERVA'
+  | 'PROTECAO_LIMITE_IP_DISPONIBILIDADE'
+  | 'PROTECAO_LIMITE_IP_AVALIACAO'
+  | 'PROTECAO_LIMITE_IP_DENUNCIA'
+  | 'PROTECAO_LIMITE_NUMERO'
+>;
+
+function protecaoDe(d: DadosProtecao): ConfigProtecao {
+  return {
+    proxyHops: d.TRUSTED_PROXY_HOPS,
+    janelaSegundos: d.PROTECAO_JANELA_SEGUNDOS,
+    limiteIp: {
+      reserva: d.PROTECAO_LIMITE_IP_RESERVA,
+      disponibilidade: d.PROTECAO_LIMITE_IP_DISPONIBILIDADE,
+      avaliacao: d.PROTECAO_LIMITE_IP_AVALIACAO,
+      denuncia: d.PROTECAO_LIMITE_IP_DENUNCIA,
+    },
+    limiteNumero: d.PROTECAO_LIMITE_NUMERO,
+  };
+}
+
+/**
+ * Lê só a proteção da página pública (D-027), sem exigir DATABASE_URL nem os adaptadores: a página e o
+ * worker a chamam a cada uso. Valor inválido lança ErroDeAmbiente nomeando a variável.
+ */
+export function lerProtecao(fonte: Record<string, string | undefined>): ConfigProtecao {
+  const parcial = esquemaEnv.pick({
+    TRUSTED_PROXY_HOPS: true,
+    PROTECAO_JANELA_SEGUNDOS: true,
+    PROTECAO_LIMITE_IP_RESERVA: true,
+    PROTECAO_LIMITE_IP_DISPONIBILIDADE: true,
+    PROTECAO_LIMITE_IP_AVALIACAO: true,
+    PROTECAO_LIMITE_IP_DENUNCIA: true,
+    PROTECAO_LIMITE_NUMERO: true,
+  });
+  const r = parcial.safeParse(semVazias(fonte));
+  if (!r.success) throw new ErroDeAmbiente(r.error.issues.map((i) => String(i.path[0])));
+  return protecaoDe(r.data);
 }
 
 export type ModosAtivos = { armazenamento: Modo; email: Modo; mercadoPago: Modo; turnstile: Modo; whatsapp: Modo };

@@ -17,6 +17,7 @@ beforeEach(() => {
   vi.spyOn(console, 'info').mockImplementation(() => {});
 });
 afterAll(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -41,6 +42,9 @@ describe('CA-9: envios simultâneos', () => {
 
   it('o mesmo envio 10 vezes em paralelo (mesma chave): uma criada, as demais repetidas com a mesma confirmação', async () => {
     const c = await criarCenarioReserva();
+    // D-027: 10 envios idênticos antes de qualquer commit consomem 10 do contador do número (padrão 5);
+    // o limite sobe aqui para isolar a idempotência (o efeito do limite é coberto em tests/integration/protecao).
+    vi.stubEnv('PROTECAO_LIMITE_NUMERO', '1000');
     const e = entradaPublica(c);
     const resultados = await Promise.all(Array.from({ length: 10 }, () => reservar(e)));
     expect(resultados.every((r) => r.resultado === 'confirmada')).toBe(true);

@@ -30,6 +30,16 @@ export interface RepoReserva {
   criar(ctx: ContextoEscopado, d: NovaReserva): Promise<{ criada: true; id: string } | { criada: false }>;
   /** Um `createMany` (um comando) com os itens e o snapshot de preço e duração. */
   criarItens(ctx: ContextoEscopado, reservaId: string, itens: readonly NovoItemDeReserva[]): Promise<void>;
+  /**
+   * D-027 (E4.2): quantas reservas `confirmado` com `inicio > agora` a cliente tem neste salão,
+   * ignorando a de `ignorarChave` (a mesma requisição). O literal 'confirmado' fica no texto: é ele que
+   * habilita o índice parcial `reserva_cliente_confirmada_idx` (parecer do DBA). Cliente de outro
+   * salão ou inexistente → 0.
+   */
+  contarFuturasDaCliente(
+    ctx: ContextoEscopado,
+    d: { clienteId: string; agora: Date; ignorarChave: string | null },
+  ): Promise<number>;
   /** Reserva do salão com a chave (índice UNIQUE); chave não UUID → null sem consultar. */
   buscarPorChave(ctx: ContextoEscopado, chave: string): Promise<ReservaDTO | null>;
   /** Reserva com itens (snapshot de preço e duração), por ordem. */
@@ -158,6 +168,17 @@ export function criarRepoReserva(db: Executor): RepoReserva {
         ON CONFLICT (salao_id, chave_requisicao) DO NOTHING
         RETURNING id::text AS id`;
       return linhas[0] ? { criada: true, id: linhas[0].id } : { criada: false };
+    },
+
+    async contarFuturasDaCliente(ctx, { clienteId, agora, ignorarChave }) {
+      const salaoId = exigirEscopo(ctx);
+      if (!ehUuid(clienteId)) return 0;
+      const [linha] = await db.$queryRaw<{ total: bigint }[]>`
+        SELECT count(*) AS total FROM reserva
+         WHERE salao_id = ${salaoId}::uuid AND cliente_id = ${clienteId}::uuid
+           AND status = 'confirmado' AND inicio > ${agora}::timestamptz
+           AND (${ignorarChave}::text IS NULL OR chave_requisicao IS DISTINCT FROM ${ignorarChave}::text)`;
+      return Number(linha.total);
     },
 
     async criarItens(ctx, reservaId, itens) {

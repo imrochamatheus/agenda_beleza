@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { TOKEN_TURNSTILE_SIMULADO } from '@/server/integrations/turnstile/port';
 import { obterPrisma } from '@/server/repos/db';
 import type { EntradaReservaPublica } from '@/server/reserva-publica/tipos';
 
@@ -21,6 +22,13 @@ export async function definirAssinatura(salaoId: string, estado: EstadoDaAssinat
   await obterPrisma().assinatura.create({ data: { salaoId, estado, acessoAte } });
 }
 
+let contadorDeIp = 0;
+/** IP de documentação distinto a cada chamada (sem colisão dentro do processo). */
+export function ipNovo(): string {
+  contadorDeIp += 1;
+  return `198.51.${Math.floor(contadorDeIp / 250) % 250}.${(contadorDeIp % 250) + 1}`;
+}
+
 /** Entrada válida padrão da página: serviço A com a Ana, terça 10:00 local, aceite do consentimento. */
 export function entradaPublica(c: CenarioReserva, sobre: Partial<EntradaReservaPublica> = {}): EntradaReservaPublica {
   return {
@@ -32,6 +40,9 @@ export function entradaPublica(c: CenarioReserva, sobre: Partial<EntradaReservaP
     telefone: telefoneNovo(),
     aceites: { mensagensReserva: true, conviteAvaliacao: false },
     chaveRequisicao: randomUUID(),
+    // IP novo por entrada: os limites por IP não vazam entre os casos (D-027).
+    ip: ipNovo(),
+    tokenHumano: TOKEN_TURNSTILE_SIMULADO,
     ...sobre,
   };
 }

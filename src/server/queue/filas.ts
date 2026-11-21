@@ -12,6 +12,7 @@ export const FILA = {
   assinaturaPrazos: 'assinatura-prazos',
   whatsappReserva: 'whatsapp-reserva',
   reconciliarMensagens: 'reconciliar-mensagens',
+  limparRateLimit: 'limpar-rate-limit',
 } as const;
 
 export type NomeFila = (typeof FILA)[keyof typeof FILA];
@@ -44,6 +45,8 @@ export const CONTRATOS = {
     payload: z.strictObject({ mensagemId: z.uuid() }),
   },
   'reconciliar-mensagens': { politica: 'exclusive', chave: 'opcional', payload: z.strictObject({}) },
+  // D-027: limpeza horária das janelas expiradas de `rate_limit_janela`.
+  'limpar-rate-limit': { politica: 'exclusive', chave: 'opcional', payload: z.strictObject({}) },
 } as const satisfies Record<NomeFila, ContratoFila>;
 
 export type PayloadDe<F extends NomeFila> = z.infer<(typeof CONTRATOS)[F]['payload']>;

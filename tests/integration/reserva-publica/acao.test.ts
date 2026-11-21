@@ -11,14 +11,27 @@ import { AGORA, DIA, criarCenarioReserva, sp } from '../../support/reserva-publi
 import type { CenarioReserva } from '../../support/reserva-publica';
 import { telefoneNovo } from '../../support/sql';
 
+
+// D-027: a ação e a página leem o IP em `headers()`; fora de uma requisição o Next lança. O IP vem de
+// `x-forwarded-for` (TRUSTED_PROXY_HOPS=1) e muda a cada leitura, para os limites não vazarem entre casos.
+const { proximoIp } = vi.hoisted(() => {
+  let n = 0;
+  return { proximoIp: () => `192.0.2.${(++n % 250) + 1}` };
+});
+vi.mock('next/headers', () => ({
+  headers: async () => new Headers({ 'x-forwarded-for': proximoIp() }),
+}));
+
 // D-026 T-3: a casca 'use server' (FormData → serviço → estado ou redirecionamento 303) contra o PostgreSQL
 // real. O relógio da casca (new Date()) é fixado em AGORA só no `Date`, sem tocar nos temporizadores do driver.
 
 beforeEach(() => {
   vi.spyOn(console, 'info').mockImplementation(() => {});
   vi.useFakeTimers({ toFake: ['Date'], now: AGORA });
+  vi.stubEnv('TRUSTED_PROXY_HOPS', '1');
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.useRealTimers();
 });
 afterAll(() => {
@@ -38,6 +51,7 @@ function formulario(c: CenarioReserva, sobre: Record<string, string> = {}, slug 
     nome: 'Maria da Silva',
     telefone: telefoneNovo(),
     consentimento_mensagens: 'on',
+    'cf-turnstile-response': 'XXXX.DUMMY.TOKEN.XXXX',
     ...sobre,
   };
   for (const [k, v] of Object.entries(campos)) f.append(k, v);
@@ -101,5 +115,34 @@ describe('reservarAcao', () => {
     const d = await digest(reservarAcao(estadoInicialReserva(CHAVE), formulario(c, {}, c.s.slugHistorico)));
     expect(d).toContain(`/${c.s.slugAtual}?s=${c.A}&p=qualquer&data=2026-12-01&h=`);
     expect(await contarLinhas(c.s.salaoId)).toEqual(antes);
+  });
+});
+
+describe('reservarAcao: proteção (D-027 CA-5, CA-13)', () => {
+  it('sem token humano: estado editando com a mensagem, nada gravado', async () => {
+    const c = await criarCenarioReserva();
+    const antes = await contarLinhas(c.s.salaoId);
+    const f = formulario(c, { 'cf-turnstile-response': '' });
+    const e = await reservarAcao(estadoInicialReserva(CHAVE), f);
+    expect(e).toMatchObject({
+      status: 'editando',
+      mensagem: 'Não foi possível confirmar que você é uma pessoa. Tente novamente.',
+      valores: { nome: 'Maria da Silva' },
+    });
+    expect(await contarLinhas(c.s.salaoId)).toEqual(antes);
+  });
+
+  it('com TRUSTED_PROXY_HOPS=0 o IP é "desconhecido" e o balde é único; excedido, mensagem de limite', async () => {
+    vi.stubEnv('TRUSTED_PROXY_HOPS', '0');
+    vi.stubEnv('PROTECAO_LIMITE_IP_RESERVA', '2');
+    const c = await criarCenarioReserva();
+    const r = [];
+    for (let i = 0; i < 4; i++) r.push(await reservarAcao(estadoInicialReserva(CHAVE), formulario(c, { 'cf-turnstile-response': '' })));
+    expect(r.map((x) => x.mensagem)).toEqual([
+      'Não foi possível confirmar que você é uma pessoa. Tente novamente.',
+      'Não foi possível confirmar que você é uma pessoa. Tente novamente.',
+      'Muitas tentativas. Aguarde alguns minutos e tente novamente.',
+      'Muitas tentativas. Aguarde alguns minutos e tente novamente.',
+    ]);
   });
 });

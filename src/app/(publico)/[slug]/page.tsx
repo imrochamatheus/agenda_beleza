@@ -1,9 +1,13 @@
 import { cache } from 'react';
+import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
 
 import { ROTAS } from '@/config/navegacao';
-import { carregarPasso, carregarSalao, lerRegrasDaPagina } from '@/server/reserva-publica/pagina';
+import { carregarPassoComLimite, carregarSalao, lerRegrasDaPagina } from '@/server/reserva-publica/pagina';
+import { configDaProtecao } from '@/server/protecao/config';
+import { extrairIp } from '@/server/protecao/ip';
+import { widgetHumano } from '@/server/protecao/widget';
 import { lerPasso, slugPlausivel } from '@/server/reserva-publica/passos';
 import type { ParametrosBrutos } from '@/server/reserva-publica/passos';
 import type { VisaoDoPasso } from '@/server/reserva-publica/tipos';
@@ -64,7 +68,12 @@ export default async function PaginaPublicaDoSalao({ params, searchParams }: Pro
   const base = ROTAS.salaoPublico(resolucao.slugAtual);
   const passo = lerPasso(consulta, regras);
   const visao: VisaoDoPasso = salao.decisao.disponivel
-    ? await carregarPasso(ctx, passo, { servicos: salao.servicos, regras, agora })
+    ? await carregarPassoComLimite(ctx, passo, {
+        servicos: salao.servicos,
+        regras,
+        agora,
+        ip: extrairIp(await headers(), configDaProtecao().proxyHops),
+      })
     : { passo: 'servicos', aviso: null };
 
   return (
@@ -78,6 +87,7 @@ export default async function PaginaPublicaDoSalao({ params, searchParams }: Pro
       decisao={salao.decisao}
       visao={visao}
       chave={crypto.randomUUID()}
+      humano={widgetHumano()}
       acao={reservarAcao}
     />
   );

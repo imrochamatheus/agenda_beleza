@@ -12,7 +12,7 @@ const texto = (v: FormDataEntryValue | null): string => (typeof v === 'string' ?
 const LIMITE_NOME = 100;
 const LIMITE_TELEFONE = 30;
 
-export function lerFormulario(fd: FormData): { entrada: EntradaReservaPublica; valores: EstadoReserva['valores'] } {
+export function lerFormulario(fd: FormData, ip: string): { entrada: EntradaReservaPublica; valores: EstadoReserva['valores'] } {
   const nome = texto(fd.get('nome'));
   const telefone = texto(fd.get('telefone'));
   return {
@@ -25,6 +25,8 @@ export function lerFormulario(fd: FormData): { entrada: EntradaReservaPublica; v
       telefone,
       aceites: lerConsentimentoDoFormulario(fd),
       chaveRequisicao: texto(fd.get('chave')),
+      ip,
+      tokenHumano: texto(fd.get('cf-turnstile-response')).slice(0, 2100) || null,
     },
     // Eco cortado nos tetos: não devolve entradas enormes.
     valores: { ...valoresDoFormulario(fd), nome: nome.slice(0, LIMITE_NOME), telefone: telefone.slice(0, LIMITE_TELEFONE) },
@@ -74,6 +76,7 @@ export function paraEstado(r: ResultadoReservaPublica, valores: EstadoReserva['v
       return { ...base, erros: campos, mensagem: geral ?? (Object.keys(campos).length === 0 ? MENSAGENS_RESERVA_PUBLICA.generico : null) };
     }
     case 'recusado':
+    case 'limitado':
       return { ...base, mensagem: r.mensagem };
     default:
       // `voltar` e `slug_mudou` redirecionam; chegar aqui é erro de programação.

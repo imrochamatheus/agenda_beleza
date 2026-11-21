@@ -20,6 +20,7 @@ function fd(sobre: Record<string, string> = {}): FormData {
     nome: 'Maria',
     telefone: '(11) 98765-4321',
     consentimento_mensagens: 'on',
+    'cf-turnstile-response': 'XXXX.DUMMY.TOKEN.XXXX',
     ...sobre,
   };
   for (const [k, v] of Object.entries(campos)) f.append(k, v);
@@ -44,5 +45,16 @@ describe('demonstrarReservaAcao', () => {
     expect(erro.status).toBe('editando');
     expect(Object.keys(erro.erros).sort()).toEqual(['mensagensReserva', 'nome', 'telefone']);
     expect(erro.valores).toMatchObject({ nome: 'M', telefone: '1' });
+  });
+
+  it('Turnstile: token inválido ou ausente recusa sem confirmar (CA-5, CA-10)', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    const anterior = estadoInicialReserva(CHAVE);
+    for (const token of ['TOKEN.INVALIDO.DE.TESTE', '']) {
+      const r = await demonstrarReservaAcao(anterior, fd({ 'cf-turnstile-response': token }));
+      expect(r.status).toBe('editando');
+      expect(r.mensagem).toBe('Não foi possível confirmar que você é uma pessoa. Tente novamente.');
+      expect(r.valores.nome).toBe('Maria');
+    }
   });
 });

@@ -25,3 +25,21 @@ export async function decrementarJanela(chave: string, janelaInicio: Date): Prom
        SET contador = GREATEST(contador - 1, 0)
      WHERE chave = ${chave}::text AND janela_inicio = ${janelaInicio}::timestamptz`;
 }
+
+/**
+ * Apaga até `lote` linhas com `janela_inicio < corte` (índice `rate_limit_janela_janela_inicio_idx`).
+ * `SKIP LOCKED` evita esperar linhas travadas; janelas vigentes nunca entram (corte injetado, UTC).
+ * Devolve quantas apagou (D-027, parecer do DBA).
+ */
+export async function removerExpiradas(corte: Date, lote: number): Promise<number> {
+  if (!Number.isInteger(lote) || lote < 1) throw new RangeError('lote inválido');
+  return obterPrisma().$executeRaw`
+    WITH l AS (
+      SELECT chave, janela_inicio FROM rate_limit_janela
+       WHERE janela_inicio < ${corte}::timestamptz
+       ORDER BY janela_inicio
+       LIMIT ${lote}::int
+       FOR UPDATE SKIP LOCKED)
+    DELETE FROM rate_limit_janela r USING l
+     WHERE r.chave = l.chave AND r.janela_inicio = l.janela_inicio`;
+}
