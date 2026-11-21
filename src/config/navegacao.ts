@@ -21,6 +21,7 @@ export const ROTAS = {
   painel: '/painel',
   agenda: '/painel/agenda',
   novaReserva: '/painel/agenda/nova',
+  agendaReserva: (id: string) => `/painel/agenda/reservas/${seg(id)}`,
   clientes: '/painel/clientes',
   cliente: (id: string) => `/painel/clientes/${seg(id)}`,
   servicos: '/painel/servicos',
@@ -61,6 +62,7 @@ export const ROTAS = {
   devFotos: '/dev/fotos',
   devFotosEnvio: '/dev/fotos/enviar',
   devReserva: '/dev/reserva',
+  devAgenda: '/dev/agenda',
 } as const;
 
 export type ItemNavegacao = {

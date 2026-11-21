@@ -233,6 +233,16 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **E2E:** `npx playwright test e2e/clientes.spec.ts e2e/clientes-sem-js.spec.ts` (build prévio e porta 3000 livre).
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/clientes/concorrencia.test.ts || break; done`.
 
+## Agenda da equipe
+
+- **Onde:** `/painel/agenda` (dia e semana) e `/painel/agenda/reservas/<id>` (detalhe), para o **gestor** (todos os profissionais, ativos e inativos, com filtro) e o **profissional** (só a própria agenda). Tudo é somente leitura e por links `GET` (`?data=AAAA-MM-DD&visao=dia|semana&profissional=<id>`): funciona sem JavaScript. Não há ação, migração nem variável de ambiente nova.
+- **O que mostra:** reservas de todos os status (com o rótulo em texto, a cancelada também tracejada), bloqueios próprios e do salão inteiro (com o motivo), e faixas de fundo "Fora do funcionamento" e "Fora da jornada". A semana começa no domingo e é uma lista empilhada por dia (sem grade horizontal no celular). No máximo 200 reservas por período, com aviso.
+- **Regras:** horários no fuso do salão; reserva que cruza a meia-noite aparece nos dois dias; `data` ou `visao` inválidos caem no padrão (hoje, dia); `profissional` inválido ou de outro salão responde 404, e para o profissional o parâmetro é ignorado; reserva de outro profissional ou de outro salão no detalhe responde 404. A grade nunca mostra telefone (só o detalhe, conforme `cliente.contato`); cliente anonimizada aparece como "cliente removida". A agenda abre mesmo com o salão suspenso.
+- **Demonstração para o E2E:** `/dev/agenda` (`?visao=semana`, `?profissional=demo-ana`, `?reserva=demo-r1`), ligada pela `VITRINE_COMPONENTES=true`, com os mesmos componentes e dados em memória relativos a hoje (404 com a variável desligada).
+- **E2E:** `npx playwright test e2e/agenda.spec.ts e2e/agenda-sem-js.spec.ts` (build prévio e porta 3000 livre; 375×812, axe 4.14.0, teclado e sem JavaScript).
+- **Fuso:** `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/agenda src/app/painel/agenda tests/integration/agenda/fuso.test.ts || break; done`.
+- **Plano e volume (D-028):** `npx vitest run --project integration tests/integration/agenda/repo.test.ts --silent=false` imprime o `EXPLAIN` da listagem com 60.000 reservas (Index Scan em `reserva_salao_id_profissional_id_inicio_idx`, sem Seq Scan em `reserva`) e `tests/integration/agenda/consultar.test.ts` confere 6 instruções SQL por consulta, qualquer que seja o volume.
+
 ## Termos, Privacidade e consentimento
 
 - **Páginas:** `/termos` e `/privacidade` (públicas, estáticas, sem JavaScript nem banco). Cada uma mostra a versão, a data de vigência e um aviso destacado de que o **texto é provisório**: são textos próprios, ainda sem revisão jurídica, que precisam ser revisados antes de produção. A Privacidade tem a seção `#avaliacoes` (dados publicados, retirada, denúncia e pedido de anonimização).
