@@ -6,6 +6,7 @@ import { CaixasConsentimento } from '@/components/consentimento/CaixasConsentime
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
+import { SlotGrid } from '@/components/ui/SlotGrid';
 import { formatarDataHora, formatarDuracao, formatarMoeda } from '@/lib/format';
 import type { DadosDoWidget } from '@/server/protecao/widget-tipos';
 import { MENSAGENS_RESERVA_PUBLICA } from '@/server/reserva-publica/tipos';
@@ -14,6 +15,7 @@ import { estadoInicialReserva } from '../estado';
 import type { AcaoReservar } from '../estado';
 import estilos from './Salao.module.css';
 import { WidgetTurnstile } from './WidgetTurnstile';
+import { rotuloDoDia } from './Passos';
 
 export type OcultosDaReserva = {
   slug: string;
@@ -36,12 +38,22 @@ export function FormularioDados({
   ocultos,
   humano,
   children,
+  cabecalhoReescolha,
+  alternativa,
 }: {
   acao: AcaoReservar;
   humano: DadosDoWidget;
   ocultos: OcultosDaReserva;
   /** Cabeçalho do passo (título, resumo, voltar): só aparece enquanto edita; a confirmação o substitui. */
   children?: ReactNode;
+  /** Resumo da escolha (sem horário) mostrado quando o horário foi tomado e a cliente reescolhe (D-036 DEF-1). */
+  cabecalhoReescolha?: ReactNode;
+  /**
+   * Passo "horário" que a página mostra quando o horário escolhido sumiu (aviso `horario_indisponivel`): sem
+   * JavaScript o POST do conflito volta à página neste passo, e o estado da ação (reescolha, com os dados
+   * digitados) assume; sem estado de reescolha (GET), vale esta alternativa.
+   */
+  alternativa?: ReactNode;
 }) {
   const [estado, enviar, pendente] = useActionState(
     acao,
@@ -103,10 +115,19 @@ export function FormularioDados({
     );
   }
 
+  if (alternativa && !estado.reescolha) return <>{alternativa}</>;
   const { erros, valores } = estado;
+  const reescolha = estado.reescolha ?? null;
   return (
     <section className={estilos.reserva} aria-labelledby="reservar">
-      {children}
+      {reescolha ? (
+        <>
+          <h2 id="reservar">Escolha o horário</h2>
+          {cabecalhoReescolha}
+        </>
+      ) : (
+        children
+      )}
       <form action={enviar} className={estilos.formulario} noValidate>
         <input type="hidden" name="slug" value={ocultos.slug} />
         {ocultos.s.map((id) => (
@@ -119,12 +140,24 @@ export function FormularioDados({
           name="profissionalId"
           value={ocultos.profissionalId}
         />
-        <input type="hidden" name="inicio" value={ocultos.inicio} />
+        {reescolha ? (
+          <input type="hidden" name="reescolha" value="1" />
+        ) : (
+          <input type="hidden" name="inicio" value={ocultos.inicio} />
+        )}
         <input type="hidden" name="chave" value={estado.chave} />
         {estado.mensagem ? (
           <div ref={foco} tabIndex={-1}>
             <Alert variante="erro">{estado.mensagem}</Alert>
           </div>
+        ) : null}
+        {reescolha ? (
+          <SlotGrid
+            instantes={reescolha.horarios.map((h) => new Date(h))}
+            fuso={reescolha.fuso}
+            rotuloGrupo={`Horários de ${rotuloDoDia(ocultos.data)}`}
+            name="inicio"
+          />
         ) : null}
         <Field
           rotulo="Nome"

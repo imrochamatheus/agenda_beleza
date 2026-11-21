@@ -34,8 +34,17 @@ export function lerFormulario(fd: FormData, ip: string): { entrada: EntradaReser
 }
 
 /** Destino do redirecionamento (303) de `voltar` e `slug_mudou`; null quando o resultado fica na resposta. */
+/** Seleção do fluxo (serviços, profissional e dia) a partir dos campos ocultos do formulário de dados. */
+export function lerSelecaoDoFormulario(fd: FormData): { s: string[]; p: string; data: string } | null {
+  const s = lerServicoIds(fd.getAll('s').filter((x): x is string => typeof x === 'string'));
+  const p = lerProfissional(texto(fd.get('p')));
+  const data = /^\d{4}-\d{2}-\d{2}$/.test(texto(fd.get('data'))) ? texto(fd.get('data')) : null;
+  return s && p && data ? { s, p, data } : null;
+}
+
 export function destinoDoRedirecionamento(fd: FormData, r: ResultadoReservaPublica): string | null {
   if (r.resultado !== 'voltar' && r.resultado !== 'slug_mudou') return null;
+  // `voltar` ao horário é resolvido na resposta da ação (reescolha), sem redirecionar; só chega aqui se a seleção sumiu.
   const slug = r.resultado === 'slug_mudou' ? r.slugAtual : texto(fd.get('slug'));
   const base = slugPlausivel(slug) ? ROTAS.salaoPublico(slug) : ROTAS.inicio;
   const s = lerServicoIds(fd.getAll('s').filter((x): x is string => typeof x === 'string'));

@@ -1,6 +1,6 @@
 import { PublicLayout } from '@/components/layout/PublicLayout';
 import { Alert } from '@/components/ui/Alert';
-import { montarHref } from '@/server/reserva-publica/passos';
+import { montarHref, QUALQUER } from '@/server/reserva-publica/passos';
 import { MENSAGENS_RESERVA_PUBLICA } from '@/server/reserva-publica/tipos';
 import type { DecisaoAgendamento } from '@/server/reserva-publica/agendamento';
 import type { VisaoDoPasso } from '@/server/reserva-publica/tipos';
@@ -74,12 +74,25 @@ function PassoAtual({ props }: { props: PaginaDoSalaoProps }) {
     case "data":
       return <PassoData base={base} visao={visao} />;
     case "horario":
+      // Horário tomado: sem JavaScript o POST volta aqui; o formulário assume com o estado da ação (DEF-1).
+      if (visao.aviso === 'horario_indisponivel') {
+        return (
+          <FormularioDados
+            acao={props.acao}
+            humano={props.humano}
+            alternativa={<PassoHorario base={base} visao={visao} />}
+            cabecalhoReescolha={<ResumoDaSelecao selecao={visao.selecao} />}
+            ocultos={{ slug: props.slug, s: visao.s, p: visao.p, data: visao.data, profissionalId: '', inicio: '', chave: props.chave }}
+          />
+        );
+      }
       return <PassoHorario base={base} visao={visao} />;
     case "dados":
       return (
         <FormularioDados
           acao={props.acao}
           humano={props.humano}
+          cabecalhoReescolha={<ResumoDaSelecao selecao={visao.selecao} profissional={visao.p === QUALQUER ? undefined : visao.profissional.nome} />}
           ocultos={{
             slug: props.slug,
             s: visao.s,

@@ -54,7 +54,7 @@ npm ci
 npm run db:generate
 npm test                       # unidade + integração
 npm run test:coverage          # o mesmo, com o gate de 90% de linhas (relatório em coverage/)
-npm run test:e2e               # build + Playwright (viewport de celular); libere a porta 3000 antes
+npm run test:e2e               # build + base `_e2e` com seed + Playwright (viewport de celular); libere a porta 3000 antes
 npx playwright test e2e/a11y-base.spec.ts  # só o E2E de acessibilidade (exige build prévio)
 npx playwright test e2e/entrar.spec.ts     # só o E2E de /entrar e do proxy (exige build prévio; sem banco)
 npx playwright test e2e/recuperar-senha.spec.ts  # só o E2E da recuperação de senha (exige build prévio; sem banco)
@@ -66,6 +66,7 @@ npx playwright test e2e/reserva-publica.spec.ts e2e/reserva-publica-sem-js.spec.
 - **Volume antigo sem a base de testes** (criado antes do script de initdb): `docker compose exec postgres createdb -U agenda agenda_beleza_test`.
 - **Volume parcialmente inicializado:** se o `TEST_DATABASE_URL` tiver um nome de base inválido (fora de `[a-z0-9_]`, com mais de 63 caracteres (o harness de testes exige até 46), igual a `POSTGRES_DB` ou a `postgres`, `template0` ou `template1`), a primeira subida do `postgres` falha com `exited (1)`, e o log diz o motivo. Nos `up` seguintes, o initdb não roda de novo, e o banco sobe **sem** a base de testes. Corrija a variável e rode `docker compose down -v` antes de subir de novo (ou crie a base com o `createdb` acima).
 - Navegador do E2E (uma vez por máquina): `npx playwright install chromium`.
+- **E2E com banco (D-036):** `npm run test:e2e` faz `next build` e `build:node`, roda `node dist/e2e/preparar-banco.js` (recria a base descartável `<TEST_DATABASE_URL>_e2e`, aplica as migrações, roda o seed e um complemento só do E2E: oito salões de reserva isolados e um salão suspenso; fotos em `.armazenamento-e2e/`) e então o Playwright, com `retries: 0` e `reuseExistingServer: false`. Precisa de `TEST_DATABASE_URL` (ou `E2E_DATABASE_URL`) e do PostgreSQL no ar (`docker compose up -d postgres`). **`npx playwright test` isolado exige a base já preparada**: rode antes `npm run build:node && node --env-file-if-exists=.env dist/e2e/preparar-banco.js` (e `npm run build`). Os specs `e2e/publico-*.spec.ts` percorrem a página pública real (`/studio-aurora`, `/e2e-reservas-N`, `/e2e-suspenso`); os demais continuam em `/dev/*`.
 
 ### Banco de teste: template por execução e uma base por worker
 
@@ -104,6 +105,32 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
   4. O teste `tests/integration/db/drift.test.ts` confere que o Prisma não acusa drift e que cada objeto de SQL bruto existe no catálogo pelo nome.
 - Outros gates: `npm run lint`, `npm run typecheck`, `npm run build`.
 
+## Seed de demonstração (E9.2)
+
+Dois salões fictícios completos, para conhecer o sistema sem cadastrar nada. **Nunca use em produção:** as credenciais abaixo são públicas e o CLI recusa `NODE_ENV=production` sem `SEED_PERMITIR_PRODUCAO=true`.
+
+```bash
+npm run db:seed                                   # build:node + node dist/prisma/seed.js (usa DATABASE_URL; a base precisa estar migrada)
+docker compose exec -e SEED_PERMITIR_PRODUCAO=true app node dist/prisma/seed.js  # no Docker, com a stack no ar
+```
+
+No container a app roda com `NODE_ENV=production`, por isso o comando acima passa a flag `SEED_PERMITIR_PRODUCAO=true` (só no compose local de demonstração; **nunca** em um ambiente real). Sem a flag o seed recusa e não grava nada.
+
+- **Idempotente:** ids fixos e `INSERT … ON CONFLICT DO NOTHING`; um salão já existente é pulado por inteiro e nada é apagado nem alterado. Reservas, bloqueios e avaliações usam datas relativas à **primeira** execução (em demonstração longa a agenda futura pode esgotar: use uma base nova).
+- **Salão A, Studio Aurora** (`/studio-aurora`, `America/Sao_Paulo`, assinatura em teste): gestora que também atende, um profissional com login e uma terceira profissional; 5 serviços com vínculos parciais; jornadas com pausa; funcionamento semanal; bloqueios; clientes fictícias (uma anonimizada); reservas passadas e futuras em todos os status; 3 fotos e 3 avaliações publicadas.
+- **Salão B, Ateliê Bromélia** (`/atelie-bromelia`, `America/Manaus`, grade de 30 min, assinatura ativa): o gestor não atende; 3 serviços, 2 profissionais, 2 fotos e 3 avaliações.
+- **Fotos:** geradas por código (gradientes nas cores do tema, convertidas em WebP pelo mesmo processamento do envio) e gravadas pelo adaptador de armazenamento; nenhuma imagem de terceiros.
+- **Super admin:** `SUPERADMIN_EMAIL`/`SUPERADMIN_PASSWORD` do ambiente, ou o par de demonstração. O seed **não** cadastra o TOTP: o primeiro login em `/admin/entrar` faz o cadastro.
+
+| Quem | E-mail | Senha |
+|---|---|---|
+| Gestora do salão A | `helena@aurora.example` | `Demo@12345` |
+| Profissional do salão A | `marcos@aurora.example` | `Demo@12345` |
+| Gestor do salão B | `rafael@bromelia.example` | `Demo@12345` |
+| Super admin (se o ambiente não definir outro) | `admin@agendabeleza.example` | `Admin@Demo12345` |
+
+Os e-mails usam o domínio reservado `.example`; nenhum telefone ou pessoa é real. Os testes de integração do seed estão em `tests/integration/seed/`.
+
 ## Entrar no painel (login e sessão)
 
 - **Fluxo:** a equipe (gestor e profissional) entra em `/entrar` com e-mail e senha e vai para `/painel` (ou para o caminho de `?proximo=`, aceito só se for `/painel` ou estiver abaixo dele). "Sair", no cabeçalho do painel, é um formulário POST (ação de servidor) que revoga a sessão, apaga o cookie e volta para `/entrar`. O super admin **não** entra por `/entrar` (recebe a mensagem genérica); o login dele, com TOTP, é `/admin/entrar` (E1.5).
@@ -111,7 +138,7 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **Sessão:** guardada na tabela `sessao` (só o SHA-256 do token; o token vai no cookie `ab_sessao`, `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age` de 30 dias). Ela expira após **7 dias sem uso**, é renovada no uso (no máximo uma escrita por hora) e tem **teto de 30 dias** desde o login. Logout, `revogarSessoesDoUsuario` (redefinição de senha, desativação) e profissional desativado invalidam a sessão no servidor.
 - **Limite de tentativas:** 10 falhas por e-mail numa janela fixa de 15 minutos (tabela `rate_limit_janela`, chave com o SHA-256 do e-mail). A 11ª tentativa recebe "Muitas tentativas. Aguarde alguns minutos e tente de novo.", mesmo com a senha certa ou com e-mail inexistente. Sucesso não conta como falha.
 - **`Secure` só em produção:** o cookie sai com `Secure` quando `NODE_ENV=production` (inclusive `next start` e a imagem Docker). Chromium e Firefox aceitam cookie `Secure` em `http://localhost` e `http://127.0.0.1`; o **Safari não**. Para entrar pelo Safari sem HTTPS, use `npm run dev`.
-- **Usuário de exemplo:** ainda não há seed (E9.2). Crie um gestor pelo cadastro (seção seguinte). Os testes criam usuários pelas fábricas (`tests/support/factories.ts`, senha `SENHA_DE_TESTE`) e fazem login real por `entrarDeVerdade` (`tests/support/auth.ts`).
+- **Usuário de exemplo:** rode o seed de demonstração (seção "Seed de demonstração", logo abaixo) e entre com as credenciais de lá, ou crie um gestor pelo cadastro (seção seguinte). Os testes criam usuários pelas fábricas (`tests/support/factories.ts`, senha `SENHA_DE_TESTE`) e fazem login real por `entrarDeVerdade` (`tests/support/auth.ts`).
 - **Atrás de proxy reverso:** as ações de servidor do Next recusam POST cujo `Origin` não bate com o `Host`. Se a implantação reescrever o `Host`, configure `experimental.serverActions.allowedOrigins` no `next.config.ts` (ajuste de implantação, E9.x).
 - **Permissões:** a matriz por papel fica em `src/server/auth/permissoes.ts` (`pode`, `exigirPermissao`, `filtroDeProfissional`). Páginas do painel usam `exigirAcessoAoPainel(caminho)` (`src/server/auth/pagina.ts`): sem sessão, redireciona para `/entrar?proximo=…`; sessão sem permissão mostra "Acesso negado". O `src/proxy.ts` só confere a presença do cookie em `/painel/**` (não autoriza nada).
 - **Nenhuma credencial externa nova:** o hash de senha usa `@node-rs/argon2` (binário pré-compilado, sem script de instalação).
@@ -629,7 +656,7 @@ O workflow `CI` (`.github/workflows/ci.yml`, GitHub Actions) roda em todo pull r
 | `typecheck` | `npm run typecheck` | n/a |
 | `build` | `npm run build` | n/a |
 | `testes` | `docker compose up -d postgres`, `npm run db:migrate:deploy` e `npm run test:coverage` (falha abaixo de 90% de linhas) | `cobertura` (`coverage/`: `index.html`, `lcov.info`, `coverage-summary.json`) |
-| `e2e` | `npx playwright install chromium` e `npm run test:e2e` (uma compilação no job; cache dos navegadores pela versão do `@playwright/test`) | `playwright-report` (relatório HTML) e `playwright-traces` (`test-results/`, só quando um teste falha) |
+| `e2e` | `npx playwright install chromium` e `npm run test:e2e` (service `postgres:17`; base `_e2e` com seed recriada a cada execução; uma compilação no job; cache dos navegadores pela versão do `@playwright/test`) | `playwright-report` (relatório HTML) e `playwright-traces` (`test-results/`, só quando um teste falha) |
 | `docker` | `docker compose config`, `docker build --target final .` (sem push) e `sh docker/smoke.sh` (sobe o compose do zero com `--build --wait`, exige `GET /api/health` 200 e `Referrer-Policy: strict-origin` em `/confirmar-email` e `/redefinir-senha`; porta 3000 livre). Na CI o job termina com `docker compose down -v` | n/a |
 
 - **Nomes dos checks:** na interface do PR aparecem como `CI / <job> (pull_request)` ou `(push)`. Os seis nomes (`lint`, `typecheck`, `build`, `testes`, `e2e`, `docker`) são os que a proteção de `main` vai exigir. Não os renomeie sem atualizar esta seção e a proteção.

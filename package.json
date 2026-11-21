@@ -16,10 +16,11 @@
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "next build && playwright test",
+    "test:e2e": "next build && npm run build:node && node --env-file-if-exists=.env dist/e2e/preparar-banco.js && playwright test",
     "db:generate": "prisma generate",
     "db:migrate:deploy": "prisma migrate deploy",
-    "build:node": "esbuild src/worker/main.ts src/scripts/check-env.ts src/scripts/enfileirar-exemplo.ts src/scripts/superadmin-criar.ts --bundle --platform=node --format=esm --target=node24 --packages=external --outbase=src --outdir=dist",
+    "db:seed": "npm run build:node && node --env-file-if-exists=.env dist/prisma/seed.js",
+    "build:node": "esbuild src/worker/main.ts src/scripts/check-env.ts src/scripts/enfileirar-exemplo.ts src/scripts/superadmin-criar.ts prisma/seed=prisma/seed.ts e2e/preparar-banco=e2e/suporte/preparar-banco.ts --bundle --platform=node --format=esm --target=node24 --packages=external --outbase=src --outdir=dist",
     "worker": "npm run build:node && node --env-file-if-exists=.env dist/worker/main.js",
     "fila:exemplo": "npm run build:node && node --env-file-if-exists=.env dist/scripts/enfileirar-exemplo.js",
     "superadmin:criar": "npm run build:node && node --env-file-if-exists=.env dist/scripts/superadmin-criar.js"

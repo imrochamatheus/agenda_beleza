@@ -78,3 +78,36 @@ describe('FormularioDados (CA-7, CA-8, CA-10)', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 });
+
+describe('FormularioDados: reescolha depois de conflito de horário (D-036 DEF-1)', () => {
+  const REESCOLHA = { fuso: 'America/Sao_Paulo', horarios: ['2026-12-01T13:00:00.000Z', '2026-12-01T14:00:00.000Z'] };
+
+  it('mostra o aviso e os horários, preserva nome, telefone e aceites e reenvia com a marca de reescolha', async () => {
+    const estado = base({ status: 'horario_indisponivel', mensagem: 'Este horário não está mais disponível. Escolha outro horário.', reescolha: REESCOLHA });
+    const acao = vi.fn(async () => estado);
+    render(<FormularioDados acao={acao} ocultos={OCULTOS} humano={HUMANO} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+    await waitFor(() => expect(acao).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Este horário não está mais disponível. Escolha outro horário.')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: 'Escolha o horário' })).toBeTruthy();
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect((screen.getByRole('textbox', { name: /Nome/ }) as HTMLInputElement).value).toBe('Maria');
+    expect((screen.getByRole('textbox', { name: /Telefone/ }) as HTMLInputElement).value).toBe('123');
+    expect((screen.getByRole('checkbox', { name: /mensagens da minha reserva/ }) as HTMLInputElement).checked).toBe(true);
+
+    const radio = screen.getAllByRole('radio')[1] as HTMLInputElement;
+    fireEvent.click(radio);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+    await waitFor(() => expect(acao).toHaveBeenCalledTimes(2));
+    const fd = (acao.mock.calls[1] as unknown as [EstadoReserva, FormData])[1];
+    expect(fd.get('reescolha')).toBe('1');
+    expect(fd.get('inicio')).toBe(REESCOLHA.horarios[1]);
+    expect(fd.getAll('inicio')).toHaveLength(1);
+  });
+
+  it('sem estado de reescolha (GET) mostra a alternativa da página, sem formulário', () => {
+    render(<FormularioDados acao={vi.fn(async () => base({}))} ocultos={OCULTOS} humano={HUMANO} alternativa={<p>Passo do horário</p>} />);
+    expect(screen.getByText('Passo do horário')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Confirmar reserva' })).toBeNull();
+  });
+});

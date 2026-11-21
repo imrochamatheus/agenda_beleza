@@ -27,3 +27,4 @@ dist/
 
 # Armazenamento simulado de fotos (D-021)
 .armazenamento/
+.armazenamento-e2e/
