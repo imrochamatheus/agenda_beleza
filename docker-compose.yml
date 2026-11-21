@@ -12,6 +12,8 @@ x-env-app: &env-app
     # Obrigatório em produção (a imagem roda com NODE_ENV=production); este padrão serve só ao compose local.
     RATE_LIMIT_SEGREDO: ${RATE_LIMIT_SEGREDO:-compose-local-segredo-do-limite-0123456789}
     AVALIACAO_SEGREDO: ${AVALIACAO_SEGREDO:-compose-local-segredo-avaliacao-0123456789}
+    # Só desenvolvimento local (32 bytes em base64); em produção use um valor próprio (README). O worker também passa pelo check-env.
+    ADMIN_TOTP_CHAVE: ${ADMIN_TOTP_CHAVE:-Y29tcG9zZS1sb2NhbC1jaGF2ZS10b3RwLTAxMjM0NTY=}
 
 services:
   postgres:
@@ -47,7 +49,6 @@ services:
       ARMAZENAMENTO_DIR: /app/.armazenamento
       RATE_LIMIT_SEGREDO: ${RATE_LIMIT_SEGREDO:-compose-local-segredo-do-limite-0123456789}
       AVALIACAO_SEGREDO: ${AVALIACAO_SEGREDO:-compose-local-segredo-avaliacao-0123456789}
-      # Só desenvolvimento local (32 bytes em base64); em produção use um valor próprio (README).
       ADMIN_TOTP_CHAVE: ${ADMIN_TOTP_CHAVE:-Y29tcG9zZS1sb2NhbC1jaGF2ZS10b3RwLTAxMjM0NTY=}
     volumes:
       # Fotos do armazenamento simulado (D-021); sobrevive a `down` (só `down -v` apaga). O worker não monta.
