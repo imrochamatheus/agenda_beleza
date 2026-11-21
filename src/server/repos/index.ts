@@ -1,3 +1,5 @@
+import { criarRepoAgenda } from './agenda';
+import type { RepoAgenda } from './agenda';
 import { criarRepoBloqueio } from './bloqueio';
 import type { RepoBloqueio } from './bloqueio';
 import { criarRepoCliente } from './cliente';
@@ -25,7 +27,7 @@ import { criarRepoServico } from './servico';
 import type { RepoServico } from './servico';
 import type { Executor } from './transacao';
 
-export type { RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoSalao, RepoServico };
+export type { RepoAgenda, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoSalao, RepoServico };
 
 /** Repositórios de tenant: toda operação recebe ContextoEscopado e filtra salao_id (RN-8). */
 export interface Repos {
@@ -47,6 +49,8 @@ export interface Repos {
   disponibilidade: RepoDisponibilidade;
   /** Mensagens de WhatsApp do salão (D-024): registro, substituição, reenvio e leitura. */
   mensagens: RepoMensagem;
+  /** Leituras da agenda da equipe (D-028), somente leitura. */
+  agenda: RepoAgenda;
 }
 
 /** Conjunto ligado a um executor (cliente ou transação). Uso interno: emTransacao e repos(). */
@@ -64,6 +68,7 @@ export function criarRepos(db: Executor): Repos {
     fotos: criarRepoFoto(db),
     disponibilidade: criarRepoDisponibilidade(db),
     mensagens: criarRepoMensagem(db),
+    agenda: criarRepoAgenda(db),
   };
 }
 
