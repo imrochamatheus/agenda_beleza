@@ -96,6 +96,7 @@ enum TipoMensagem {
   confirmacao
   remarcacao
   cancelamento
+  convite_avaliacao
 
   @@map("tipo_mensagem")
 }

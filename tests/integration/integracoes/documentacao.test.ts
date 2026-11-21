@@ -140,7 +140,7 @@ describe('CA-25: README × .env.example × env.ts', () => {
     expect(wa).toContain(`Adaptador real: ${new NaoImplementado('E7.2').item}`);
     expect(mp).toContain('recusado na inicialização');
     expect(wa).toContain('recusado na inicialização');
-    expect(wa).toContain('3 templates aprovados');
+    expect(wa).toContain('4 templates aprovados');
 
     const fonte = { DATABASE_URL: 'postgresql://u:p@localhost:5432/b', MP_ADAPTER: 'real', WHATSAPP_ADAPTER: 'real' };
     let erro: unknown;

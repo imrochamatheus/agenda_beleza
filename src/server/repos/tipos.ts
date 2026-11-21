@@ -1,7 +1,9 @@
 import type {
+  EstadoMensagem as EstadoMensagemPrisma,
   OrigemReserva as OrigemReservaPrisma,
   PapelUsuario as PapelUsuarioPrisma,
   StatusReserva as StatusReservaPrisma,
+  TipoMensagem as TipoMensagemPrisma,
 } from '@/generated/prisma/enums';
 import type { Finalidade } from '@/config/termos';
 import type { Papel } from '@/server/tenant/context';
@@ -206,3 +208,123 @@ export type FuncionamentoLinhaDTO = { id: string; diaSemana: number; inicioMin: 
 
 /** Leitura consistente do funcionamento (um comando). `linhas` é sempre [] quando definido = false (RN-13). */
 export type FuncionamentoDTO = { definido: boolean; linhas: { diaSemana: number; inicioMin: number; fimMin: number }[] };
+
+// ---------------------------------------------------------------------------
+// Mensagens de WhatsApp (D-024 §3.4, §3.5). Declarados aqui para os repositórios não importarem
+// src/server/mensagens; as uniões são conferidas contra os enums do Prisma.
+// ---------------------------------------------------------------------------
+
+export type TipoMensagemDTO = 'confirmacao' | 'remarcacao' | 'cancelamento' | 'convite_avaliacao';
+export type EstadoMensagemDTO =
+  | 'pendente'
+  | 'enviando'
+  | 'enviada'
+  | 'falhou'
+  | 'nao_enviada'
+  | 'substituida'
+  | 'cancelada_anonimizacao';
+export type TipoMensagemEquivaleAoEnum = Verdadeiro<Igual<TipoMensagemDTO, TipoMensagemPrisma>>;
+export type EstadoMensagemEquivaleAoEnum = Verdadeiro<Igual<EstadoMensagemDTO, EstadoMensagemPrisma>>;
+
+/** Estados em que uma mensagem pode nascer (RN-8). */
+export type EstadoInicialMensagem = 'pendente' | 'nao_enviada' | 'cancelada_anonimizacao';
+
+/** Mensagem a gravar no registro: só `pendente` leva o telefone (RN-15). */
+export type NovaMensagem = {
+  reservaId: string;
+  tipo: TipoMensagemDTO;
+  revisao: number;
+  estado: EstadoInicialMensagem;
+  erroCodigo: string | null;
+  destinatarioE164: string | null;
+};
+
+/** Linha de `mensagem` sem destinatário, parâmetros nem id do provedor. */
+export type MensagemLinhaDTO = {
+  id: string;
+  reservaId: string;
+  tipo: TipoMensagemDTO;
+  revisao: number;
+  estado: EstadoMensagemDTO;
+  erroCodigo: string | null;
+};
+
+/** Reserva, cliente e consentimentos lidos num comando, com a cliente travada FOR KEY SHARE. */
+export type ContextoDeRegistroDTO = {
+  reservaRevisao: number;
+  reservaStatus: StatusReserva;
+  clienteAnonimizada: boolean;
+  telefone: string | null;
+  consentimentoMensagens: boolean;
+  consentimentoConvite: boolean;
+};
+
+/** Parâmetros de conferência de vigência (RN-16), puros, injetados pelo serviço. */
+export type ConferirVigenciaFn = (
+  tipo: TipoMensagemDTO,
+  m: { revisao: number },
+  r: { revisao: number; status: StatusReserva },
+) => 'vigente' | 'obsoleta';
+
+export type ResultadoReenvioRepo =
+  | { resultado: 'reenfileirada'; mensagemId: string; reservaId: string; tipo: TipoMensagemDTO; revisao: number }
+  | { resultado: 'recusada'; motivo: 'nao_falhou' | 'obsoleta' | 'cliente_anonimizada' };
+
+/** Situação de envio (RN-23): nunca destinatário, parâmetros nem provedor. */
+export type MensagemDaReservaRepoDTO = {
+  id: string;
+  tipo: TipoMensagemDTO;
+  revisao: number;
+  estado: EstadoMensagemDTO;
+  enviadaEm: Date | null;
+  erroCodigo: string | null;
+  tentativas: number;
+  ultimaTentativaEm: Date | null;
+};
+
+/** Tudo que o envio lê da reserva no mesmo comando (A-5): sem trava. */
+export type ContextoDeEnvio = {
+  tipo: TipoMensagemDTO;
+  mensagemRevisao: number;
+  reservaId: string;
+  reserva: { revisao: number; status: StatusReserva; inicio: Date };
+  salaoNome: string;
+  fuso: string;
+  profissionalNome: string | null;
+  /** Nomes atuais dos serviços, na ordem dos itens. */
+  servicos: string[];
+  clienteAnonimizada: boolean;
+  telefone: string | null;
+  consentimentoMensagens: boolean;
+  consentimentoConvite: boolean;
+};
+
+/** Decisão pura tomada dentro de T1 (elegibilidade + vigência), recebida por callback. */
+export type DecisaoDeEnvio =
+  | { acao: 'enviar' }
+  | { acao: 'terminal'; estado: 'nao_enviada' | 'cancelada_anonimizacao' | 'substituida'; erroCodigo: string | null };
+
+export type ResultadoInicio =
+  | { resultado: 'nao_reivindicada' }
+  | {
+      resultado: 'terminal';
+      estado: 'nao_enviada' | 'cancelada_anonimizacao' | 'substituida';
+      erroCodigo: string | null;
+      tipo: TipoMensagemDTO;
+      revisao: number;
+    }
+  | {
+      resultado: 'enviar';
+      tentativaId: string;
+      numero: number;
+      destinatarioE164: string;
+      tipo: TipoMensagemDTO;
+      revisao: number;
+      reservaId: string;
+      contexto: ContextoDeEnvio;
+    };
+
+/** Fechamento de uma tentativa (T2). `erroDetalhe` é um texto fixo por classe, nunca a mensagem do erro. */
+export type ConclusaoEnvio =
+  | { resultado: 'sucesso'; provedorMensagemId: string }
+  | { resultado: 'falha'; estadoFinal: 'pendente' | 'falhou'; erroCodigo: string; erroDetalhe: string };

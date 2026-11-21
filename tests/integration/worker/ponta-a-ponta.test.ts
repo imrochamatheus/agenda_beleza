@@ -25,9 +25,17 @@ async function tabelasPublic(): Promise<string[]> {
   return r.rows.map((x) => x.t);
 }
 
+/**
+ * D-024 (CA-27): desde a E7.1 os handlers de mensagem são reais e podem escrever em `mensagem` e
+ * `mensagem_tentativa` (e o adaptador simulado em `sim_whatsapp_*`). Todas as demais tabelas de `public`
+ * continuam intocadas (RN-17 da D-008); o teste da reconciliação e do envio com dados está em
+ * tests/integration/mensagens/envio.test.ts (checksum por tabela).
+ */
+const PERMITIDAS_PARA_ESCRITA = new Set(['mensagem', 'mensagem_tentativa', 'sim_whatsapp_chamada', 'sim_whatsapp_falha_forcada']);
+
 async function contagensPublic(): Promise<Record<string, number>> {
   const contagens: Record<string, number> = {};
-  for (const t of await tabelasPublic()) {
+  for (const t of (await tabelasPublic()).filter((x) => !PERMITIDAS_PARA_ESCRITA.has(x))) {
     const r = await sql.query<{ n: number }>(`SELECT count(*)::int AS n FROM public.${sql.escapeIdentifier(t)}`);
     contagens[t] = r.rows[0].n;
   }
@@ -83,7 +91,7 @@ describe('CA-1: job enfileirado pela app é processado pelo handler', () => {
     expect(noSchema.rowCount).toBe(1);
   }, 30_000);
 
-  it('CA-7/RN-17: um job em cada stub conclui, sem tabela nova nem linha alterada em public', async () => {
+  it('CA-7/RN-17 (ajustado na D-024): um job em cada handler conclui, sem tabela nova nem linha alterada em public fora de mensagem e mensagem_tentativa', async () => {
     const jobs: Array<[string, string]> = [];
     for (const [fila, payload, chave] of [
       [FILA.assinaturaPrazos, {}, undefined],

@@ -92,8 +92,8 @@ function dependencias(
   return { deps, sinal, eventos, erros, criarFila, ...duble };
 }
 
-function job(id: string, data: unknown, retryCount = 0, signal = new AbortController().signal): JobWithMetadata<unknown> {
-  return { id, data, retryCount, signal, startAfter: new Date('2026-11-18T12:00:00Z') } as JobWithMetadata<unknown>;
+function job(id: string, data: unknown, retryCount = 0, signal = new AbortController().signal, retryLimit = 4): JobWithMetadata<unknown> {
+  return { id, data, retryCount, retryLimit, signal, startAfter: new Date('2026-11-18T12:00:00Z') } as JobWithMetadata<unknown>;
 }
 
 /** Deixa as promessas pendentes andarem (o relógio falso não afeta microtarefas). */
@@ -364,7 +364,7 @@ describe('iniciarWorker', () => {
       await iniciarWorker(deps).pronto;
       const id = '6f1c2b8e-3d4a-4b5c-9d6e-7f8091a2b3c4';
       await handlers.get('whatsapp-reserva')!([job('j1', { mensagemId: id }, 2)]);
-      expect(contextos[0]).toMatchObject({ id: 'j1', fila: 'whatsapp-reserva', tentativa: 3 });
+      expect(contextos[0]).toMatchObject({ id: 'j1', fila: 'whatsapp-reserva', tentativa: 3, tentativasMaximas: 5 });
       expect(contextos[0].agendadoPara).toEqual(new Date('2026-11-18T12:00:00Z'));
       expect(contextos[0].sinal).toBeInstanceOf(AbortSignal);
       expect(eventos().slice(-2)).toEqual([

@@ -75,7 +75,7 @@ const ENUMS: Record<string, string[]> = {
   origem_consentimento: ['publico', 'equipe'],
   estado_assinatura: ['pendente', 'em_teste', 'ativa', 'em_carencia', 'suspensa', 'cancelada', 'encerrada'],
   resultado_webhook: ['recebido', 'processado', 'ignorado', 'rejeitado', 'erro'],
-  tipo_mensagem: ['confirmacao', 'remarcacao', 'cancelamento'],
+  tipo_mensagem: ['confirmacao', 'remarcacao', 'cancelamento', 'convite_avaliacao'],
   estado_mensagem: ['pendente', 'enviando', 'enviada', 'falhou', 'nao_enviada', 'substituida', 'cancelada_anonimizacao'],
   resultado_tentativa: ['sucesso', 'falha'],
   resultado_auditoria: ['sucesso', 'falha'],
@@ -93,6 +93,7 @@ const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
   ['cliente_anonimizacao_chk', 'cliente', 'c'],
   ['cliente_telefone_e164_chk', 'cliente', 'c'],
   ['mensagem_destinatario_e164_chk', 'mensagem', 'c'],
+  ['mensagem_revisao_chk', 'mensagem', 'c'],
   ['salao_slug_formato_chk', 'salao_slug', 'c'],
   ['usuario_email_minusculo_chk', 'usuario', 'c'],
   ['usuario_papel_salao_chk', 'usuario', 'c'],
@@ -146,6 +147,7 @@ const INDICES_SQL_BRUTO: [string, string, boolean][] = [
   ['webhook_evento_dedupe_uniq', 'webhook_evento', true],
   ['reserva_cliente_confirmada_idx', 'reserva', false],
   ['mensagem_pendentes_idx', 'mensagem', false],
+  ['mensagem_reconciliacao_idx', 'mensagem', false],
   ['bloqueio_periodo_idx', 'bloqueio', false],
 ];
 
@@ -409,6 +411,8 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261120000000_perfil_funcionamento', antes: false, ok: true },
       { migration_name: '20261121000000_salao_foto', antes: false, ok: true },
       { migration_name: '20261121100000_consentimento_finalidade', antes: false, ok: true },
+      { migration_name: '20261121200000_tipo_mensagem_convite_avaliacao', antes: false, ok: true },
+      { migration_name: '20261121200100_mensagem_reconciliacao', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,

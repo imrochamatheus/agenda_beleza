@@ -37,7 +37,7 @@ export const CONTRATOS = {
     payload: z.strictObject({ esperaMs: z.int().min(0).max(60_000).optional() }),
   },
   'assinatura-prazos': { politica: 'exclusive', chave: 'opcional', payload: z.strictObject({}) },
-  // Formato provisório: a E7.1 pode trocá-lo nesta linha (a chave será `reserva:tipo:revisao`).
+  // Contrato definitivo (D-024): a chave é `reserva:tipo:revisao`; o payload não leva dado pessoal nem link.
   'whatsapp-reserva': {
     politica: 'exclusive',
     chave: 'obrigatoria',
