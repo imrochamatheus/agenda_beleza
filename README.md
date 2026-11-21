@@ -220,6 +220,18 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **E2E:** `npx playwright test e2e/fotos.spec.ts e2e/fotos-sem-js.spec.ts` (build prévio e porta 3000 livre).
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/fotos/concorrencia.test.ts || break; done`.
 
+## Clientes
+
+- **Onde:** `/painel/clientes` (item "Clientes" do menu) e `/painel/clientes/<id>`, só para o **gestor**; o profissional vê "Acesso negado". A busca é um `GET` e a edição devolve o resultado na própria resposta: tudo funciona sem JavaScript.
+- **Identidade:** cada cliente é única por **salão + telefone** brasileiro em E.164 (`+55` + DDD + 8 ou 9 dígitos). O mesmo número em dois salões são duas clientes independentes. Não há tela "nova cliente": a cliente nasce na reserva (E3.2, E3.4 e E4.2, pela função `upsertCliente`).
+- **Lista e busca:** 20 por página (`?pagina=N`), ordenadas por nome sem acento. `?q=` busca por parte do nome (acento e maiúsculas não importam; `%`, `_` e `\` são literais) ou, se só tiver números e `( ) - + .` (3 dígitos ou mais), por parte do telefone. Clientes anonimizadas não aparecem na lista nem na busca.
+- **Edição:** nome (2 a 100 caracteres) e telefone. Trocar para o telefone de outra cliente do salão é recusado, com link para ela (não há mesclagem). Salvar os mesmos valores não grava nada. Editar nunca altera reservas nem mensagens já registradas.
+- **Detalhe:** dados, formulário e as 50 reservas mais recentes (data no fuso do salão, status, profissional, serviços, duração e preço do **snapshot**). A cliente anonimizada aparece como "Cliente removida", sem formulário (a anonimização é a E5.2).
+- **Busca sem extensão:** a busca normaliza nome em SQL (`normalize(… NFD)`) e varre as clientes do salão. Mede cerca de 20 ms com 5 mil clientes e 90 a 210 ms com 50 mil num único salão (ver `docs/demandas/D-022/dev.md`).
+- **Demonstração para o E2E:** `/dev/clientes` (`?vista=detalhe` ou `?vista=anonimizada`), ligada pela `VITRINE_COMPONENTES=true`, com os mesmos componentes, dados fixos e uma ação que só valida (404 com a variável desligada).
+- **E2E:** `npx playwright test e2e/clientes.spec.ts e2e/clientes-sem-js.spec.ts` (build prévio e porta 3000 livre).
+- **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/clientes/concorrencia.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.

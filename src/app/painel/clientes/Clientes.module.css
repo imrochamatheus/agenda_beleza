@@ -1,0 +1,176 @@
+/* Clientes do salão (D-022 RN-19). Só tokens do tema (globals.css); breakpoint único 48rem. */
+.pagina {
+  display: grid;
+  gap: var(--espaco-6);
+  min-width: 0;
+}
+
+.pagina h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.secao {
+  display: grid;
+  gap: var(--espaco-4);
+  min-width: 0;
+}
+
+.secao h2 {
+  margin: 0;
+}
+
+.formulario {
+  display: grid;
+  gap: var(--espaco-2);
+  max-width: 32rem;
+  min-width: 0;
+}
+
+.busca {
+  display: grid;
+  gap: var(--espaco-3);
+  align-items: end;
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-3) var(--espaco-6);
+}
+
+.ajuda {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.contagem {
+  margin: 0;
+  font-weight: 600;
+}
+
+.lista {
+  display: grid;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: var(--espaco-1);
+  padding: var(--espaco-3) var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  min-width: 0;
+}
+
+.nome {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.telefone {
+  color: var(--cor-texto-suave);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  color: var(--cor-primaria-forte);
+  overflow-wrap: anywhere;
+}
+
+.link:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.paginacao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-3) var(--espaco-6);
+}
+
+.resumoErros {
+  padding: var(--espaco-4);
+  border: 2px solid var(--cor-erro-texto);
+  border-radius: var(--raio);
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro-texto);
+}
+
+.resumoErros:focus-visible,
+.resumoErros:focus,
+.sucesso:focus-visible,
+.sucesso:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.resumoTitulo {
+  margin: 0 0 var(--espaco-2);
+  font-weight: 600;
+}
+
+.resumoErros ul {
+  margin: 0;
+  padding-left: var(--espaco-4);
+}
+
+.resumoErros a {
+  color: inherit;
+}
+
+.sucesso {
+  border-radius: var(--raio);
+}
+
+.dados {
+  margin: 0;
+  display: grid;
+  gap: var(--espaco-1);
+}
+
+.historico {
+  display: grid;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reserva {
+  display: grid;
+  gap: var(--espaco-1);
+  padding: var(--espaco-3) var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  min-width: 0;
+}
+
+.quando {
+  font-weight: 600;
+}
+
+.status {
+  color: var(--cor-texto-suave);
+}
+
+.servicos {
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 48rem) {
+  .busca {
+    grid-template-columns: 1fr auto;
+  }
+}
