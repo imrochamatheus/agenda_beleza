@@ -7,7 +7,31 @@ import { ehUuid } from './ids';
 import type { Periodo, ReservaBloqueanteDTO, ReservaCobertaDTO, ReservaDTO, StatusReserva } from './tipos';
 import type { Executor } from './transacao';
 
+export type NovaReserva = {
+  profissionalId: string;
+  clienteId: string;
+  inicio: Date;
+  fim: Date;
+  ocupadoAte: Date;
+  origem: 'publico' | 'equipe';
+  encaixe: boolean;
+  chaveRequisicao: string | null;
+};
+
+export type NovoItemDeReserva = { servicoId: string; ordem: number; precoCentavos: number; duracaoMin: number };
+
 export interface RepoReserva {
+  /**
+   * D-025 A-5: INSERT de uma reserva `confirmado`, revisão 0, com `ON CONFLICT (salao_id,
+   * chave_requisicao) DO NOTHING RETURNING id`: `criada: false` = outra requisição com a mesma chave
+   * já a gravou (o PostgreSQL espera o commit dela). NÃO captura o 23P01 da exclusion (o serviço o
+   * traduz fora da transação). O literal 'confirmado' fica no texto (índice parcial da exclusion).
+   */
+  criar(ctx: ContextoEscopado, d: NovaReserva): Promise<{ criada: true; id: string } | { criada: false }>;
+  /** Um `createMany` (um comando) com os itens e o snapshot de preço e duração. */
+  criarItens(ctx: ContextoEscopado, reservaId: string, itens: readonly NovoItemDeReserva[]): Promise<void>;
+  /** Reserva do salão com a chave (índice UNIQUE); chave não UUID → null sem consultar. */
+  buscarPorChave(ctx: ContextoEscopado, chave: string): Promise<ReservaDTO | null>;
   /** Reserva com itens (snapshot de preço e duração), por ordem. */
   buscarPorId(ctx: ContextoEscopado, id: string): Promise<ReservaDTO>;
   /** Reservas com `inicio` em [de, ate), por início (índice (salao_id, inicio)). */
@@ -123,6 +147,40 @@ export function criarRepoReserva(db: Executor): RepoReserva {
 
   return {
     buscarPorId,
+
+    async criar(ctx, d) {
+      const salaoId = exigirEscopo(ctx);
+      const linhas = await db.$queryRaw<{ id: string }[]>`
+        INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem, encaixe, revisao, chave_requisicao)
+        VALUES (${salaoId}::uuid, ${d.profissionalId}::uuid, ${d.clienteId}::uuid, ${d.inicio}::timestamptz,
+                ${d.fim}::timestamptz, ${d.ocupadoAte}::timestamptz, 'confirmado', ${d.origem}::origem_reserva,
+                ${d.encaixe}, 0, ${d.chaveRequisicao})
+        ON CONFLICT (salao_id, chave_requisicao) DO NOTHING
+        RETURNING id::text AS id`;
+      return linhas[0] ? { criada: true, id: linhas[0].id } : { criada: false };
+    },
+
+    async criarItens(ctx, reservaId, itens) {
+      const salaoId = exigirEscopo(ctx);
+      await db.reservaItem.createMany({
+        data: itens.map((i) => ({
+          salaoId,
+          reservaId,
+          servicoId: i.servicoId,
+          ordem: i.ordem,
+          precoCentavos: i.precoCentavos,
+          duracaoMin: i.duracaoMin,
+        })),
+      });
+    },
+
+    async buscarPorChave(ctx, chave) {
+      const salaoId = exigirEscopo(ctx);
+      if (!ehUuid(chave)) {
+        return null;
+      }
+      return db.reserva.findFirst({ where: { salaoId, chaveRequisicao: chave }, select: CAMPOS });
+    },
 
     async listarPorPeriodo(ctx, { de, ate }) {
       const salaoId = exigirEscopo(ctx);

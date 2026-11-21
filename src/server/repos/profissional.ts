@@ -14,7 +14,11 @@ import type { Executor } from './transacao';
 // A trava é FOR UPDATE (nunca FOR NO KEY UPDATE): ela conflita com o FOR KEY SHARE que o PostgreSQL
 // toma na linha referenciada quando alguém insere uma `reserva`/`convite` apontando para ela, de modo
 // que a desativação espera essas inserções e, ao obter a trava, enxerga o que foi confirmado (D-7).
-// E3.2/E3.4/E3.5 devem conferir `ativo` com FOR SHARE na mesma linha antes de gravar a reserva.
+// E3.2/E3.4/E3.5 devem conferir `ativo` com FOR SHARE na mesma linha antes de gravar a reserva
+// (D-025: `travarParaReserva`, depois do salão FOR SHARE e antes dos serviços, com FOR NO KEY UPDATE
+// (DEF-1): E3.4/E3.5, em todo comando que INSIRA ou ATUALIZE `reserva` para status ocupante (criar,
+// reagendar, voltar a `confirmado`), devem tomar FOR NO KEY UPDATE (ou mais forte) no profissional
+// ANTES do comando; cancelar pode manter FOR SHARE. Ver o cabeçalho de repos/servico.ts.)
 
 export interface RepoProfissional {
   buscarPorId(ctx: ContextoEscopado, id: string): Promise<ProfissionalDTO>;
@@ -34,6 +38,16 @@ export interface RepoProfissional {
    * salão). Sem linha → NaoEncontrado. Só tem sentido dentro de emTransacao.
    */
   travarParaAlteracao(ctx: ContextoEscopado, id: string): Promise<TravaProfissional>;
+  /**
+   * D-025 A-3 (revisão DEF-1): `SELECT ativo … FOR NO KEY UPDATE OF p` do profissional do salão, para
+   * reservar. A trava SERIALIZA a criação de reservas do mesmo profissional antes da revalidação e do
+   * INSERT: com FOR SHARE, N transações no mesmo horário formavam ciclo nos "speculative tokens" do
+   * `INSERT … ON CONFLICT DO NOTHING` + exclusion (40P01). Nunca promova FOR SHARE → FOR NO KEY UPDATE
+   * na mesma transação. Id malformado ou sem linha (inexistente ou de outro salão) → null, sem consultar
+   * o malformado. Só dentro de emTransacao. O texto "FOR NO KEY UPDATE OF p" é procurado em
+   * pg_stat_activity pelos testes.
+   */
+  travarParaReserva(ctx: ContextoEscopado, id: string): Promise<{ ativo: boolean } | null>;
   /** Grava nome e e-mail; NaoEncontrado se a linha não é do salão. */
   atualizarDados(ctx: ContextoEscopado, id: string, d: { nome: string; email: string | null }): Promise<ProfissionalDTO>;
   /**
@@ -165,6 +179,19 @@ export function criarRepoProfissional(db: Executor): RepoProfissional {
         select: CAMPOS,
         orderBy: [{ nome: 'asc' }, { id: 'asc' }],
       });
+    },
+
+    async travarParaReserva(ctx, id) {
+      const salaoId = exigirEscopo(ctx);
+      if (!ehUuid(id)) {
+        return null;
+      }
+      const linhas = await db.$queryRaw<{ ativo: boolean }[]>`
+        SELECT p.ativo
+          FROM profissional p
+         WHERE p.id = ${id}::uuid AND p.salao_id = ${salaoId}::uuid
+           FOR NO KEY UPDATE OF p`;
+      return linhas[0] ?? null;
     },
 
     async travarParaAlteracao(ctx, id) {
