@@ -60,6 +60,7 @@ export const ROTAS = {
   devFuncionamento: '/dev/funcionamento',
   devFotos: '/dev/fotos',
   devFotosEnvio: '/dev/fotos/enviar',
+  devReserva: '/dev/reserva',
 } as const;
 
 export type ItemNavegacao = {
