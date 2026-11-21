@@ -168,7 +168,7 @@ describe('FKs compostas entre salões', () => {
   it('CA-9: consentimento do salão A para cliente do salão B é rejeitado (23503)', async () => {
     const erro = await erroSql(
       c.query(
-        "INSERT INTO consentimento (salao_id, cliente_id, origem, versao_termos) VALUES ($1, $2, 'publico', 'v1')",
+        "INSERT INTO consentimento (salao_id, cliente_id, finalidade, origem, versao_termos) VALUES ($1, $2, 'mensagens_reserva', 'publico', 'v1')",
         [a.salaoId, b.clienteId],
       ),
     );

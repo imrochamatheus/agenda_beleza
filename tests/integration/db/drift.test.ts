@@ -71,6 +71,7 @@ const ENUMS: Record<string, string[]> = {
   tipo_token: ['confirmacao_email', 'recuperacao_senha'],
   status_reserva: ['confirmado', 'cancelado', 'concluido', 'nao_compareceu'],
   origem_reserva: ['publico', 'equipe'],
+  finalidade_consentimento: ['mensagens_reserva', 'convite_avaliacao', 'publicacao_avaliacao'],
   origem_consentimento: ['publico', 'equipe'],
   estado_assinatura: ['pendente', 'em_teste', 'ativa', 'em_carencia', 'suspensa', 'cancelada', 'encerrada'],
   resultado_webhook: ['recebido', 'processado', 'ignorado', 'rejeitado', 'erro'],
@@ -133,6 +134,8 @@ const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
   ['salao_foto_bytes_chk', 'salao_foto', 'c'],
   ['salao_foto_alt_chk', 'salao_foto', 'c'],
   ['salao_foto_chave_chk', 'salao_foto', 'c'],
+  ['consentimento_origem_finalidade_chk', 'consentimento', 'c'],
+  ['consentimento_versao_termos_chk', 'consentimento', 'c'],
 ];
 
 // [nome, tabela, único]
@@ -405,6 +408,7 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261119000000_simuladores_integracao', antes: false, ok: true },
       { migration_name: '20261120000000_perfil_funcionamento', antes: false, ok: true },
       { migration_name: '20261121000000_salao_foto', antes: false, ok: true },
+      { migration_name: '20261121100000_consentimento_finalidade', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,

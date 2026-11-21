@@ -193,6 +193,8 @@ describe('CA-12: rotas e segmentos reservados', () => {
     expect(ROTAS.cliente('a b/c')).toBe('/painel/clientes/a%20b%2Fc');
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.cliente('abc'))).toBe(ROTAS.clientes);
     expect(ROTAS.devClientes).toBe('/dev/clientes');
+    // D-023: a demonstração do consentimento fica sob "dev"; termos e privacidade já eram reservados.
+    expect(ROTAS.devConsentimento).toBe('/dev/consentimento');
     // D-017: a demonstração das configurações fica sob o segmento reservado "dev" (SEGMENTOS_RESERVADOS não muda).
     expect(ROTAS.devConfiguracoes).toBe('/dev/configuracoes');
     expect(itemAtivo(NAVEGACAO_PAINEL.gestor, ROTAS.configuracoes)).toBe(ROTAS.configuracoes);

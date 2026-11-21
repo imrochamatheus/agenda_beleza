@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { SEGMENTOS_RESERVADOS } from '@/config/navegacao';
+import { ROTAS, SEGMENTOS_RESERVADOS } from '@/config/navegacao';
+import { MENSAGENS_CONFIGURACOES } from '@/server/salao/tipos';
+import { validarNovoSlug } from '@/server/salao/validacao';
 
 import { FORMATO_SLUG, SLUG_BASE_MAX, SLUG_FALLBACK, escolherSlugLivre, slugBase } from './slug';
 
@@ -143,5 +145,20 @@ describe('CA-7 (unidade): segmentos reservados são colisão', () => {
     for (const item of ['painel', 'admin', 'entrar', 'cadastro']) {
       expect(fonte).not.toContain(`'${item}'`);
     }
+  });
+});
+
+describe('CA-20 (D-023): termos e privacidade são segmentos reservados', () => {
+  it.each(['termos', 'privacidade'])('%s é reservado, pulado por escolherSlugLivre e recusado por validarNovoSlug', (segmento) => {
+    expect(SEGMENTOS_RESERVADOS.has(segmento)).toBe(true);
+    expect(escolherSlugLivre(segmento, new Set())).toBe(`${segmento}-2`);
+    expect(validarNovoSlug(segmento)).toBe(MENSAGENS_CONFIGURACOES.slugReservado);
+  });
+
+  it('ROTAS.termos e ROTAS.privacidade continuam derivando do conjunto', () => {
+    expect(ROTAS.termos).toBe('/termos');
+    expect(ROTAS.privacidade).toBe('/privacidade');
+    expect(SEGMENTOS_RESERVADOS.has(ROTAS.termos.slice(1))).toBe(true);
+    expect(SEGMENTOS_RESERVADOS.has(ROTAS.privacidade.slice(1))).toBe(true);
   });
 });

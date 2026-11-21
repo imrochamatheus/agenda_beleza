@@ -1,3 +1,4 @@
+import type { Finalidade } from '@/config/termos';
 import { gerarHashSenha } from '@/server/auth/senha';
 import { obterPrisma } from '@/server/repos/db';
 
@@ -281,4 +282,25 @@ export async function criarDoisSaloes(): Promise<{ a: SalaoCompleto; b: SalaoCom
   const a = await criarSalaoCompleto({ salao: { nome: 'Salão Aurora' } });
   const b = await criarSalaoCompleto({ salao: { nome: 'Salão Bromélia' } });
   return { a, b };
+}
+
+/** Linha de consentimento direta (D-023): padrão `mensagens_reserva`, `publico`, versão e data fixas. */
+export async function criarConsentimento(
+  salaoId: string,
+  clienteId: string,
+  s: { finalidade?: Finalidade; origem?: 'publico' | 'equipe'; versaoTermos?: string; criadoEm?: Date } = {},
+): Promise<{ id: string; finalidade: Finalidade; origem: 'publico' | 'equipe'; versaoTermos: string; criadoEm: Date }> {
+  const db = obterPrisma();
+  const linha = await db.consentimento.create({
+    data: {
+      salaoId,
+      clienteId,
+      finalidade: s.finalidade ?? 'mensagens_reserva',
+      origem: s.origem ?? 'publico',
+      versaoTermos: s.versaoTermos ?? 'versao-de-teste',
+      criadoEm: s.criadoEm ?? new Date(),
+    },
+    select: { id: true, finalidade: true, origem: true, versaoTermos: true, criadoEm: true },
+  });
+  return linha;
 }

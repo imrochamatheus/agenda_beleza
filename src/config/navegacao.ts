@@ -55,6 +55,7 @@ export const ROTAS = {
   devBloqueios: '/dev/bloqueios',
   devConfiguracoes: '/dev/configuracoes',
   devClientes: '/dev/clientes',
+  devConsentimento: '/dev/consentimento',
   devPerfil: '/dev/perfil',
   devFuncionamento: '/dev/funcionamento',
   devFotos: '/dev/fotos',

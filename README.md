@@ -232,6 +232,16 @@ O harness fica em `tests/support/` (`global-setup.ts`, `setup-arquivo.ts`, `db.t
 - **E2E:** `npx playwright test e2e/clientes.spec.ts e2e/clientes-sem-js.spec.ts` (build prévio e porta 3000 livre).
 - **Estabilidade dos testes de concorrência:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/clientes/concorrencia.test.ts || break; done`.
 
+## Termos, Privacidade e consentimento
+
+- **Páginas:** `/termos` e `/privacidade` (públicas, estáticas, sem JavaScript nem banco). Cada uma mostra a versão, a data de vigência e um aviso destacado de que o **texto é provisório**: são textos próprios, ainda sem revisão jurídica, que precisam ser revisados antes de produção. A Privacidade tem a seção `#avaliacoes` (dados publicados, retirada, denúncia e pedido de anonimização).
+- **Onde mudar:** os textos ficam em `src/config/termos.ts` (versão `VERSAO_TERMOS`, vigência e as três caixas de consentimento) e `src/config/termos-documentos.ts` (seções dos dois documentos). **Mudar qualquer texto exige mudar `VERSAO_TERMOS`** e acrescentar o novo hash em `HASHES_POR_VERSAO` (`src/config/termos.test.ts`): o teste de guarda falha com o hash calculado na mensagem. Nunca altere a entrada de uma versão antiga.
+- **Registro:** cada aceite grava uma linha em `consentimento` com finalidade (`mensagens_reserva`, `convite_avaliacao`, `publicacao_avaliacao`), origem (`publico`/`equipe`), a versão vigente lida do servidor e o instante UTC. A equipe só declara `mensagens_reserva`; o convite e a publicação da avaliação são sempre da própria cliente (o banco recusa o contrário). Não há revogação por tela: a cliente pede ao salão ou à plataforma.
+- **Para as próximas demandas:** a reserva chama `registrarConsentimentoDaReserva` (`src/server/consentimento/servico.ts`) dentro da transação; `consentimentoVigente` e `temConsentimentoDeMensagens` (`leitura.ts`) respondem ao convite de avaliação e às mensagens; o formulário público usa `CaixasConsentimento` (`src/components/consentimento/`).
+- **Demonstração para o E2E:** `/dev/consentimento`, ligada pela `VITRINE_COMPONENTES=true`, com o mesmo componente e uma ação que só valida (404 com a variável desligada).
+- **E2E:** `npx playwright test e2e/termos-privacidade.spec.ts e2e/consentimento.spec.ts e2e/consentimento-sem-js.spec.ts` (build prévio e porta 3000 livre).
+- **Estabilidade:** `for i in $(seq 10); do npx vitest run --project integration tests/integration/consentimento/concorrencia.test.ts || break; done`; fuso: `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/consentimento src/config/termos.test.ts || break; done`.
+
 ## Integrações (adaptadores)
 
 Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<serviço>/port.ts`), com um adaptador `simulado` e um `real`. O adaptador é escolhido por uma variável de ambiente. A lógica de negócio pede as portas a `integracoes()` (`src/server/integrations/registry.ts`) e nunca importa um adaptador ou o SDK de um provedor.

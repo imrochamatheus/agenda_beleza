@@ -3,6 +3,7 @@ import type {
   PapelUsuario as PapelUsuarioPrisma,
   StatusReserva as StatusReservaPrisma,
 } from '@/generated/prisma/enums';
+import type { Finalidade } from '@/config/termos';
 import type { Papel } from '@/server/tenant/context';
 
 /**
@@ -12,6 +13,7 @@ import type { Papel } from '@/server/tenant/context';
  */
 export type StatusReserva = 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
 export type OrigemReserva = 'publico' | 'equipe';
+export type OrigemConsentimentoDTO = 'publico' | 'equipe';
 
 // Asserções de tipo: as uniões são exatamente os enums do Prisma (o typecheck falha se divergirem).
 type Igual<A, B> =
@@ -86,6 +88,15 @@ export type ClienteDTO = {
   anonimizadaEm: Date | null;
   criadoEm: Date;
   atualizadoEm: Date;
+};
+
+/** Linha de consentimento (D-023): finalidade, origem, versão aceita e instante UTC. */
+export type ConsentimentoDTO = {
+  id: string;
+  finalidade: Finalidade;
+  origem: OrigemConsentimentoDTO;
+  versaoTermos: string;
+  criadoEm: Date;
 };
 
 /** Reserva no histórico da cliente (D-022 §3.3): nomes atuais, preço e duração do snapshot dos itens. */

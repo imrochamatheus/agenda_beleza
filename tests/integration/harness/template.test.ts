@@ -38,6 +38,7 @@ const MIGRACOES = [
   '20261119000000_simuladores_integracao',
   '20261120000000_perfil_funcionamento',
   '20261121000000_salao_foto',
+  '20261121100000_consentimento_finalidade',
 ];
 
 describe('CA-17: a guarda roda antes de qualquer conexão (prepararExecucao)', () => {
