@@ -29,3 +29,6 @@
 - Remarcar × desativar profissional não tem teste de corrida próprio (a trava `FOR NO KEY UPDATE` e o `ativo` sob a trava são cobertos de forma determinística; a desativação já recusa com reserva `confirmado` futura).
 - Bloqueio continua fora da constraint (risco aceito da D-025).
 - CLAUDE.md pendente (líder).
+
+## Correção pós-CI (PR #91, e2e)
+O `DATABASE_URL não definida` do log é ruído pré-existente de `/confirmar-email` (aparece também em execução limpa, sem `.env`, e todos os 156 E2E passam assim). A falha real de `reserva-acoes.spec.ts:48` era digitar a data como `ddmmyyyy` no `<input type="date">`, que depende do locale do navegador (en-US na CI lê mês/dia). O teste agora usa `fill(dia)` (ISO, independente de locale). Verificado sem `.env`/`DATABASE_URL`, com `CI=1 npm run test:e2e` (156/156) e com locales en-US e pt-BR nos dois specs de `reserva-acoes`.

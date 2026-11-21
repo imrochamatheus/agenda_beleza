@@ -53,8 +53,8 @@ test.describe('CA-13: ações da reserva com o teclado', () => {
     await expect(page.getByRole('button', { name: /Marcar como/ })).toHaveCount(0);
 
     await tabAte(page, 'remarcar-data');
-    await page.keyboard.press('ControlOrMeta+A');
-    await page.keyboard.type(dia.split('-').reverse().join(''));
+    // fill() é independente da ordem dia/mês do locale do navegador (digitar ddmmyyyy falha em en-US, como na CI).
+    await page.getByLabel('Nova data').fill(dia);
     await tabAte(page, 'remarcar-hora');
     await page.keyboard.press('ControlOrMeta+A');
     await page.keyboard.type('19:00');
