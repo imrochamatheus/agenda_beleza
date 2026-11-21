@@ -11,7 +11,7 @@ import { whatsappReserva } from './whatsapp-reserva';
 
 function contexto(sinal: AbortSignal = new AbortController().signal) {
   const log = vi.fn<ContextoJob['log']>();
-  const ctx: ContextoJob = { id: 'j1', fila: 'exemplo', tentativa: 1, agendadoPara: new Date(), sinal, log };
+  const ctx: ContextoJob = { id: 'j1', fila: 'exemplo', tentativa: 1, tentativasMaximas: 5, agendadoPara: new Date(), sinal, log };
   return { ctx, log };
 }
 
@@ -37,11 +37,7 @@ describe('REGISTRO (RN-8, CA-7)', () => {
 });
 
 describe('stubs (D-5, RN-17)', () => {
-  it.each([
-    ['assinatura-prazos', assinaturaPrazos, {}],
-    ['reconciliar-mensagens', reconciliarMensagens, {}],
-    ['whatsapp-reserva', whatsappReserva, { mensagemId: '6f1c2b8e-3d4a-4b5c-9d6e-7f8091a2b3c4' }],
-  ] as const)('%s resolve sem registrar nada', async (_nome, def, payload) => {
+  it.each([['assinatura-prazos', assinaturaPrazos, {}]] as const)('%s resolve sem registrar nada', async (_nome, def, payload) => {
     const { ctx, log } = contexto();
     await expect(def.processar(payload as never, ctx)).resolves.toBeUndefined();
     expect(log).not.toHaveBeenCalled();

@@ -56,6 +56,18 @@ export function formatarDuracao(minutos: number): string {
   return resto === 0 ? `${horas} h` : `${horas} h ${resto} min`;
 }
 
+/**
+ * Lista em português (D-024): [] → '', ['A'] → 'A', ['A', 'B'] → 'A e B', ['A', 'B', 'C'] → 'A, B e C'.
+ * Mantém a ordem recebida; não deduplica nem corta nomes. Não texto na lista → TypeError.
+ */
+export function formatarLista(nomes: readonly string[]): string {
+  if (!Array.isArray(nomes) || nomes.some((n) => typeof n !== 'string')) {
+    throw new TypeError('formatarLista: espera uma lista de textos');
+  }
+  if (nomes.length <= 1) return nomes[0] ?? '';
+  return `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`;
+}
+
 /** Último minuto representável do dia local (24:00, só como fim de intervalo; D-015 RN-3). */
 const MINUTOS_NO_DIA = 1440;
 

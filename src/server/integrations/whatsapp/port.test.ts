@@ -18,8 +18,8 @@ const VALIDO: EnvioModelo = {
 };
 
 describe('whatsapp/port', () => {
-  it('declara os três modelos do v1, iguais ao enum tipo_mensagem', () => {
-    expect(MODELOS_WHATSAPP).toEqual(['confirmacao', 'remarcacao', 'cancelamento']);
+  it('declara os quatro modelos, iguais ao enum tipo_mensagem (CA-23)', () => {
+    expect(MODELOS_WHATSAPP).toEqual(['confirmacao', 'remarcacao', 'cancelamento', 'convite_avaliacao']);
   });
 
   it.each(['+5511987654321', '+551133334444'])('E164_BR aceita %s', (numero) => {

@@ -1,7 +1,7 @@
 // Porta do WhatsApp (RN-11). Não importa provedor, Prisma nem process.env.
 
 /** Modelos aprovados; iguais aos valores do enum `tipo_mensagem` do banco. */
-export const MODELOS_WHATSAPP = ['confirmacao', 'remarcacao', 'cancelamento'] as const;
+export const MODELOS_WHATSAPP = ['confirmacao', 'remarcacao', 'cancelamento', 'convite_avaliacao'] as const;
 export type ModeloWhatsApp = (typeof MODELOS_WHATSAPP)[number];
 
 export type EnvioModelo = {
@@ -9,7 +9,7 @@ export type EnvioModelo = {
   modelo: ModeloWhatsApp;
   /** Parâmetros nomeados; a E7.2 os mapeia para a ordem do template. */
   parametros: Readonly<Record<string, string>>;
-  /** `reserva:tipo:revisao` (formato da E7.1); aqui só se exige que não seja vazia. */
+  /** `reserva:tipo:revisao` (formato da D-024); aqui só se exige que não seja vazia. */
   chaveIdempotencia: string;
 };
 

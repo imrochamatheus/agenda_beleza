@@ -117,6 +117,7 @@ export function iniciarWorker(deps: DependenciasWorker): ControleWorker {
     try {
       const ctx: ContextoJob = {
         ...base,
+        tentativasMaximas: job.retryLimit + 1,
         agendadoPara: job.startAfter,
         sinal: job.signal,
         log,

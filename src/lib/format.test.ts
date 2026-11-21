@@ -10,6 +10,7 @@ import {
   formatarDeslocamentoUtc,
   formatarDiaDaSemana,
   formatarFaixaDeMinutos,
+  formatarLista,
   formatarHora,
   formatarInteiro,
   formatarDuracao,
@@ -398,5 +399,22 @@ describe('formatarDataCivil (D-023)', () => {
 
   it('entrada que não é texto → RangeError', () => {
     expect(() => formatarDataCivil(undefined as unknown as string)).toThrow(RangeError);
+  });
+});
+
+describe('formatarLista (D-024)', () => {
+  it.each([
+    [[], ''],
+    [['Corte'], 'Corte'],
+    [['Corte', 'Barba'], 'Corte e Barba'],
+    [['Corte', 'Barba', 'Hidratação'], 'Corte, Barba e Hidratação'],
+    [['A', 'B', 'C', 'D'], 'A, B, C e D'],
+  ])('%j → %s', (nomes, esperado) => {
+    expect(formatarLista(nomes)).toBe(esperado);
+  });
+
+  it('texto fora da lista → TypeError', () => {
+    expect(() => formatarLista([1] as never)).toThrow(TypeError);
+    expect(() => formatarLista('A' as never)).toThrow(TypeError);
   });
 });

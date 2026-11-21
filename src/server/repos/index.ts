@@ -11,6 +11,8 @@ import { criarRepoFoto } from './foto';
 import type { RepoFoto } from './foto';
 import { criarRepoFuncionamento } from './funcionamento';
 import type { RepoFuncionamento } from './funcionamento';
+import { criarRepoMensagem } from './mensagem';
+import type { RepoMensagem } from './mensagem';
 import { criarRepoJornada } from './jornada';
 import type { RepoJornada } from './jornada';
 import { criarRepoProfissional } from './profissional';
@@ -23,7 +25,7 @@ import { criarRepoServico } from './servico';
 import type { RepoServico } from './servico';
 import type { Executor } from './transacao';
 
-export type { RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoProfissional, RepoReserva, RepoSalao, RepoServico };
+export type { RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoSalao, RepoServico };
 
 /** Repositórios de tenant: toda operação recebe ContextoEscopado e filtra salao_id (RN-8). */
 export interface Repos {
@@ -43,6 +45,8 @@ export interface Repos {
   fotos: RepoFoto;
   /** Leituras de agenda para o cálculo de disponibilidade (D-018): aceita também PublicoContext. */
   disponibilidade: RepoDisponibilidade;
+  /** Mensagens de WhatsApp do salão (D-024): registro, substituição, reenvio e leitura. */
+  mensagens: RepoMensagem;
 }
 
 /** Conjunto ligado a um executor (cliente ou transação). Uso interno: emTransacao e repos(). */
@@ -59,6 +63,7 @@ export function criarRepos(db: Executor): Repos {
     funcionamento: criarRepoFuncionamento(db),
     fotos: criarRepoFoto(db),
     disponibilidade: criarRepoDisponibilidade(db),
+    mensagens: criarRepoMensagem(db),
   };
 }
 

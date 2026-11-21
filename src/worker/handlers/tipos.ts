@@ -6,6 +6,8 @@ export interface ContextoJob {
   fila: string;
   /** 1 na primeira execução; 2 na primeira nova tentativa; e assim por diante. */
   tentativa: number;
+  /** Execuções permitidas para este job: `retryLimit + 1` (D-024 A-16). */
+  tentativasMaximas: number;
   /** Instante a partir do qual o pg-boss podia executar esta tentativa (inclui o atraso do retry). */
   agendadoPara: Date;
   /** Abortado quando o encerramento estoura o prazo ou o job perde a posse: pare o trabalho. */

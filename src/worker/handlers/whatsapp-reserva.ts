@@ -1,12 +1,38 @@
+import { integracoes } from '@/server/integrations/registry';
+import { enviarMensagem } from '@/server/mensagens/envio';
+import type { DependenciasEnvio } from '@/server/mensagens/envio';
+import { ErroReenvioAgendado } from '@/server/mensagens/tipos';
 import { FILA } from '@/server/queue/filas';
 
 import { definirHandler } from './tipos';
 
 /**
- * Stub (D-5): envio das mensagens de reserva (confirmação, remarcação, cancelamento). A E7.1 preenche
- * o envio pelo adaptador e o registro de cada tentativa. O payload `{ mensagemId }` já chega validado.
- * Não lê nem grava `public` (RN-17).
+ * Envio das mensagens de reserva (D-024). O payload `{ mensagemId }` já chega validado. O núcleo é
+ * `enviarMensagem` (reivindicação atômica, tentativa por chamada, estado final). Falha temporária com
+ * retentativas restantes devolve a mensagem a `pendente` e lança `ErroReenvioAgendado` (mensagem
+ * fixa, sem causa) para o pg-boss reagendar com o backoff de `QUEUE_RETRY_*`; nos demais casos o job
+ * termina `completed` e o estado oficial fica em `mensagem.estado`. Só escreve em `mensagem` e
+ * `mensagem_tentativa`. Produção: porta do registro e SEM gerador do link (a E4.5 o injeta aqui).
  */
-export const whatsappReserva = definirHandler(FILA.whatsappReserva, {
-  async processar() {},
-});
+export function criarWhatsappReserva(deps: Partial<DependenciasEnvio> = {}) {
+  return definirHandler(FILA.whatsappReserva, {
+    async processar({ mensagemId }, ctx) {
+      const resultado = await enviarMensagem(
+        mensagemId,
+        { atual: ctx.tentativa, maxima: ctx.tentativasMaximas },
+        {
+          whatsapp: deps.whatsapp ?? (() => integracoes().whatsapp),
+          gerarLink: deps.gerarLink,
+          agora: deps.agora ?? (() => new Date()),
+          sistema: deps.sistema,
+          log: deps.log ?? ((evento, campos) => ctx.log(evento, campos)),
+        },
+      );
+      if (resultado === 'reagendar') {
+        throw new ErroReenvioAgendado();
+      }
+    },
+  });
+}
+
+export const whatsappReserva = criarWhatsappReserva();
