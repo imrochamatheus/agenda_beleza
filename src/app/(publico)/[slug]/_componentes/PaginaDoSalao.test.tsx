@@ -210,7 +210,7 @@ describe('PaginaDoSalao: avaliações (D-032, CA-3, CA-15)', () => {
   });
 
   it('com avaliações: a seção aparece depois da equipe, com média e contagem', () => {
-    montar({ avaliacoes: { total: 2, media: 4.5, itens: [{ nome: 'Maria S.', nota: 5, comentario: 'Ótimo', mesAno: 'novembro de 2026' }] } });
+    montar({ avaliacoes: { total: 2, media: 4.5, itens: [{ id: 'id-1', nome: 'Maria S.', nota: 5, comentario: 'Ótimo', mesAno: 'novembro de 2026' }] } });
     const titulos = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
     expect(titulos.indexOf('Avaliações')).toBeGreaterThan(titulos.indexOf('Equipe'));
     expect(screen.getByText('4,5')).toBeTruthy();

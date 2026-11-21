@@ -1,0 +1,97 @@
+/* Moderação de avaliações (D-035). Só tokens do tema (globals.css). */
+.pagina {
+  display: grid;
+  gap: var(--espaco-6);
+  min-width: 0;
+}
+
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--espaco-3);
+}
+
+.lista {
+  display: grid;
+  gap: var(--espaco-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cartao {
+  display: grid;
+  gap: var(--espaco-2);
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  overflow-wrap: anywhere;
+}
+
+.cartao p {
+  margin: 0;
+}
+
+.suave {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.selos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.selo {
+  padding: var(--espaco-1) var(--espaco-3);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  font-size: var(--texto-sm);
+}
+
+.paginacao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-4);
+}
+
+.paginacao a,
+.cartao a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+}
+
+.formulario {
+  display: grid;
+  gap: var(--espaco-3);
+  max-width: 32rem;
+}
+
+.denuncias {
+  display: grid;
+  gap: var(--espaco-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.denuncia {
+  display: grid;
+  gap: var(--espaco-2);
+  padding: var(--espaco-3);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  overflow-wrap: anywhere;
+}
+
+.denuncia p {
+  margin: 0;
+}

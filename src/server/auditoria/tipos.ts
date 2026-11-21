@@ -10,10 +10,12 @@ export const ACOES_AUDITAVEIS = [
   // D-034 (E1.5): sucesso do login do super admin e cadastro do TOTP (entidade `usuario`, sem antes/depois).
   'login.sucesso',
   'totp.cadastrar',
+  // D-035 (E8.4): arquivar denúncias de avaliação sem retirar (entidade `avaliacao_denuncia`).
+  'avaliacao.denuncia_resolver',
 ] as const;
 export type AcaoAuditavel = (typeof ACOES_AUDITAVEIS)[number];
 
-export const ENTIDADES_AUDITAVEIS = ['avaliacao', 'salao', 'usuario'] as const;
+export const ENTIDADES_AUDITAVEIS = ['avaliacao', 'avaliacao_denuncia', 'salao', 'usuario'] as const;
 export type EntidadeAuditavel = (typeof ENTIDADES_AUDITAVEIS)[number];
 
 /** Ações de "mutação com valor anterior e novo": `antes` e `depois` são obrigatórios em sucesso. */

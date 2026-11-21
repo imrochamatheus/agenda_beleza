@@ -41,6 +41,13 @@ export default async function PaginaAdmin() {
     >
       <h1>Olá, {identidade?.nome ?? 'administrador'}</h1>
       <p>{identidade?.email}</p>
+      <nav aria-label="Atalhos da administração">
+        <ul>
+          <li>
+            <a href={ROTAS.adminAvaliacoes}>Moderação de avaliações</a>
+          </li>
+        </ul>
+      </nav>
     </AdminLayout>
   );
 }

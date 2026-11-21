@@ -41,5 +41,6 @@ export type ResultadoVerificacao =
   | { ok: true; nomeSalao: string; slugAtual: string; historico: boolean }
   | { ok: false; motivo: 'invalido' | 'limite' };
 
-export type AvaliacaoPublica = { nome: string; nota: number; comentario: string | null; mesAno: string };
+/** `id` só serve ao formulário de denúncia (D-035): UUID aleatório, sem relação com cliente nem reserva. */
+export type AvaliacaoPublica = { id: string; nome: string; nota: number; comentario: string | null; mesAno: string };
 export type AvaliacoesPublicas = { total: number; media: number | null; itens: AvaliacaoPublica[] };

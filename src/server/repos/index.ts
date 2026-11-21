@@ -11,6 +11,8 @@ import type { RepoCliente } from './cliente';
 import { criarRepoConsentimento } from './consentimento';
 import type { RepoConsentimento } from './consentimento';
 import { obterPrisma } from './db';
+import { criarRepoDenuncia } from './denuncia';
+import type { RepoDenuncia } from './denuncia';
 import { criarRepoDisponibilidade } from './disponibilidade';
 import type { RepoDisponibilidade } from './disponibilidade';
 import { criarRepoFoto } from './foto';
@@ -33,7 +35,7 @@ import { criarRepoServico } from './servico';
 import type { RepoServico } from './servico';
 import type { Executor } from './transacao';
 
-export type { RepoAgenda, RepoAuditoria, RepoAvaliacao, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoReservaAlteracao, RepoSalao, RepoServico };
+export type { RepoAgenda, RepoAuditoria, RepoAvaliacao, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDenuncia, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoReservaAlteracao, RepoSalao, RepoServico };
 
 /** Repositórios de tenant: toda operação recebe ContextoEscopado e filtra salao_id (RN-8). */
 export interface Repos {
@@ -61,6 +63,8 @@ export interface Repos {
   agenda: RepoAgenda;
   /** Avaliações verificadas e convites por link (D-032). */
   avaliacoes: RepoAvaliacao;
+  /** Denúncias de avaliações e fila de moderação (D-035), de plataforma: recebe AdminContext. */
+  denuncias: RepoDenuncia;
   /** Auditoria de plataforma, somente inserção (D-033): só `registrarAuditoria` a usa. */
   auditoria: RepoAuditoria;
 }
@@ -83,6 +87,7 @@ export function criarRepos(db: Executor): Repos {
     mensagens: criarRepoMensagem(db),
     agenda: criarRepoAgenda(db),
     avaliacoes: criarRepoAvaliacao(db),
+    denuncias: criarRepoDenuncia(db),
     auditoria: criarRepoAuditoria(db),
   };
 }

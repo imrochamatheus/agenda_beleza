@@ -15,6 +15,7 @@ import type {
 
 import type { AvaliacoesPublicas } from '@/server/avaliacoes/tipos';
 
+import type { AcaoDenunciar } from '../_denuncia/estado';
 import type { AcaoReservar } from '../estado';
 import { FormularioDados } from './FormularioDados';
 import {
@@ -51,6 +52,8 @@ export type PaginaDoSalaoProps = {
   humano: DadosDoWidget;
   /** Avaliações verificadas (D-032); ausente na vitrine de reserva. */
   avaliacoes?: AvaliacoesPublicas;
+  /** Denúncia de avaliação (D-035); ausente na vitrine de reserva. */
+  denuncia?: { acao: AcaoDenunciar; recebida: boolean };
 };
 
 function PassoAtual({ props }: { props: PaginaDoSalaoProps }) {
@@ -144,7 +147,12 @@ export function PaginaDoSalao(props: PaginaDoSalaoProps) {
           <ListaDeServicos servicos={props.servicos} />
         ) : null}
         <Equipe equipe={props.equipe} />
-        {props.avaliacoes ? <SecaoAvaliacoes avaliacoes={props.avaliacoes} /> : null}
+        {props.avaliacoes ? (
+          <SecaoAvaliacoes
+            avaliacoes={props.avaliacoes}
+            denuncia={props.denuncia ? { ...props.denuncia, slug: props.slug, humano: props.humano } : undefined}
+          />
+        ) : null}
         <SecoesDoPerfil perfil={perfil} />
       </div>
     </PublicLayout>

@@ -52,6 +52,8 @@ export const ROTAS = {
   adminSalaoAssinatura: (id: string) => `/admin/saloes/${seg(id)}/assinatura`,
   adminMensagens: '/admin/mensagens',
   adminAuditoria: '/admin/auditoria',
+  adminAvaliacoes: '/admin/avaliacoes',
+  adminAvaliacao: (id: string) => `/admin/avaliacoes/${seg(id)}`,
   // desenvolvimento (fora de qualquer navegação)
   devComponentes: '/dev/componentes',
   devMpCheckout: '/dev/mp-checkout',
@@ -61,6 +63,8 @@ export const ROTAS = {
   devClientes: '/dev/clientes',
   devConsentimento: '/dev/consentimento',
   devAvaliacao: '/dev/avaliacao',
+  devDenuncia: '/dev/denuncia',
+  devModeracao: '/dev/moderacao',
   devPerfil: '/dev/perfil',
   devFuncionamento: '/dev/funcionamento',
   devAdminEntrar: '/dev/admin-entrar',

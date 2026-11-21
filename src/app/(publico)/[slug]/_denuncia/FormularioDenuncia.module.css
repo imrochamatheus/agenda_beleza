@@ -1,0 +1,88 @@
+/* Denúncia de avaliação (D-035). Só tokens do tema (globals.css). */
+.detalhes {
+  margin-block-start: var(--espaco-2);
+}
+
+.detalhes > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  cursor: pointer;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+  text-decoration: underline;
+}
+
+.detalhes > summary:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.form {
+  display: grid;
+  gap: var(--espaco-3);
+  max-width: 32rem;
+  padding-block: var(--espaco-3);
+}
+
+.motivos {
+  display: grid;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.motivos legend {
+  padding: 0;
+  margin-block-end: var(--espaco-2);
+  font-weight: 600;
+}
+
+.motivo {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  min-height: var(--alvo-minimo);
+}
+
+.motivo input {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.campo {
+  display: grid;
+  gap: var(--espaco-1);
+}
+
+.texto {
+  width: 100%;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+  resize: vertical;
+}
+
+.texto:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.texto[aria-invalid='true'] {
+  border-color: var(--cor-erro-texto);
+  border-width: 2px;
+}
+
+.ajuda {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.erro {
+  margin: 0;
+  color: var(--cor-erro-texto);
+}

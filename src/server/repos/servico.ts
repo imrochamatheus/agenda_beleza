@@ -26,6 +26,9 @@ import type { Executor } from './transacao';
 //             → mensagem / mensagem_tentativa (D-024: SEMPRE por último; ver repos/mensagem.ts e mensagem-sistema.ts)
 //               → avaliacao_convite / avaliacao (D-032, depois de reserva e cliente: o ENVIO toma reserva FOR SHARE → cliente
 //                 FOR SHARE → convite FOR UPDATE; a anonimização, cliente FOR UPDATE → mensagem → avaliação/convite; ver repos/avaliacao.ts)
+//                   (D-035, moderação do super admin: `avaliacao … FOR UPDATE` é a PRIMEIRA e única trava de
+//                   retirar/restaurar/arquivar, nunca `salao`; depois UPDATE de `avaliacao_denuncia`; a denúncia
+//                   pública só INSERE, com FOR KEY SHARE na avaliação; ver repos/denuncia.ts e denuncia-publica.ts)
 //                 → auditoria (D-033: SEMPRE a última; só INSERT, a FK toma FOR KEY SHARE em usuario/salao, que não conflita com NO KEY UPDATE; ver repos/auditoria.ts)
 // (D-021: fotos do salão — salao FOR NO KEY UPDATE → salao_foto; ver repos/foto.ts.)
 // Os INSERT com FK para salao só tomam FOR KEY SHARE, que não conflita com FOR NO KEY UPDATE.

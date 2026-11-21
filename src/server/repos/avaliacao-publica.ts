@@ -21,14 +21,14 @@ export function ondeAvaliacaoVisivel(salaoId: string): Prisma.Sql {
     AND r.status = 'concluido' AND c.anonimizada_em IS NULL`;
 }
 
-export type AvaliacaoLida = { nome: string; nota: number; comentario: string | null; criadoEm: Date };
+export type AvaliacaoLida = { id: string; nome: string; nota: number; comentario: string | null; criadoEm: Date };
 export type AvaliacoesLidas = { fuso: string; total: number; media: number | null; itens: AvaliacaoLida[] };
 
 type LinhaLeitura = {
   fuso: string;
   total: number;
   media: number | null;
-  itens: { nome: string | null; nota: number; comentario: string | null; criado_em: string }[];
+  itens: { id: string; nome: string | null; nota: number; comentario: string | null; criado_em: string }[];
 };
 
 /** Uma instrução: contagem, média (1 casa, meio para cima do numeric) e as últimas `limite`. */
@@ -53,6 +53,7 @@ export async function lerPublicas(ctx: PublicoContext, limite: number): Promise<
     total: l.total,
     media: l.media,
     itens: l.itens.map((i) => ({
+      id: i.id,
       nome: i.nome ?? 'Cliente',
       nota: i.nota,
       comentario: i.comentario,

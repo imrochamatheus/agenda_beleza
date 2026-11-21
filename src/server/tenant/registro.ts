@@ -31,6 +31,10 @@ function motivoDoProblema(valor: unknown): MotivoProblema | null {
   if (!metadados) {
     return 'nao_e_acao';
   }
+  // Ação do super admin (`defineAcaoAdmin`, D-035): só o papel `admin`, sem capacidade de salão.
+  if ((metadados as { tipo?: unknown }).tipo === 'admin' && (metadados.papeis as readonly string[]).join() === 'admin') {
+    return null;
+  }
   if (metadados.capacidade === undefined || metadados.capacidade === null) {
     return 'sem_capacidade';
   }
