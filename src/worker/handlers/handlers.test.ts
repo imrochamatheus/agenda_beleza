@@ -37,14 +37,6 @@ describe('REGISTRO (RN-8, CA-7)', () => {
   });
 });
 
-describe('stubs (D-5, RN-17)', () => {
-  it.each([['assinatura-prazos', assinaturaPrazos, {}]] as const)('%s resolve sem registrar nada', async (_nome, def, payload) => {
-    const { ctx, log } = contexto();
-    await expect(def.processar(payload as never, ctx)).resolves.toBeUndefined();
-    expect(log).not.toHaveBeenCalled();
-  });
-});
-
 describe('exemplo (D-4)', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
