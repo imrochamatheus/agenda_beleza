@@ -579,6 +579,15 @@ Entrega da D-027 (E4.2). Sem migração. Módulo `src/server/protecao/` sobre `r
 - **Efeito colateral aceito:** mais de `PROTECAO_LIMITE_NUMERO` envios idênticos simultâneos do mesmo número, antes de qualquer commit, ficam limitados.
 - **Testes:** `tests/integration/protecao/`. Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/protecao/concorrencia.test.ts || break; done`. E2E: `npx playwright test e2e/protecao.spec.ts e2e/protecao-sem-js.spec.ts`.
 
+## Assinatura: início e teste após autorização (E6.1, D-040)
+
+O gestor abre **Assinatura** no menu (`/painel/assinatura`) e toca em "Assinar" (só aparece sem assinatura ou com a assinatura `pendente`). O sistema cria a assinatura `pendente` do salão, cria a assinatura no provedor (o `external_reference` é o `salaoId`; valor e prazo vêm de `src/config/plano.ts`) e leva o gestor ao checkout. Ao voltar, `/painel/assinatura/retorno` **ignora a query string** e consulta o provedor: só uma autorização confirmada por ele inicia o teste, que termina 30 dias **depois da autorização** (não do instante da consulta). Reprocessar o retorno não muda nada. A chamada ao provedor nunca ocorre com transação aberta; iniciar em paralelo deixa uma única assinatura vigente (quem perde a corrida cancela a que criou e vê "tente novamente"). Nenhum dado de cartão trafega ou é gravado.
+
+- Fluxo simulado (`MP_ADAPTER=simulado`): "Assinar" leva a `/dev/mp-checkout`; "Autorizar assinatura" volta ao retorno e o salão passa a `em_teste`.
+- Demonstração sem banco: `/dev/assinatura?situacao=pendente|em_teste` (com `VITRINE_COMPONENTES=true`).
+- Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/assinatura/concorrencia-iniciar.test.ts || break; done` (10 inícios e 10 retornos em paralelo, sem `23505` nem impasse).
+- Testes: `tests/integration/assinatura/{repo-iniciar,iniciar,concorrencia-iniciar,seguranca-iniciar}.test.ts`; E2E: `npx playwright test e2e/assinatura.spec.ts e2e/assinatura-sem-js.spec.ts`.
+
 ## Somente leitura e página indisponível (E6.4, D-038)
 
 Um salão `pendente`, `suspensa`, `encerrada` (inclui `cancelada` vencida) ou suspenso manualmente fica somente leitura. **Uma única política, no servidor** (`src/server/assinatura/politica-operacao.ts`) lê o estado efetivo do salão (`estadoEfetivoDoSalao`, D-037) e responde `capacidades[capacidade]` da tabela `TABELA_CAPACIDADES` (`src/domain/assinatura/capacidades.ts`, a única fonte). Ela é aplicada em `defineAcao` (toda ação de equipe, inclusive o `POST /api/painel/fotos`), em `criarReserva` (contexto de equipe e público/sistema) e em remarcar/cancelar/marcar status; a UI nunca é o controle.

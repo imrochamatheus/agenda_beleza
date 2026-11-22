@@ -32,6 +32,7 @@ describe('avisoDoPlano', () => {
     expect(aviso(com('pendente'))).toEqual({
       tipo: 'aviso',
       texto: 'Assinatura pendente. Você já pode configurar o salão, mas o agendamento fica indisponível até a assinatura ser ativada.',
+      link: { rotulo: 'Assinar agora', href: '/painel/assinatura' },
     });
     expect(aviso(com('em_carencia', { carenciaAte: VIRADA }))).toEqual({
       tipo: 'aviso',
@@ -66,6 +67,7 @@ describe('avisoDoPlano', () => {
       expect(t).not.toContain('suporte');
     }
     expect(aviso(com('pendente'), 'profissional')?.texto).toContain('assinatura pendente de regularização');
+    expect(aviso(com('pendente'), 'profissional')?.link).toBeUndefined();
     expect(aviso(com('em_carencia', { carenciaAte: VIRADA }), 'profissional')?.texto).not.toMatch(/regularize/);
     expect(aviso(com('cancelada', { acessoAte: VIRADA }), 'profissional')?.texto).toContain('até 30/11/2026');
   });

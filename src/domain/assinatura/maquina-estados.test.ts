@@ -129,6 +129,17 @@ describe('decidir: teste_iniciado', () => {
   });
 });
 
+describe('decidir: teste_iniciado com iniciadoEm (D-040)', () => {
+  it('conta os 30 dias da autorização e ignora data inválida', () => {
+    const r = decidir(base('pendente'), { tipo: 'teste_iniciado', iniciadoEm: d('2027-03-01T12:00:00Z') }, AGORA);
+    if (r.tipo !== 'transicoes') throw new Error('x');
+    expect(r.passos[0].campos.testeFimEm).toEqual(d('2027-03-31T12:00:00Z'));
+    const inv = decidir(base('pendente'), { tipo: 'teste_iniciado', iniciadoEm: new Date('x') }, AGORA);
+    if (inv.tipo !== 'transicoes') throw new Error('x');
+    expect(inv.passos[0].campos.testeFimEm).toEqual(d('2027-04-09T00:00:00Z'));
+  });
+});
+
 describe('CA-18: exaustivo e total', () => {
   const eventos: EventoDominio[] = [
     { tipo: 'teste_iniciado' },

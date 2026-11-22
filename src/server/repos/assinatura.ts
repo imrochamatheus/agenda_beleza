@@ -26,6 +26,13 @@ export type AssinaturaTravada = {
   acessoAte: Date | null;
 };
 
+export type AssinaturaVigente = {
+  id: string;
+  estado: string;
+  provedorAssinaturaId: string | null;
+  emailGestor: string | null;
+};
+
 export type CamposDoPasso = Partial<Omit<AssinaturaTravada, 'id' | 'estado'>>;
 
 export type EstadoBrutoDaAssinatura = {
@@ -60,6 +67,17 @@ export interface RepoAssinatura {
     d: { assinaturaId: string; de: string; para: string; causa: string; eventoId: string | null; agora: Date },
   ): Promise<void>;
   marcarAplicado(ctx: ContextoEscopado, pagamentoLinhaId: string, agora: Date): Promise<void>;
+  /**
+   * D-040: cria a `pendente` do salão se não houver vigente (`INSERT … ON CONFLICT … DO NOTHING`, nunca
+   * captura 23505). Devolve se criou. Sem linha em `assinatura_transicao` (estado inicial não é transição).
+   */
+  criarPendenteSeNaoHouver(ctx: ContextoEscopado, agora: Date): Promise<boolean>;
+  /** Vigente (`estado <> 'encerrada'`) do salão, sem trava, com o e-mail do usuário da sessão (null em contexto de sistema). */
+  lerVigente(ctx: ContextoEscopado): Promise<AssinaturaVigente | null>;
+  /** CAS: grava o vínculo só se a linha ainda é `pendente` com o vínculo `de`. `false` = perdeu a corrida. */
+  trocarProvedor(ctx: ContextoEscopado, d: { id: string; de: string | null; para: string; agora: Date }): Promise<boolean>;
+  /** Trava a linha (`FOR NO KEY UPDATE`) e confere que o vínculo ainda é `provedorId`. Só em emTransacao. */
+  confirmarProvedor(ctx: ContextoEscopado, d: { id: string; provedorId: string }): Promise<boolean>;
   /** Salão suspenso manualmente + assinatura mais recente (um comando). Recusa admin. */
   lerEstadoBruto(ctx: ContextoDeLeituraDeAgenda): Promise<EstadoBrutoDaAssinatura>;
 }
@@ -194,6 +212,50 @@ export function criarRepoAssinatura(db: Executor): RepoAssinatura {
       exigirEscopo(ctx);
       await db.$executeRaw`
         UPDATE assinatura_pagamento SET aplicado_em = ${agora}::timestamptz WHERE id = ${pagamentoLinhaId}::uuid`;
+    },
+
+    async criarPendenteSeNaoHouver(ctx, agora) {
+      const salaoId = exigirEscopo(ctx);
+      const n = await db.$executeRaw`
+        INSERT INTO assinatura (salao_id, estado, criado_em, atualizado_em)
+        VALUES (${salaoId}::uuid, 'pendente', ${agora}::timestamptz, ${agora}::timestamptz)
+        ON CONFLICT (salao_id) WHERE estado <> 'encerrada' DO NOTHING`;
+      return n === 1;
+    },
+
+    async lerVigente(ctx) {
+      const salaoId = exigirEscopo(ctx);
+      const usuarioId = ctx.tipo === 'tenant' ? ctx.usuarioId : null;
+      const linhas = await db.$queryRaw<{ id: string; estado: string; provedor: string | null; email: string | null }[]>`
+        SELECT a.id::text AS id, a.estado::text AS estado, a.provedor_assinatura_id AS provedor,
+               (SELECT u.email FROM usuario u WHERE u.id = ${usuarioId}::uuid AND u.salao_id = a.salao_id) AS email
+          FROM assinatura a
+         WHERE a.salao_id = ${salaoId}::uuid AND a.estado <> 'encerrada'`;
+      const l = linhas[0];
+      return l ? { id: l.id, estado: l.estado, provedorAssinaturaId: l.provedor, emailGestor: l.email } : null;
+    },
+
+    async trocarProvedor(ctx, d) {
+      const salaoId = exigirEscopo(ctx);
+      if (!ehUuid(d.id)) return false;
+      const linhas = await db.$queryRaw<{ id: string }[]>`
+        UPDATE assinatura
+           SET provedor_assinatura_id = ${d.para}, atualizado_em = ${d.agora}::timestamptz
+         WHERE id = ${d.id}::uuid AND salao_id = ${salaoId}::uuid AND estado = 'pendente'
+           AND provedor_assinatura_id IS NOT DISTINCT FROM ${d.de}::text
+        RETURNING id::text AS id`;
+      return linhas.length === 1;
+    },
+
+    async confirmarProvedor(ctx, d) {
+      const salaoId = exigirEscopo(ctx);
+      if (!ehUuid(d.id)) return false;
+      const linhas = await db.$queryRaw<{ provedor: string | null }[]>`
+        SELECT a.provedor_assinatura_id AS provedor
+          FROM assinatura a
+         WHERE a.id = ${d.id}::uuid AND a.salao_id = ${salaoId}::uuid
+           FOR NO KEY UPDATE OF a`;
+      return linhas[0]?.provedor === d.provedorId;
     },
 
     async lerEstadoBruto(ctx) {
