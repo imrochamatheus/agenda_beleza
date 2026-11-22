@@ -333,6 +333,15 @@ describe('CA-18: Referrer-Policy por cabeçalho HTTP (next.config.ts)', () => {
           { key: 'X-Robots-Tag', value: 'noindex' },
         ],
       },
+      // D-039: a rota do convite de profissional (token no caminho): mesmo conjunto de cabeçalhos.
+      {
+        source: '/convite/:token',
+        headers: [
+          { key: 'Referrer-Policy', value: 'strict-origin' },
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex' },
+        ],
+      },
       // D-032: a rota do convite de avaliação (token no caminho) acrescenta cache e indexação.
       {
         source: '/:slug/avaliar/:token',

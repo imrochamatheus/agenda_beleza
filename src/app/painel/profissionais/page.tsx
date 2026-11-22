@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { PanelLayout } from '@/components/layout/PanelLayout';
 import { ROTAS } from '@/config/navegacao';
 import { exigirAcessoAoPainel } from '@/server/auth/pagina';
+import { estadoDosConvites } from '@/server/convites/servico';
 import { listarParaPainel } from '@/server/profissionais/servico';
 import { buscarIdentidadeDoPainel } from '@/server/repos/usuario';
 
@@ -28,6 +29,11 @@ export default async function PaginaProfissionais() {
     listarParaPainel(acesso.ctx),
     buscarIdentidadeDoPainel(acesso.ctx),
   ]);
+  const convites = await estadoDosConvites(
+    acesso.ctx,
+    profissionais.filter((p) => p.acesso === 'sem_acesso').map((p) => p.id),
+    new Date(),
+  );
   const jaAtende = profissionais.some((p) => p.acesso === 'voce' && p.ativo);
   return (
     <PanelLayout
@@ -41,7 +47,7 @@ export default async function PaginaProfissionais() {
           <h1>Profissionais</h1>
           <a href={ROTAS.novoProfissional}>Cadastrar profissional</a>
         </div>
-        <ListaProfissionais profissionais={profissionais} />
+        <ListaProfissionais profissionais={profissionais} convites={convites} />
         {jaAtende ? null : <EuTambemAtendo acao={euTambemAtendoAcao} />}
       </div>
     </PanelLayout>

@@ -171,6 +171,7 @@ const INDICES_SQL_BRUTO: [string, string, boolean][] = [
   ['mensagem_reconciliacao_idx', 'mensagem', false],
   ['bloqueio_periodo_idx', 'bloqueio', false],
   ['avaliacao_denuncia_pendente_uniq', 'avaliacao_denuncia', true],
+  ['convite_pendente_por_profissional_uniq', 'convite', true],
   ['avaliacao_denuncia_fila_idx', 'avaliacao_denuncia', false],
   ['avaliacao_denuncia_fila_global_idx', 'avaliacao_denuncia', false],
   ['avaliacao_denuncia_avaliacao_pendente_idx', 'avaliacao_denuncia', false],
@@ -442,6 +443,7 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261122000000_avaliacao', antes: false, ok: true },
       { migration_name: '20261123000000_totp_ultimo_passo', antes: false, ok: true },
       { migration_name: '20261124000000_avaliacao_denuncia', antes: false, ok: true },
+      { migration_name: '20261125000000_convite_pendente_unico', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,

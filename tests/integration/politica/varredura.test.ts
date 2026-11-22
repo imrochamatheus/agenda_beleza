@@ -33,6 +33,7 @@ const ENTRADAS: Record<string, unknown> = {
   'bloqueios/bloqueios.acao.ts#removerBloqueio': ENTRADA_VAZIA,
   'clientes/clientes.acao.ts#editarCliente': ENTRADA_VAZIA,
   'clientes/clientes.acao.ts#anonimizarCliente': ENTRADA_VAZIA,
+  'convites/convites.acao.ts#convidarProfissional': ENTRADA_VAZIA,
   'fotos/fotos.acao.ts#enviarFoto': {
     obterCorpo: async () => {
       LEU_O_CORPO();

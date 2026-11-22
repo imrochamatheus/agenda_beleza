@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { ROTAS } from '@/config/navegacao';
+import { convidarProfissional } from '@/server/convites/convites.acao';
+import { MENSAGENS_CONVITE } from '@/server/convites/tipos';
 import {
   criarProfissional,
   desativarProfissional,
@@ -14,7 +16,12 @@ import {
 import { MENSAGENS_PROFISSIONAL } from '@/server/profissionais/tipos';
 import type { CodigoErro } from '@/server/tenant/erros';
 
-import type { EstadoDesativacao, EstadoEuTambemAtendo, EstadoFormularioProfissional } from './estado';
+import type {
+  EstadoConviteProfissional,
+  EstadoDesativacao,
+  EstadoEuTambemAtendo,
+  EstadoFormularioProfissional,
+} from './estado';
 
 // Casca Next de /painel/profissionais (D-013 §3.6, D-16): só converte FormData → input e o resultado
 // da ação (defineAcao, que lê o cookie) → estado do formulário. Não acessa repositórios. `redirect`
@@ -126,4 +133,31 @@ export async function euTambemAtendoAcao(): Promise<EstadoEuTambemAtendo> {
   }
   revalidar(r.dados.profissionalId);
   return { variante: 'sucesso', mensagem: MENSAGENS_PROFISSIONAL.perfilAtivado };
+}
+
+/**
+ * Formulário "Enviar convite" / "Reenviar convite" de /painel/profissionais/[id] (D-039). Id em campo
+ * oculto, revalidado no servidor. O resultado vai no estado da ação (sem PRG), também sem JavaScript.
+ */
+export async function convidarAcao(
+  _anterior: EstadoConviteProfissional,
+  fd: FormData,
+): Promise<EstadoConviteProfissional> {
+  const id = texto(fd.get('id'));
+  const r = await convidarProfissional({ id });
+  if (!r.ok) {
+    if (r.erro === 'nao_autenticado') irParaEntrar(rotaDoProfissional(id));
+    return { variante: 'erro', mensagem: mensagemDoErro(r.erro) };
+  }
+  const d = r.dados;
+  if (d.resultado === 'invalido') {
+    return { variante: 'erro', mensagem: d.erros.email ?? d.erros.formulario ?? MENSAGENS_CONVITE.falha };
+  }
+  if (d.resultado === 'limite') {
+    return { variante: 'erro', mensagem: MENSAGENS_CONVITE.limite };
+  }
+  revalidar(id);
+  return d.emailEnviado
+    ? { variante: 'sucesso', mensagem: MENSAGENS_CONVITE.enviado }
+    : { variante: 'aviso', mensagem: MENSAGENS_CONVITE.emailNaoEnviado };
 }
