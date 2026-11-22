@@ -67,3 +67,13 @@ describe('mercadopago/port', () => {
     });
   });
 });
+
+describe('ProvedorNaoSuportaAdiamento (D-046)', () => {
+  it('é um ErroMercadoPago com o código adiamento_nao_suportado', async () => {
+    const { ProvedorNaoSuportaAdiamento } = await import('./port');
+    const e = new ProvedorNaoSuportaAdiamento();
+    expect(e).toBeInstanceOf(ErroMercadoPago);
+    expect(e.codigo).toBe('adiamento_nao_suportado');
+    expect(e.name).toBe('ProvedorNaoSuportaAdiamento');
+  });
+});

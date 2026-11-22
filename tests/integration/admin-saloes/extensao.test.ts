@@ -160,14 +160,30 @@ describe('CA-7: o provedor falha', () => {
     expect((await confirmar(s.salaoId, '10', s.fim)).resultado).toBe('estendido');
   });
 
-  it('adaptador real (NaoImplementado até a E6.6): nada muda e a falha é auditada com o código', async () => {
+  it('adaptador real (D-046) que não reflete o adiamento: nada muda e a falha é auditada com o código adiamento_nao_suportado', async () => {
     const s = await salaoEmTeste();
-    const r = await confirmar(s.salaoId, '10', s.fim, { ...DEPS, mp: criarMercadoPagoReal() });
+    const antiga = s.fim!.toISOString();
+    const fetchImpl = (async () =>
+      new Response(
+        JSON.stringify({
+          id: s.simId,
+          status: 'authorized',
+          external_reference: randomUUID(),
+          auto_recurring: { transaction_amount: '79.00' },
+          next_payment_date: antiga,
+        }),
+        { status: 200 },
+      )) as typeof fetch;
+    const real = criarMercadoPagoReal(
+      { accessToken: 'tok', webhookSecret: 'seg', planoId: 'pl' },
+      { fetchImpl, agora: () => new Date(0) },
+    );
+    const r = await confirmar(s.salaoId, '10', s.fim, { ...DEPS, mp: real });
     expect(r).toEqual({ resultado: 'provedor_falhou' });
     expect((await assinaturaNoBanco(s.assinaturaId)).testeFimEm).toEqual(s.fim);
     const aud = await auditoriaDo(s.salaoId);
     expect(aud).toHaveLength(1);
-    expect(aud[0]).toMatchObject({ resultado: 'falha', depois: { codigo: 'nao_implementado', dias: 10 } });
+    expect(aud[0]).toMatchObject({ resultado: 'falha', depois: { codigo: 'adiamento_nao_suportado', dias: 10 } });
   });
 });
 

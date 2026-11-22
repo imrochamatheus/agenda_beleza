@@ -66,7 +66,11 @@ export const OPERACOES_MP = [
 ] as const;
 export type OperacaoMp = (typeof OPERACOES_MP)[number];
 
-export type CodigoErroMercadoPago = 'nao_encontrado' | 'operacao_invalida' | 'falha_provedor';
+export type CodigoErroMercadoPago =
+  | 'nao_encontrado'
+  | 'operacao_invalida'
+  | 'falha_provedor'
+  | 'adiamento_nao_suportado';
 
 /** Base dos erros da porta. Erros do provedor nunca vazam para a lógica de negócio (E6.6 RN-3). */
 export abstract class ErroMercadoPago extends Error {
@@ -100,6 +104,16 @@ export class ErroProvedor extends ErroMercadoPago {
   constructor(mensagem = 'Falha no provedor de pagamento.') {
     super(mensagem);
     this.name = 'ErroProvedor';
+  }
+}
+
+/** D-046 (RN-4): o provedor não refletiu o adiamento pedido (ou recusou o campo de data). */
+export class ProvedorNaoSuportaAdiamento extends ErroMercadoPago {
+  readonly codigo = 'adiamento_nao_suportado';
+
+  constructor(mensagem = 'O provedor de pagamento não permite adiar a próxima cobrança.') {
+    super(mensagem);
+    this.name = 'ProvedorNaoSuportaAdiamento';
   }
 }
 

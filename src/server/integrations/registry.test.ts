@@ -148,32 +148,18 @@ describe('CA-1: .env.example sem alterações → cinco simulados', () => {
 });
 
 describe('CA-9: seleção "real" do MP e do WhatsApp liga os stubs NaoImplementado', () => {
-  it('CA-9: selecionarMercadoPago("real") é a instância de mercadopago/real.ts e todo método rejeita (E6.6)', async () => {
-    const porta = selecionarMercadoPago('real', { appUrl: 'http://localhost:3000' });
+  it('CA-10 (D-046): selecionarMercadoPago real constrói o adaptador real com a config e não o simulado', () => {
+    const config = { accessToken: 't', webhookSecret: 's', planoId: 'p' };
+    const porta = selecionarMercadoPago({ modo: 'real', config }, { appUrl: 'https://a.com.br' });
 
     expect(porta).toBe(ultimaInstancia(criarMercadoPagoReal));
+    expect(criarMercadoPagoReal).toHaveBeenCalledWith(config, {
+      urlNotificacao: 'https://a.com.br/api/webhooks/mercadopago',
+    });
     expect(criarMercadoPagoSimulado).not.toHaveBeenCalled();
-    const chamadas = [
-      porta.criarAssinatura({
-        salaoId: '00000000-0000-4000-8000-000000000000',
-        emailPagador: 'gestora@exemplo.com.br',
-        urlRetorno: 'http://localhost:3000/retorno',
-      }),
-      porta.consultarAssinatura('x'),
-      porta.consultarPagamento('x'),
-      porta.cancelarAssinatura('x'),
-      porta.adiarProximaCobranca('x', new Date()),
-      porta.urlAtualizarMeioPagamento('x'),
-      porta.validarWebhook({ cabecalhos: {}, consulta: {}, corpo: {} }),
-    ];
-    expect(chamadas).toHaveLength(Object.keys(porta).length);
-    const resultados = await Promise.allSettled(chamadas);
-    for (const r of resultados) {
-      expect(r.status).toBe('rejected');
-      const erro = (r as PromiseRejectedResult).reason as unknown;
-      expect(erro).toBeInstanceOf(NaoImplementado);
-      expect((erro as Error).message).toContain('E6.6');
-    }
+    expect(Object.keys(porta).sort()).toEqual(
+      ['adiarProximaCobranca', 'cancelarAssinatura', 'consultarAssinatura', 'consultarPagamento', 'criarAssinatura', 'urlAtualizarMeioPagamento', 'validarWebhook'],
+    );
   });
 
   it('CA-9: selecionarWhatsApp("real") é a instância de whatsapp/real.ts e enviarModelo rejeita (E7.2)', async () => {
@@ -193,7 +179,7 @@ describe('CA-9: seleção "real" do MP e do WhatsApp liga os stubs NaoImplementa
   });
 
   it('CA-9: seleção "simulado" liga os simulados', () => {
-    expect(selecionarMercadoPago('simulado', { appUrl: 'http://localhost:3000' })).toBe(
+    expect(selecionarMercadoPago({ modo: 'simulado' }, { appUrl: 'http://localhost:3000' })).toBe(
       ultimaInstancia(criarMercadoPagoSimulado),
     );
     expect(selecionarWhatsApp('simulado')).toBe(ultimaInstancia(criarWhatsAppSimulado));
@@ -201,14 +187,37 @@ describe('CA-9: seleção "real" do MP e do WhatsApp liga os stubs NaoImplementa
     expect(criarWhatsAppReal).not.toHaveBeenCalled();
   });
 
-  it('D-1: o registro recusa MP_ADAPTER=real e WHATSAPP_ADAPTER=real nomeando os seletores, sem construir nada', () => {
+  it('D-1 (D-046): o registro recusa WHATSAPP_ADAPTER=real; o MP real sem credenciais nomeia as MP_* e APP_URL, sem construir nada', () => {
     const erro = erroDe(() =>
       criarIntegracoes({ DATABASE_URL: URL_BANCO, MP_ADAPTER: 'real', WHATSAPP_ADAPTER: 'real' }),
     );
     expect(erro).toBeInstanceOf(ErroDeAmbiente);
-    expect(erro.variaveis).toEqual(['MP_ADAPTER', 'WHATSAPP_ADAPTER']);
+    expect(erro.variaveis).toEqual([
+      'APP_URL',
+      'MP_ACCESS_TOKEN',
+      'MP_PREAPPROVAL_PLAN_ID',
+      'MP_WEBHOOK_SECRET',
+      'WHATSAPP_ADAPTER',
+    ]);
     expect(criarMercadoPagoReal).not.toHaveBeenCalled();
     expect(criarWhatsAppReal).not.toHaveBeenCalled();
+  });
+
+  it('CA-10: MP_ADAPTER=real com credenciais e APP_URL https devolve o adaptador real', () => {
+    const r = criarIntegracoes({
+      DATABASE_URL: URL_BANCO,
+      MP_ADAPTER: 'real',
+      MP_ACCESS_TOKEN: 'tok',
+      MP_WEBHOOK_SECRET: 'seg',
+      MP_PREAPPROVAL_PLAN_ID: 'pl',
+      APP_URL: 'https://agenda.exemplo.com.br',
+    });
+    expect(r.modos.mercadoPago).toBe('real');
+    expect(r.mercadoPago).toBe(ultimaInstancia(criarMercadoPagoReal));
+    expect(criarMercadoPagoReal).toHaveBeenCalledWith(
+      { accessToken: 'tok', webhookSecret: 'seg', planoId: 'pl' },
+      { urlNotificacao: 'https://agenda.exemplo.com.br/api/webhooks/mercadopago' },
+    );
   });
 });
 

@@ -329,11 +329,14 @@ describe('iniciarWorker', () => {
       expect(erros()[0]).toMatchObject({ evento: 'worker.ambiente_invalido', variaveis: ['SMTP_HOST'] });
     });
 
-    it.each(['MP_ADAPTER', 'WHATSAPP_ADAPTER'])('D-007 CA-9: com %s=real sai com 1 nomeando o seletor', async (seletor) => {
+    it.each([
+      ['MP_ADAPTER', ['APP_URL', 'MP_ACCESS_TOKEN', 'MP_PREAPPROVAL_PLAN_ID', 'MP_WEBHOOK_SECRET']],
+      ['WHATSAPP_ADAPTER', ['WHATSAPP_ADAPTER']],
+    ])('D-007 CA-9: com %s=real sai com 1 nomeando as variáveis exigidas', async (seletor, nomes) => {
       const { deps, erros } = dependencias({}, { DATABASE_URL: URL_BANCO, [seletor]: 'real' });
       await iniciarWorker(deps).pronto;
       expect(deps.sair).toHaveBeenCalledExactlyOnceWith(1);
-      expect(erros()[0].variaveis).toEqual([seletor]);
+      expect(erros()[0].variaveis).toEqual(nomes);
     });
   });
 
