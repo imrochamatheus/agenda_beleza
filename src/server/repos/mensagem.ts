@@ -1,3 +1,4 @@
+import { Prisma } from '@/generated/prisma/client';
 import type { ContextoEscopado } from '@/server/tenant/context';
 import { exigirEscopo } from '@/server/tenant/context';
 import { NaoEncontrado } from '@/server/tenant/erros';
@@ -88,6 +89,17 @@ export interface RepoMensagem {
   ): Promise<ResultadoReenvioRepo>;
   /** Por `criado_em`; nunca lê destinatário, parâmetros nem provedor (RN-23). Reserva de outro salão → NaoEncontrado. */
   listarDaReserva(ctx: ContextoEscopado, reservaId: string): Promise<MensagemDaReservaRepoDTO[]>;
+  /**
+   * Mensagens da reserva para a equipe (D-043), em UM comando: `reserva LEFT JOIN mensagem` valida salão e,
+   * se `profissionalId` vier, o profissional dono. Reserva inexistente, malformada, de outro salão ou de
+   * outro profissional → NaoEncontrado (igual em todos os casos). Sem trava; sem destinatário, parâmetros,
+   * id do provedor nem `erro_detalhe`.
+   */
+  listarDaReservaDaEquipe(
+    ctx: ContextoEscopado,
+    reservaId: string,
+    profissionalId: string | null,
+  ): Promise<MensagemDaReservaRepoDTO[]>;
 }
 
 export function criarRepoMensagem(db: Executor): RepoMensagem {
@@ -304,6 +316,53 @@ export function criarRepoMensagem(db: Executor): RepoMensagem {
         tentativas: l.tentativas,
         ultimaTentativaEm: l.ultima_tentativa_em,
       }));
+    },
+
+    async listarDaReservaDaEquipe(ctx, reservaId, profissionalId) {
+      const salaoId = exigirEscopo(ctx);
+      if (!ehUuid(reservaId) || (profissionalId !== null && !ehUuid(profissionalId))) {
+        throw new NaoEncontrado();
+      }
+      const doProfissional =
+        profissionalId === null ? Prisma.empty : Prisma.sql`AND r.profissional_id = ${profissionalId}::uuid`;
+      const linhas = await db.$queryRaw<
+        {
+          id: string | null;
+          tipo: TipoMensagemDTO | null;
+          revisao: number | null;
+          estado: EstadoMensagemDTO | null;
+          enviada_em: Date | null;
+          erro_codigo: string | null;
+          tentativas: number | null;
+          ultima_tentativa_em: Date | null;
+        }[]
+      >(Prisma.sql`
+        SELECT m.id::text AS id, m.tipo::text AS tipo, m.revisao, m.estado::text AS estado,
+               m.enviada_em, m.erro_codigo,
+               (SELECT count(*)::int FROM mensagem_tentativa t WHERE t.mensagem_id = m.id) AS tentativas,
+               (SELECT max(t.iniciada_em) FROM mensagem_tentativa t WHERE t.mensagem_id = m.id) AS ultima_tentativa_em
+          FROM reserva r
+          LEFT JOIN mensagem m ON m.salao_id = r.salao_id AND m.reserva_id = r.id
+         WHERE r.salao_id = ${salaoId}::uuid AND r.id = ${reservaId}::uuid ${doProfissional}
+         ORDER BY m.criado_em, m.id`);
+      if (linhas.length === 0) {
+        throw new NaoEncontrado();
+      }
+      const dtos: MensagemDaReservaRepoDTO[] = [];
+      for (const l of linhas) {
+        if (l.id === null || l.tipo === null || l.estado === null) continue;
+        dtos.push({
+          id: l.id,
+          tipo: l.tipo,
+          revisao: l.revisao ?? 0,
+          estado: l.estado,
+          enviadaEm: l.enviada_em,
+          erroCodigo: l.erro_codigo,
+          tentativas: l.tentativas ?? 0,
+          ultimaTentativaEm: l.ultima_tentativa_em,
+        });
+      }
+      return dtos;
     },
   };
 }

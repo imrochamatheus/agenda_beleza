@@ -35,7 +35,7 @@ describe('CA-3: 12:00Z em America/Sao_Paulo é 09:00', () => {
       expect(marcado).not.toContain('12:00–13:00');
     }
     const d = await lerReservaDaAgenda(ce.ctxEquipe, id);
-    const detalhe = renderToStaticMarkup(createElement(DetalheDaReserva, { reserva: d, hrefVoltar: '/x' }));
+    const detalhe = renderToStaticMarkup(createElement(DetalheDaReserva, { reserva: d, hrefVoltar: '/x', mensagens: [] }));
     expect(detalhe).toContain('01/12/2026 09:00');
     expect(detalhe).toContain('01/12/2026 10:00');
   });

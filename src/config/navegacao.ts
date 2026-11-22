@@ -75,6 +75,7 @@ export const ROTAS = {
   devFotosEnvio: '/dev/fotos/enviar',
   devReserva: '/dev/reserva',
   devAgenda: '/dev/agenda',
+  devMensagensReserva: '/dev/mensagens-reserva',
   devReservaNova: '/dev/reserva-nova',
   devReservaAcoes: '/dev/reserva-acoes',
 } as const;

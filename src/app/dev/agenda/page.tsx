@@ -34,14 +34,15 @@ export default async function DemonstracaoAgenda({ searchParams }: Props) {
   if (!vitrineHabilitada(process.env)) notFound();
   const params = await searchParams;
   const agora = new Date();
-  const reserva = typeof params.reserva === 'string' ? exemplos(agora).detalhes.get(params.reserva) : undefined;
+  const dados = exemplos(agora);
+  const reserva = typeof params.reserva === 'string' ? dados.detalhes.get(params.reserva) : undefined;
   if (params.reserva !== undefined && !reserva) notFound();
   const vista = reserva ? null : vistaDemonstracao({ data: params.data, visao: params.visao, profissional: params.profissional }, agora);
   if (!reserva && vista === null) notFound();
   return (
     <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_SALAO_DEMONSTRACAO} caminhoAtual={ROTAS.agenda}>
       {reserva ? (
-        <DetalheDaReserva reserva={reserva} hrefVoltar={hrefAgenda(ROTAS.devAgenda, {})} />
+        <DetalheDaReserva reserva={reserva} hrefVoltar={hrefAgenda(ROTAS.devAgenda, {})} mensagens={dados.mensagens.get(reserva.id) ?? []} />
       ) : (
         <VistaDaAgenda vista={vista!} base={ROTAS.devAgenda} hrefReserva={hrefReserva} baseNovaReserva={ROTAS.devReservaNova} />
       )}

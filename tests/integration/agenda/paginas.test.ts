@@ -7,6 +7,7 @@ import PaginaReserva from '@/app/painel/agenda/reservas/[id]/page';
 import { ROTAS } from '@/config/navegacao';
 
 import { criarSessao } from '../../support/auth';
+import { criarMensagem } from '../../support/mensagens';
 import { definirAssinatura } from '../../support/reserva-publica';
 import type { CenarioReserva } from '../../support/reservas';
 import { conectar } from '../../support/sql';
@@ -192,5 +193,63 @@ describe('CA-10: salão suspenso', () => {
     expect(await reserva(id)).toContain('<h1>Reserva</h1>');
     await comoProfissional(s);
     expect(await agenda()).toContain('09:00–10:00');
+  });
+});
+
+describe('D-043: situação das mensagens no detalhe e marca na grade', () => {
+  const botoes = (html: string) => (html.match(/<button[^>]*>[^<]*<\/button>/g) ?? []).join('|');
+
+  it('CA-1/CA-5/CA-7: a falha aparece no detalhe e na grade sem mudar as ações nem vazar valores internos', async () => {
+    const s = await criarCenario();
+    const id = await reservar(c, s, { profissionalId: s.ana, inicio: new Date('2026-12-01T12:00:00Z') });
+    await comoGestor(s);
+    const antes = await reserva(id);
+    expect(antes).toContain('Nenhuma mensagem de WhatsApp para esta reserva.');
+    expect(botoes(antes)).not.toBe('');
+    const m = await criarMensagem({
+      salaoId: s.s.salaoId, reservaId: id, tipo: 'confirmacao', estado: 'falhou', erroCodigo: 'SENTINELA_CODIGO',
+      destinatarioE164: '+5511987650999', provedorMensagemId: 'wamid.SENTINELA_PROVEDOR',
+      atualizadoEm: new Date('2026-11-22T14:35:00Z'), tentativas: [{ resultado: 'falha', iniciadaEm: new Date('2026-11-22T14:35:00Z') }],
+    });
+    await c.query(`UPDATE mensagem_tentativa SET erro_detalhe = 'SENTINELA_DETALHE' WHERE mensagem_id = $1`, [m]);
+    for (const entrar of [comoGestor, comoProfissional]) {
+      await entrar(s);
+      const html = await reserva(id);
+      expect(html).toContain('Mensagens de WhatsApp');
+      expect(html).toContain('Falha ao enviar confirmação por WhatsApp');
+      expect(html).toContain('Última tentativa: 22/11/2026 11:35');
+      expect(html).not.toMatch(/SENTINELA|987650999|wamid/);
+      expect(botoes(html)).toBe(botoes(antes));
+      expect(html.indexOf('Serviços')).toBeLessThan(html.indexOf('Mensagens de WhatsApp'));
+    }
+    await comoGestor(s);
+    expect(await agenda({ data: DIA })).toContain('Falha ao enviar mensagem');
+    expect(await agenda({ data: DIA, visao: 'semana' })).toContain('Falha ao enviar mensagem');
+    const { rows } = await c.query<{ status: string }>('SELECT status::text AS status FROM reserva WHERE id = $1', [id]);
+    expect(rows[0].status).toBe('confirmado');
+  });
+
+  it('CA-3: profissional A não vê as mensagens da reserva do B (404, igual a inexistente)', async () => {
+    await criarMensagem({ salaoId: x.s.salaoId, reservaId: rBia, estado: 'enviada' });
+    await comoProfissional(x);
+    await expect(reserva(rBia)).rejects.toThrow('NEXT_NOT_FOUND');
+    await expect(reserva(UUID_INEXISTENTE)).rejects.toThrow('NEXT_NOT_FOUND');
+    await comoGestor(y);
+    await expect(reserva(rBia)).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+
+  it('CA-11/CA-12: salão suspenso e cliente anonimizada continuam mostrando as mensagens', async () => {
+    const s = await criarCenario();
+    const cli = await inserirCliente(c, s.s.salaoId, 'Fulana Sumida', '+5511977770055');
+    const id = await reservar(c, s, { profissionalId: s.ana, inicio: new Date('2026-12-01T12:00:00Z'), clienteId: cli });
+    await criarMensagem({ salaoId: s.s.salaoId, reservaId: id, estado: 'cancelada_anonimizacao' });
+    await anonimizarPorSql(c, cli);
+    await c.query('UPDATE salao SET suspenso_manual_em = now() WHERE id = $1', [s.s.salaoId]);
+    await definirAssinatura(s.s.salaoId, 'suspensa');
+    await comoGestor(s);
+    const html = await reserva(id);
+    expect(html).toContain('Confirmação não enviada');
+    expect(html).toContain('Cliente removida; a mensagem foi cancelada.');
+    expect(html).not.toMatch(/Fulana|977770055/);
   });
 });

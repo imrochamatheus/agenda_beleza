@@ -9,7 +9,8 @@ import type { Executor } from './transacao';
 
 // Leituras da agenda da equipe (D-028 §4). Só leitura. Todo método filtra pelo salão do contexto. Uma
 // instrução por chamada: profissional, cliente (só o nome e se foi anonimizada; o telefone NUNCA é lido
-// aqui) e os itens (agregados em JSON) vêm na mesma consulta, sem N+1 (CA-16).
+// aqui) e os itens (agregados em JSON) vêm na mesma consulta, sem N+1 (CA-16). D-043: o `EXISTS` da falha
+// de mensagem vigente também vai no mesmo comando; os literais ('falhou', status, tipos) nunca são parâmetros.
 
 export type ItemDeLinhaAgenda = { nome: string; precoCentavos: number; duracaoMin: number };
 
@@ -26,6 +27,8 @@ export type LinhaAgenda = {
   status: StatusReserva;
   origem: OrigemReserva;
   encaixe: boolean;
+  /** Há mensagem `falhou` VIGENTE (mesma regra de `conferirVigencia`, D-043 RN-11). */
+  temFalhaDeMensagem: boolean;
   itens: ItemDeLinhaAgenda[];
 };
 
@@ -58,6 +61,7 @@ type LinhaBruta = {
   status: StatusReserva;
   origem: OrigemReserva;
   encaixe: boolean;
+  tem_falha_mensagem: boolean;
   itens: { nome: string; preco: number; duracao: number }[];
 };
 
@@ -66,6 +70,11 @@ const COLUNAS = Prisma.sql`
   p.ativo AS profissional_ativo, r.cliente_id::text AS cliente_id, c.nome AS cliente_nome,
   (c.anonimizada_em IS NOT NULL) AS cliente_anonimizada, r.inicio, r.fim,
   r.status::text AS status, r.origem::text AS origem, r.encaixe,
+  EXISTS (SELECT 1 FROM mensagem m
+           WHERE m.salao_id = r.salao_id AND m.reserva_id = r.id AND m.estado = 'falhou'
+             AND ((m.tipo IN ('confirmacao', 'remarcacao') AND m.revisao = r.revisao AND r.status = 'confirmado')
+               OR (m.tipo = 'cancelamento' AND m.revisao = r.revisao AND r.status = 'cancelado')
+               OR (m.tipo = 'convite_avaliacao' AND r.status = 'concluido'))) AS tem_falha_mensagem,
   COALESCE((SELECT json_agg(json_build_object('nome', s.nome, 'preco', ri.preco_centavos, 'duracao', ri.duracao_min)
                             ORDER BY ri.ordem)
               FROM reserva_item ri
@@ -118,6 +127,7 @@ function deLinha(l: LinhaBruta): LinhaAgenda {
     status: l.status,
     origem: l.origem,
     encaixe: l.encaixe,
+    temFalhaDeMensagem: l.tem_falha_mensagem,
     itens: l.itens.map((i) => ({ nome: i.nome, precoCentavos: i.preco, duracaoMin: i.duracao })),
   };
 }

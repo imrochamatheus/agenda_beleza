@@ -238,6 +238,15 @@ describe('plano (R-2): índice de reserva, sem varrer o histórico', () => {
          CROSS JOIN LATERAL (SELECT '2024-01-01T00:00:00Z'::timestamptz + g * interval '7 hours' AS t) AS x`,
       [salaoId, clientes, profissionais],
     );
+    // D-043: uma confirmação por reserva (1 em 10 falhou) e uma remarcação falha vigente em algumas; o EXISTS da
+    // grade tem de usar o índice de `mensagem`, nunca varrê-la.
+    await c.query(
+      `INSERT INTO mensagem (salao_id, reserva_id, tipo, revisao, estado, criado_em, atualizado_em)
+       SELECT salao_id, id, 'confirmacao', 0, (CASE WHEN random() < 0.1 THEN 'falhou' ELSE 'enviada' END)::estado_mensagem, now(), now()
+         FROM reserva WHERE salao_id = $1`,
+      [salaoId],
+    );
+    await c.query('ANALYZE mensagem');
     await c.query('ANALYZE reserva');
     await c.query('ANALYZE cliente');
     await c.query('ANALYZE profissional');
@@ -253,6 +262,9 @@ describe('plano (R-2): índice de reserva, sem varrer o histórico', () => {
         // O limite inferior de `inicio` (margem de 7 dias) entra na condição do índice.
         expect(plano, `${nome}/${prof}`).toMatch(/Index Cond: .*\(inicio >= /);
         expect(plano, `${nome}/${prof}`).not.toMatch(/Seq Scan on reserva\b/);
+        // D-043: o EXISTS da falha de mensagem usa índice de `mensagem`; nunca Seq Scan nela.
+        expect(plano, `${nome}/${prof}`).toMatch(/Index (Only )?Scan using mensagem_\w+ on mensagem/);
+        expect(plano, `${nome}/${prof}`).not.toMatch(/Seq Scan on mensagem\b/);
       }
     }
   }, 120_000);

@@ -1,0 +1,87 @@
+/* Situação das mensagens de WhatsApp (D-043). Só tokens do tema; sem media query nova. */
+.secao {
+  display: grid;
+  gap: var(--espaco-2);
+  min-width: 0;
+}
+
+.secao h2,
+.secao p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.lista {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: var(--espaco-1);
+  min-width: 0;
+  padding: var(--espaco-2) 0;
+  border-bottom: 1px solid var(--cor-borda-sutil);
+  overflow-wrap: anywhere;
+}
+
+.rotulo {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--espaco-2);
+  font-size: var(--texto-base);
+  font-weight: 600;
+}
+
+.detalhe {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.neutra .rotulo {
+  color: var(--cor-texto);
+}
+
+.enviada .rotulo {
+  color: var(--cor-sucesso-texto);
+}
+
+.falha {
+  padding: var(--espaco-3);
+  border-radius: var(--raio);
+  border-bottom: 0;
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro-texto);
+}
+
+.falha .rotulo,
+.falha .detalhe {
+  color: var(--cor-erro-texto);
+}
+
+.icone {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 0.125rem;
+}
+
+.triangulo {
+  fill: var(--cor-erro-texto);
+  stroke: var(--cor-erro-texto);
+  stroke-linejoin: round;
+  stroke-width: 1;
+}
+
+.exclamacao {
+  fill: none;
+  stroke: var(--cor-sobre-perigo);
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
+.ponto {
+  fill: var(--cor-sobre-perigo);
+}

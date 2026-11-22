@@ -291,6 +291,7 @@ Entrega da D-039 (E1.4). Migração `20261125000000_convite_pendente_unico` (ín
 - **E2E:** `npx playwright test e2e/agenda.spec.ts e2e/agenda-sem-js.spec.ts` (build prévio e porta 3000 livre; 375×812, axe 4.14.0, teclado e sem JavaScript).
 - **Fuso:** `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/agenda src/app/painel/agenda tests/integration/agenda/fuso.test.ts || break; done`.
 - **Plano e volume (D-028):** `npx vitest run --project integration tests/integration/agenda/repo.test.ts --silent=false` imprime o `EXPLAIN` da listagem com 60.000 reservas (Index Scan em `reserva_salao_id_profissional_id_inicio_idx`, sem Seq Scan em `reserva`) e `tests/integration/agenda/consultar.test.ts` confere 6 instruções SQL por consulta, qualquer que seja o volume.
+- **Situação das mensagens (D-043):** o detalhe da reserva lista as mensagens de WhatsApp (somente leitura, sem reenvio) e a grade do dia e da semana marca a reserva com falha de envio vigente (`EXISTS` no mesmo comando; `consultarAgenda` segue com 6 instruções). Demonstrações sem banco: `/dev/agenda` e `/dev/mensagens-reserva` (`VITRINE_COMPONENTES=true`). E2E: `npx playwright test e2e/mensagens-situacao.spec.ts e2e/mensagens-situacao-sem-js.spec.ts` (build prévio e porta 3000 livre; 375×812, axe 4.14.0, teclado, locale en-US e sem JavaScript).
 
 ## Reserva manual e encaixe
 

@@ -11,6 +11,7 @@ import type {
 import { montarSemana } from '@/server/semana/montagem';
 import type { SemanaHoraria } from '@/server/semana/tipos';
 import { instanteDeHoraLocal, partesLocais, somarDias } from '@/server/tempo/fuso';
+import type { MensagemSituacao } from '@/server/mensagens/situacao-tipos';
 import type { DataCivil } from '@/server/tempo/fuso';
 
 // Dados em memória da vitrine /dev/agenda (D-028 §2): relativos a "hoje" no fuso do salão, para o E2E
@@ -33,7 +34,15 @@ const JORNADAS = new Map<string, SemanaHoraria>([
   [BIA.id, montarSemana(linhas([[9 * 60, 18 * 60]]))],
 ]);
 
-type Exemplo = { reservas: ReservaDaAgenda[]; bloqueios: BloqueioDaAgenda[]; detalhes: Map<string, DetalheDaReserva> };
+type Exemplo = {
+  reservas: ReservaDaAgenda[];
+  bloqueios: BloqueioDaAgenda[];
+  detalhes: Map<string, DetalheDaReserva>;
+  mensagens: Map<string, MensagemSituacao[]>;
+};
+
+/** Reservas da vitrine com falha de mensagem vigente: uma confirmada e uma cancelada (marca sem riscado). */
+const COM_FALHA = new Set(['demo-r1', 'demo-r4']);
 
 function em(d: DataCivil, hhmm: number) {
   return instanteDeHoraLocal(d, hhmm, FUSO_DEMONSTRACAO);
@@ -54,7 +63,18 @@ export function exemplos(agora: Date): Exemplo {
     clienteNome: string | null,
     encaixe = false,
     itens = [corte],
-  ): ReservaDaAgenda => ({ id, profissionalId: prof.id, inicio, fim, status, origem: 'equipe', encaixe, clienteNome, itens });
+  ): ReservaDaAgenda => ({
+    id,
+    profissionalId: prof.id,
+    inicio,
+    fim,
+    status,
+    origem: 'equipe',
+    encaixe,
+    clienteNome,
+    temFalhaDeMensagem: COM_FALHA.has(id),
+    itens,
+  });
   const reservas = [
     mk('demo-r1', ANA, em(hoje, 600), em(hoje, 660), 'confirmado', 'Maria Souza'),
     mk('demo-r2', ANA, em(hoje, 900), em(hoje, 990), 'concluido', 'Joana Lima', false, [corte, escova]),
@@ -90,12 +110,25 @@ export function exemplos(agora: Date): Exemplo {
       status: r.status,
       origem: r.origem,
       encaixe: r.encaixe,
+      temFalhaDeMensagem: r.temFalhaDeMensagem,
       itens: r.itens,
       totalCentavos: r.itens.reduce((t, i) => t + i.precoCentavos, 0),
       duracaoTotalMin: r.itens.reduce((t, i) => t + i.duracaoMin, 0),
     });
   }
-  return { reservas, bloqueios, detalhes };
+  const mensagens = new Map<string, MensagemSituacao[]>();
+  for (const r of reservas) {
+    const base = { tentativas: 1, ultimaTentativaEm: new Date(r.inicio.getTime() - 2 * 3_600_000) };
+    mensagens.set(
+      r.id,
+      COM_FALHA.has(r.id)
+        ? [
+            { id: `${r.id}-m1`, estado: 'falhou', rotulo: 'Falha ao enviar confirmação por WhatsApp', motivo: 'Não foi possível confirmar se a mensagem foi entregue.', ...base, tentativas: 3 },
+          ]
+        : [{ id: `${r.id}-m1`, estado: 'enviada', rotulo: 'Confirmação enviada', motivo: null, ...base }],
+    );
+  }
+  return { reservas, bloqueios, detalhes, mensagens };
 }
 
 /** Vista em memória; `profissional` fora dos exemplos → null (a página responde 404, como a real). */

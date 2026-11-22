@@ -22,6 +22,7 @@ const reserva = (profissionalId: string): ReservaDaAgenda => ({
   origem: 'equipe',
   encaixe: false,
   clienteNome: 'X',
+  temFalhaDeMensagem: false,
   itens: [],
 });
 const base: EntradaDaVista = {
