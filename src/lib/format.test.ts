@@ -22,6 +22,7 @@ import {
   formatarCep,
   formatarPeriodoBloqueio,
   formatarTelefone,
+  mascararTelefone,
   FUSO_PADRAO,
 } from './format';
 
@@ -453,4 +454,27 @@ describe('formatarMesAno (D-032)', () => {
     expect(() => formatarMesAno(new Date(), 'Nao/Existe')).toThrow(RangeError);
     expect(formatarMesAno(new Date('2026-11-22T12:00:00Z'), 'UTC')).not.toMatch(/22/);
   });
+});
+
+describe('mascararTelefone (D-045 RN-2, CA-5)', () => {
+  it('celular: DDD, "9" e os 4 últimos dígitos', () => {
+    expect(mascararTelefone('+5571987651234')).toBe('+55 (71) 9****-1234');
+  });
+
+  it('fixo de 8 dígitos: sem o 9', () => {
+    expect(mascararTelefone('+557133451234')).toBe('+55 (71) ****-1234');
+  });
+
+  it('nunca expõe os dígitos do meio', () => {
+    const m = mascararTelefone('+5511987654321');
+    expect(m).toBe('+55 (11) 9****-4321');
+    expect(m).not.toContain('8765');
+  });
+
+  it.each([null, undefined, 42, '', 'abc', '+14155550100', '+5500987654321', '+55719876512', '71987651234', {}])(
+    'valor inválido %j → "—" sem lançar',
+    (v) => {
+      expect(mascararTelefone(v)).toBe('—');
+    },
+  );
 });

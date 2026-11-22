@@ -32,8 +32,10 @@ export type PainelDoSalaoProps = {
   recusaDaExtensao: MotivoRecusaExtensao | null;
   /** Endereço da própria página (o "Voltar" da etapa 2). */
   hrefVoltar: string;
-  /** Link "Ver assinatura", só quando a rota existir (E8.3). */
+  /** Link "Assinatura e eventos" (D-045), só quando informado (a vitrine não o mostra). */
   hrefAssinatura?: string | null;
+  /** Link "Auditoria deste salão" (D-045). */
+  hrefAuditoria?: string | null;
 };
 
 const PRECO = formatarMoeda(7900);
@@ -44,7 +46,7 @@ const PRECO = formatarMoeda(7900);
  * resultado mais recente (maior `em`) aparece no topo, antes dos formulários; erros de campo e as etapas 2
  * ficam nos próprios formulários.
  */
-export function PainelDoSalao({ salao, fusos, acoes, recusaDaExtensao, hrefVoltar, hrefAssinatura = null }: PainelDoSalaoProps) {
+export function PainelDoSalao({ salao, fusos, acoes, recusaDaExtensao, hrefVoltar, hrefAssinatura = null, hrefAuditoria = null }: PainelDoSalaoProps) {
   const [edicao, enviarEdicao, pendenteEdicao] = useActionState(acoes.editar, estadoEdicaoInicial(valoresDoDetalhe(salao)));
   const [suspender, enviarSuspender, pendenteSuspender] = useActionState(acoes.suspender, estadoSuspensaoInicial());
   const [reativar, enviarReativar, pendenteReativar] = useActionState(acoes.reativar, estadoSuspensaoInicial());
@@ -85,11 +87,18 @@ export function PainelDoSalao({ salao, fusos, acoes, recusaDaExtensao, hrefVolta
             </>
           ) : null}
         </dl>
-        {hrefAssinatura !== null ? (
-          <p>
-            <a href={hrefAssinatura} className={estilos.link}>
-              Ver assinatura
-            </a>
+        {hrefAssinatura !== null || hrefAuditoria !== null ? (
+          <p className={estilos.acoesLinha}>
+            {hrefAssinatura !== null ? (
+              <a href={hrefAssinatura} className={estilos.link}>
+                Assinatura e eventos
+              </a>
+            ) : null}
+            {hrefAuditoria !== null ? (
+              <a href={hrefAuditoria} className={estilos.link}>
+                Auditoria deste salão
+              </a>
+            ) : null}
           </p>
         ) : null}
       </SecaoDoSalao>

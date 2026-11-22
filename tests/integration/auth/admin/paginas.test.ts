@@ -117,7 +117,9 @@ describe('fluxo completo pelas ações e páginas', () => {
     expect(painel).toContain('Sair');
     // D-044: Salões existe; as telas que ainda não existem continuam sem link.
     expect(painel).toContain('/admin/saloes');
-    expect(painel).not.toMatch(/\/admin\/(mensagens|auditoria)/);
+    // D-045: Mensagens e Auditoria passaram a existir e entram no menu.
+    expect(painel).toContain('/admin/mensagens');
+    expect(painel).toContain('/admin/auditoria');
     expect(await destinoDe(PaginaAdminEntrar({ searchParams: Promise.resolve({}) }))).toBe('/admin');
 
     // Sair: revoga, apaga o cookie (Max-Age 0) e volta ao login.

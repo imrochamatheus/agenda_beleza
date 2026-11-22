@@ -1,0 +1,245 @@
+/* Padrões compartilhados das telas do admin (D-045): selo, filtros GET, paginação, antes/depois. Só tokens do
+   tema (globals.css); breakpoint único 48rem. */
+.pagina {
+  display: grid;
+  gap: var(--espaco-6);
+  min-width: 0;
+}
+
+.coluna {
+  display: grid;
+  gap: var(--espaco-6);
+  max-width: 56rem;
+  min-width: 0;
+}
+
+.suave {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.quebra {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.link,
+.paginacao a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  color: var(--cor-primaria-forte);
+}
+
+/* Link com aparência de botão discreto (ação por GET, ex.: "Reenviar"). */
+.botaoLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--alvo-minimo);
+  padding: var(--espaco-2) var(--espaco-4);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-primaria-forte);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* Selos: ícone (aria-hidden) + texto; a cor nunca é o único sinal. */
+.selo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  max-width: 100%;
+  padding: var(--espaco-1) var(--espaco-3);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie-alt);
+  color: var(--cor-texto);
+  font-size: var(--texto-sm);
+  /* Quebra só nos espaços: o tema usa overflow-wrap: anywhere, que partiria "manualmente". */
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.selo svg {
+  flex: none;
+}
+
+.sucesso {
+  border-color: var(--cor-sucesso-texto);
+  background: var(--cor-sucesso-fundo);
+  color: var(--cor-sucesso-texto);
+}
+
+.aviso {
+  border-color: var(--cor-aviso-texto);
+  background: var(--cor-aviso-fundo);
+  color: var(--cor-aviso-texto);
+}
+
+.erro {
+  border-color: var(--cor-erro-texto);
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro-texto);
+}
+
+/* Filtros por GET (funcionam sem JavaScript). */
+.filtros {
+  display: grid;
+  gap: var(--espaco-3);
+  min-width: 0;
+}
+
+.filtros > * {
+  min-width: 0;
+}
+
+.acoesFiltro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-4);
+}
+
+.paginacao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-4);
+}
+
+/* Itens empilhados numa célula (selos, linhas de apoio). */
+.pilha {
+  display: grid;
+  justify-items: start;
+  gap: var(--espaco-2);
+}
+
+/* Apoio sob um valor (salão sob o tipo, código sob a situação). */
+.apoio {
+  display: block;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.apoioMono {
+  font-family: ui-monospace, monospace;
+}
+
+/* Antes/depois (auditoria) e payload (webhook). */
+.detalhes {
+  display: grid;
+  gap: var(--espaco-3);
+  min-width: 0;
+}
+
+.detalhes summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  color: var(--cor-primaria-forte);
+  cursor: pointer;
+}
+
+.campos {
+  display: grid;
+  gap: var(--espaco-3);
+  margin: 0;
+  min-width: 0;
+}
+
+.campo {
+  display: grid;
+  gap: var(--espaco-1);
+  min-width: 0;
+}
+
+.campo dt {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+  overflow-wrap: anywhere;
+}
+
+.campo dd {
+  margin: 0;
+  padding: var(--espaco-1) var(--espaco-2);
+  border-radius: var(--raio);
+  background: var(--cor-superficie-alt);
+  color: var(--cor-texto);
+  overflow-wrap: anywhere;
+}
+
+.campo dd + dd {
+  margin-top: var(--espaco-1);
+}
+
+.campo .semMudanca {
+  color: var(--cor-texto-suave);
+}
+
+.rotuloLado {
+  font-weight: 600;
+}
+
+.campos code,
+.json {
+  font-family: ui-monospace, monospace;
+  font-size: var(--texto-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.json {
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: 20rem;
+  margin: 0;
+  padding: var(--espaco-3);
+  overflow: auto;
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie-alt);
+  color: var(--cor-texto);
+}
+
+.resultado:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+@media (min-width: 48rem) {
+  /* O selo nunca quebra em duas linhas; a célula que o contém cresce até caber. */
+  .selo {
+    white-space: nowrap;
+  }
+
+  .celulaSelo {
+    min-width: max-content;
+  }
+
+  /* Células de texto composto: sem isso o `overflow-wrap: anywhere` do tema encolhe a coluna ao mínimo. */
+  .celulaData {
+    min-width: 6rem;
+  }
+
+  .celulaTexto {
+    min-width: 8rem;
+  }
+
+  .filtros {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .filtrosLargos {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .acoesFiltro {
+    grid-column: 1 / -1;
+  }
+}

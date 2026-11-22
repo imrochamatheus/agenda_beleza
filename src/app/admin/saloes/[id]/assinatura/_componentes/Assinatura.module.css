@@ -1,0 +1,39 @@
+/* Tela de assinatura do salão no admin (D-045). Só tokens do tema; breakpoint único 48rem. */
+.secao {
+  display: grid;
+  gap: var(--espaco-4);
+  min-width: 0;
+  padding-top: var(--espaco-6);
+  border-top: 1px solid var(--cor-borda-sutil);
+}
+
+.secao h2 {
+  margin: 0;
+  font-size: var(--texto-xl);
+}
+
+.dados {
+  display: grid;
+  gap: var(--espaco-1) var(--espaco-4);
+  margin: 0;
+}
+
+.dados dt {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.dados dd {
+  margin: 0 0 var(--espaco-2);
+  min-width: 0;
+}
+
+@media (min-width: 48rem) {
+  .dados {
+    grid-template-columns: max-content 1fr;
+  }
+
+  .dados dd {
+    margin: 0;
+  }
+}
