@@ -61,6 +61,9 @@ export default defineConfig({
           // 4 workers × (pool 16 + 2) ≈ 72 conexões de 100 (docs/demandas/D-005/dba.md §2.4).
           maxWorkers: 4,
           fileParallelism: true,
+          // 5 s (padrão) estoura em testes de concorrência quando a máquina ou a CI estão sob carga (4 workers +
+          // Postgres compartilhado); 20 s absorve a variação sem esconder travamentos reais (CI e README citam).
+          testTimeout: 20_000,
           // maxWorkers diferente do projeto unit exige um grupo próprio (o Vitest recusa projetos com
           // maxWorkers distintos no mesmo groupOrder): o unit roda primeiro, depois o integration.
           sequence: { groupOrder: 1 },

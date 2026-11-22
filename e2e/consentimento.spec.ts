@@ -9,7 +9,7 @@ import { analisarComAxe, semRolagemHorizontal } from './suporte/vitrine';
 async function abrir(page: Page) {
   const resposta = await page.goto('/dev/consentimento');
   if (resposta?.status() !== 200) {
-    throw new Error(`/dev/consentimento respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta 3000.`);
+    throw new Error(`/dev/consentimento respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta do E2E (E2E_PORT, padrão 3000).`);
   }
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }

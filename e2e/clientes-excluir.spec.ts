@@ -12,7 +12,7 @@ test.use({ locale: 'en-US' });
 async function abrir(page: Page, busca: string) {
   const resposta = await page.goto(`/dev/clientes${busca}`);
   if (resposta?.status() !== 200) {
-    throw new Error(`/dev/clientes respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta 3000.`);
+    throw new Error(`/dev/clientes respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta do E2E (E2E_PORT, padrão 3000).`);
   }
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }

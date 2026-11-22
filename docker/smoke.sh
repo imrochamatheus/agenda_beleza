@@ -1,12 +1,16 @@
 #!/bin/sh
 # Smoke da imagem (D-012, correção R-A): sobe o compose do zero e prova que a app atende.
 # É o mesmo comando do job `docker` da CI (.github/workflows/ci.yml); localmente:
-#   sh docker/smoke.sh            (porta 3000 livre; não derruba nada ao terminar)
+#   sh docker/smoke.sh            (a porta APP_PORT, padrão 3000, livre; não derruba nada ao terminar)
 # Falha (exit != 0) se algum serviço não ficar saudável, se /api/health não responder 200 ou se
 # as páginas com token na URL perderem o cabeçalho Referrer-Policy definido em next.config.ts.
 set -eu
 
-URL_BASE="${SMOKE_URL_BASE:-http://localhost:3000}"
+# Porta publicada pelo compose: APP_PORT (ambiente ou .env; padrão 3000). SMOKE_URL_BASE sobrescreve tudo.
+if [ -z "${APP_PORT:-}" ] && [ -f .env ]; then
+  APP_PORT=$(sed -n 's/^APP_PORT=\([0-9]*\).*/\1/p' .env | tail -n 1)
+fi
+URL_BASE="${SMOKE_URL_BASE:-http://localhost:${APP_PORT:-3000}}"
 ESPERA_S="${SMOKE_WAIT_TIMEOUT:-180}"
 
 falhar() {

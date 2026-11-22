@@ -117,6 +117,8 @@ export const CHAVES_FORA_DO_RUNTIME = [
   'POSTGRES_PASSWORD',
   'POSTGRES_DB',
   'POSTGRES_PORT',
+  'APP_PORT',
+  'E2E_PORT',
   'TEST_DATABASE_URL',
 ] as const;
 

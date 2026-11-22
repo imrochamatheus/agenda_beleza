@@ -1,12 +1,14 @@
 import { defineConfig } from '@playwright/test';
 
-import { ambienteDoServidorE2E } from './e2e/suporte/ambiente';
+import { ambienteDoServidorE2E, origemE2E } from './e2e/suporte/ambiente';
 
 // Lê o .env como o preparar-banco (variáveis já definidas no ambiente prevalecem).
 import { existsSync } from 'node:fs';
 if (existsSync('.env')) process.loadEnvFile('.env');
 
-const baseURL = 'http://127.0.0.1:3000';
+// E2E_PORT (padrão 3000) permite rodar com a 3000 ocupada; o servidor recebe a mesma porta em PORT.
+const baseURL = origemE2E();
+
 
 // Sem TEST_DATABASE_URL/E2E_DATABASE_URL (nem .env) os specs sem banco (/dev/*, /entrar...) continuam rodando: o
 // servidor recebe uma URL inalcançável. Os specs com banco falham com mensagem clara em `urlDoBancoE2E`, e o

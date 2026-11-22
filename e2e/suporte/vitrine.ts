@@ -17,7 +17,7 @@ export async function abrirVitrine(page: Page, busca = '') {
   const status = resposta?.status();
   if (status !== 200) {
     throw new Error(
-      `A vitrine respondeu ${status}: ligue VITRINE_COMPONENTES=true no servidor ou libere a porta 3000 (reuseExistingServer).`,
+      `A vitrine respondeu ${status}: ligue VITRINE_COMPONENTES=true no servidor ou libere a porta do E2E (E2E_PORT, padrão 3000) (reuseExistingServer).`,
     );
   }
   await page.evaluate(() => document.fonts.ready.then(() => undefined));

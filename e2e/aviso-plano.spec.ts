@@ -18,7 +18,7 @@ const SEM_FAIXA = ['sem_assinatura', 'em_teste', 'ativa'];
 
 async function abrir(page: import('@playwright/test').Page, busca: string) {
   const r = await page.goto(`/dev/aviso-plano${busca}`);
-  if (r?.status() !== 200) throw new Error(`/dev/aviso-plano respondeu ${r?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta 3000.`);
+  if (r?.status() !== 200) throw new Error(`/dev/aviso-plano respondeu ${r?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta do E2E (E2E_PORT, padrão 3000).`);
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }
 

@@ -11,7 +11,7 @@ const TERCA = '2027-03-02';
 async function abrir(page: Page, busca = '') {
   const resposta = await page.goto(`/dev/agenda${busca}`);
   if (resposta?.status() !== 200) {
-    throw new Error(`/dev/agenda respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta 3000.`);
+    throw new Error(`/dev/agenda respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta do E2E (E2E_PORT, padrão 3000).`);
   }
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }

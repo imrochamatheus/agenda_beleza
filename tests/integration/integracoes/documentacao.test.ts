@@ -212,6 +212,34 @@ describe('CA-25: README × .env.example × env.ts', () => {
   });
 });
 
+describe('D-048 CA-4/CA-2: tabela de variáveis do README × .env.example', () => {
+  it('CA-4: as variáveis da tabela do README são exatamente as do .env.example (ambos os sentidos)', () => {
+    const tabela = secao('Variáveis de ambiente');
+    const naTabela = [...tabela.matchAll(/^\| `([A-Z][A-Z0-9_]*)` \|/gm)].map((m) => m[1]);
+    expect(new Set(naTabela).size, 'sem variável repetida na tabela').toBe(naTabela.length);
+    const noExemplo = Object.keys(EXEMPLO);
+    expect(noExemplo.length).toBeGreaterThan(50);
+    expect(naTabela.filter((v) => !noExemplo.includes(v)), 'na tabela e fora do .env.example').toEqual([]);
+    expect(noExemplo.filter((v) => !naTabela.includes(v)), 'no .env.example e fora da tabela').toEqual([]);
+    expect(naTabela).toEqual(expect.arrayContaining(['APP_PORT', 'E2E_PORT']));
+  });
+
+  it('CA-2/CA-3: uma subseção por provedor real, com as variáveis, e o custo por mensagem da Meta como risco', () => {
+    const credenciais = secao('Credenciais para os serviços reais');
+    for (const [titulo, variavel] of [
+      ['Mercado Pago', 'MP_ACCESS_TOKEN'],
+      ['WhatsApp Business Platform', 'WHATSAPP_TEMPLATE_CONVITE_AVALIACAO'],
+      ['E-mail transacional', 'SMTP_HOST'],
+      ['Cloudflare Turnstile', 'TURNSTILE_SECRET_KEY'],
+      ['Armazenamento de fotos', 'S3_BUCKET'],
+    ] as const) {
+      expect(secao(titulo, credenciais), `subseção ${titulo}`).toContain(`\`${variavel}\``);
+    }
+    expect(secao('Riscos')).toMatch(/Custo por mensagem do WhatsApp/);
+    expect(secao('O que não foi validado')).toMatch(/Mercado Pago real[\s\S]*WhatsApp Cloud API real/);
+  });
+});
+
 describe('CA-4: Turnstile simulado documentado', () => {
   it('CA-4: o token e a chave do README são os do simulado, e o token documentado é aceito', async () => {
     const texto = paragrafo('Turnstile simulado.');
