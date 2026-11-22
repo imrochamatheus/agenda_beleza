@@ -21,7 +21,8 @@ export type Origem =
   | 'teste_iniciado';
 
 export type EventoDominio =
-  | { tipo: 'teste_iniciado' }
+  /** `iniciadoEm` (D-040): autorização do provedor; sem ele o teste conta a partir de `agora`. */
+  | { tipo: 'teste_iniciado'; iniciadoEm?: Date }
   | { tipo: 'cobranca_aprovada'; pagoEm: Date }
   | { tipo: 'cobranca_falhou'; falhouEm: Date }
   | { tipo: 'cancelamento' }

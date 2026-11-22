@@ -128,7 +128,7 @@ export function decidir(a: AssinaturaBruta, ev: EventoDominio, agora: Date): Dec
           de: 'pendente',
           para: 'em_teste',
           origem: 'teste_iniciado',
-          campos: { testeFimEm: new Date(agora.getTime() + DIAS_TESTE * DIA_MS) },
+          campos: { testeFimEm: new Date((ehData(ev.iniciadoEm) ? ev.iniciadoEm : agora).getTime() + DIAS_TESTE * DIA_MS) },
         });
       }
       return estado === 'em_teste' ? { tipo: 'sem_efeito' } : { tipo: 'ignorado', motivo: 'estado_incompativel' };

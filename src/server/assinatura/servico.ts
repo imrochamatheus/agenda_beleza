@@ -47,6 +47,8 @@ function dadosDoPagamento(ev: EventoAssinatura): { pagamentoId: string; status: 
 
 function paraEventoDominio(ev: EventoAssinatura) {
   switch (ev.tipo) {
+    case 'teste_iniciado':
+      return ev.iniciadoEm === undefined ? ({ tipo: 'teste_iniciado' } as const) : ({ tipo: 'teste_iniciado', iniciadoEm: ev.iniciadoEm } as const);
     case 'cobranca_aprovada':
       return { tipo: 'cobranca_aprovada', pagoEm: ev.pagoEm } as const;
     case 'cobranca_falhou':

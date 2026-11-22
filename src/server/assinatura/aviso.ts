@@ -1,10 +1,12 @@
 // Texto da faixa de aviso do painel por estado efetivo e papel (D-038 §3.5, RN-11). Função pura: sem banco,
 // sem relógio. A data sai de `formatarData` no fuso do salão (único formatador de datas, `src/lib/format.ts`).
 import type { EstadoEfetivo } from '@/domain/assinatura';
+import { ROTAS } from '@/config/navegacao';
 import { formatarData } from '@/lib/format';
 import type { PapelDeSalao } from '@/server/tenant/context';
 
-export type AvisoDePlano = { tipo: 'info' | 'aviso'; texto: string };
+/** `link` (D-040): só o gestor na `pendente`, para ir a /painel/assinatura. */
+export type AvisoDePlano = { tipo: 'info' | 'aviso'; texto: string; link?: { rotulo: string; href: string } };
 
 const FALE_COM_O_GESTOR = 'Fale com o gestor do salão.';
 
@@ -18,6 +20,7 @@ export function avisoDoPlano(estado: EstadoEfetivo, papel: PapelDeSalao, fuso: s
         texto: gestor
           ? 'Assinatura pendente. Você já pode configurar o salão, mas o agendamento fica indisponível até a assinatura ser ativada.'
           : 'O salão está com a assinatura pendente de regularização. O agendamento fica indisponível até a assinatura ser ativada.',
+        ...(gestor ? { link: { rotulo: 'Assinar agora', href: ROTAS.assinatura } } : {}),
       };
     case 'em_carencia': {
       const ate = estado.carenciaAte !== undefined ? ` até ${formatarData(estado.carenciaAte, fuso)}` : '';

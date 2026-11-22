@@ -9,7 +9,7 @@ export type { EstadoEfetivo, CapacidadeOperacional } from '@/domain/assinatura';
  * assinatura vigente do salão (R-2: um pagamento tardio pode cair numa assinatura nova).
  */
 export type EventoAssinatura =
-  | { tipo: 'teste_iniciado' }
+  | { tipo: 'teste_iniciado'; iniciadoEm?: Date }
   | { tipo: 'cobranca_aprovada'; pagamentoId: string; valorCentavos: number; pagoEm: Date }
   | { tipo: 'cobranca_falhou'; pagamentoId?: string; valorCentavos?: number; falhouEm: Date }
   | { tipo: 'cancelamento' }

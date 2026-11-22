@@ -23,6 +23,15 @@ describe('FaixaDoPlano', () => {
   });
 });
 
+describe('FaixaDoPlano com link (D-040)', () => {
+  it('mostra o link quando o aviso o traz e nenhum quando não', () => {
+    const { rerender } = render(<FaixaDoPlano aviso={{ tipo: 'aviso', texto: 'Pendente.', link: { rotulo: 'Assinar agora', href: '/painel/assinatura' } }} />);
+    expect(screen.getByRole('link', { name: 'Assinar agora' }).getAttribute('href')).toBe('/painel/assinatura');
+    rerender(<FaixaDoPlano aviso={{ tipo: 'aviso', texto: 'Pendente.' }} />);
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+});
+
 describe('PanelLayout e a faixa (R-2)', () => {
   it('sem `aviso`, renderiza o componente servidor com o papel, antes do conteúdo', () => {
     const { container } = render(

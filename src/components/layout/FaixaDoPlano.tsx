@@ -10,7 +10,15 @@ import estilos from './Layout.module.css';
 export function FaixaDoPlano({ aviso }: { aviso: AvisoDePlano }) {
   return (
     <div className={estilos.faixaPlano} data-testid="faixa-do-plano">
-      <Alert variante={aviso.tipo}>{aviso.texto}</Alert>
+      <Alert variante={aviso.tipo}>
+        {aviso.texto}
+        {aviso.link ? (
+          <>
+            {' '}
+            <a href={aviso.link.href}>{aviso.link.rotulo}</a>
+          </>
+        ) : null}
+      </Alert>
     </div>
   );
 }
