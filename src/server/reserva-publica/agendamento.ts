@@ -1,40 +1,22 @@
-// Decisão única "o salão aceita reservas pela página pública?" (D-026 RN-5, D-1). Pura: sem imports de
-// runtime, sem relógio (agora é entrada). A E6.4 troca só esta função (e a `politica` do criarReserva).
-
-export type EstadoDaAssinatura = 'pendente' | 'em_teste' | 'ativa' | 'em_carencia' | 'suspensa' | 'cancelada' | 'encerrada';
+// Decisão única "o salão aceita reservas pela página pública?" (D-026 RN-5, D-038 RN-4). Pura: sem imports
+// de runtime, sem relógio. O critério assinatura/manual deriva da tabela de capacidades (`agendar`),
+// resolvida em `estadoEfetivoDoSalao`; não há lista paralela de estados.
 
 export type EstadoAgendamento = {
-  suspensoManualEm: Date | null;
-  assinatura: { estado: EstadoDaAssinatura; acessoAte: Date | null } | null;
+  /** `estado.motivo === 'manual'` do estado efetivo. */
+  suspensoManual: boolean;
+  /** `estado.capacidades.agendar` do estado efetivo. */
+  agendar: boolean;
   servicosOfertaveis: number;
-  agora: Date;
 };
 
 export type MotivoIndisponivel = 'suspenso_manual' | 'assinatura' | 'sem_servico';
 export type DecisaoAgendamento = { disponivel: true } | { disponivel: false; motivo: MotivoIndisponivel };
 
-/**
- * Ordem fixa de motivos: suspensão manual → assinatura → sem serviço. Sem assinatura (salão legado ou
- * de seed) é disponível (D-1). `cancelada` vale até `acessoAte` (exclusivo).
- */
+/** Ordem fixa de motivos: suspensão manual → assinatura (`agendar` negado) → sem serviço. */
 export function agendamentoDisponivel(e: EstadoAgendamento): DecisaoAgendamento {
-  if (e.suspensoManualEm !== null) return { disponivel: false, motivo: 'suspenso_manual' };
-  const a = e.assinatura;
-  if (a !== null) {
-    switch (a.estado) {
-      case 'pendente':
-      case 'suspensa':
-      case 'encerrada':
-        return { disponivel: false, motivo: 'assinatura' };
-      case 'cancelada':
-        if (a.acessoAte === null || a.acessoAte.getTime() <= e.agora.getTime()) {
-          return { disponivel: false, motivo: 'assinatura' };
-        }
-        break;
-      default:
-        break;
-    }
-  }
+  if (e.suspensoManual) return { disponivel: false, motivo: 'suspenso_manual' };
+  if (e.agendar !== true) return { disponivel: false, motivo: 'assinatura' };
   if (e.servicosOfertaveis === 0) return { disponivel: false, motivo: 'sem_servico' };
   return { disponivel: true };
 }

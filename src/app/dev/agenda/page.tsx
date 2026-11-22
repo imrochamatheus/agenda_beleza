@@ -39,7 +39,7 @@ export default async function DemonstracaoAgenda({ searchParams }: Props) {
   const vista = reserva ? null : vistaDemonstracao({ data: params.data, visao: params.visao, profissional: params.profissional }, agora);
   if (!reserva && vista === null) notFound();
   return (
-    <PanelLayout papel="gestor" nomeSalao={NOME_SALAO_DEMONSTRACAO} caminhoAtual={ROTAS.agenda}>
+    <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_SALAO_DEMONSTRACAO} caminhoAtual={ROTAS.agenda}>
       {reserva ? (
         <DetalheDaReserva reserva={reserva} hrefVoltar={hrefAgenda(ROTAS.devAgenda, {})} />
       ) : (

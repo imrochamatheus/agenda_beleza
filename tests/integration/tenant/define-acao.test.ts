@@ -196,10 +196,23 @@ describe('CA-11: política de operação plugável, consultada com o contexto e 
     expect((await nomeDoServico(alvo)).nome).toBe('Permitido');
 
     // A política recebeu o TenantContext da sessão e a capacidade declarada, nas duas chamadas.
-    expect(politica.mock.calls.map(([ctx, cap]) => [ctx.tipo, ctx.salaoId, ctx.usuarioId, cap])).toEqual([
+    expect(politica.mock.calls.map(([ctx, cap]) => [ctx.tipo, ctx.salaoId, ctx.tipo === 'tenant' ? ctx.usuarioId : null, cap])).toEqual([
       ['tenant', s.salaoId, s.gestor.usuarioId, 'agendar'],
       ['tenant', s.salaoId, s.gestor.usuarioId, 'cancelar'],
     ]);
+  });
+
+  it('D-038: a política recebe o mesmo `agora` da execução que o handler', async () => {
+    const agora = new Date('2026-11-20T12:00:00Z');
+    const politica = vi.fn<PoliticaOperacao>(() => ({ permitido: true }));
+    let doHandler: Date | null = null;
+    const acao = defineAcao({ papeis: ['gestor'], capacidade: 'leitura' }, async (_ctx, _i: object, exec) => {
+      doHandler = exec.agora;
+      return 1;
+    });
+    await acao.executar(await credencialDoGestor(s), {}, { politica, agora });
+    expect(politica.mock.calls[0]?.[2]).toBe(agora);
+    expect(doHandler).toBe(agora);
   });
 
   it('CA-11: política assíncrona também é aguardada; a política não é consultada para papel recusado', async () => {

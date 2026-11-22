@@ -83,12 +83,12 @@ export type ResultadoCriarReserva =
   | { resultado: 'encaixe_requer_confirmacao'; motivos: MotivoEncaixe[] };
 
 /**
- * Política de estado do salão para reservar (A-9). Tipo próprio porque `PoliticaOperacao` só aceita
- * `TenantContext`; o fluxo público usa `SistemaContext`. A E6.4 troca `politicaPadraoDeReserva`.
+ * Política de estado do salão para reservar (A-9). D-038: o padrão é `politicaDeOperacao`, para equipe e para o fluxo público (`SistemaContext`).
  */
 export type PoliticaDeReserva = (
   ctx: ContextoEscopado,
   capacidade: 'agendar',
+  agora: Date,
 ) => DecisaoPolitica | Promise<DecisaoPolitica>;
 
 export type DependenciasCriarReserva = {

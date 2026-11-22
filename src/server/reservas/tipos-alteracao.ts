@@ -42,7 +42,7 @@ export type EntradaCancelar = { reservaId: unknown };
 export type EntradaMarcarStatus = { reservaId: unknown; para: unknown };
 
 export type DependenciasAlteracao = Pick<DependenciasCriarReserva, 'enfileirar'> & {
-  /** Gancho da E6.4: padrão `politicaDeOperacao`. Negar lança 403 antes de abrir a transação. */
+  /** Política (D-038): padrão `politicaDeOperacao`. Negar lança 403 antes de abrir a transação. */
   politica?: PoliticaOperacao;
   /** SÓ TESTE: barreira depois das travas de salão/profissional/serviços e antes de travar a reserva. */
   aposTravas?: () => Promise<void>;

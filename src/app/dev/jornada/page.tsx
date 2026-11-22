@@ -58,7 +58,7 @@ export default async function DemonstracaoJornada({ searchParams }: Props) {
   const caminho = ROTAS.jornada(PROFISSIONAL_DEMONSTRACAO);
   if (modo === 'edicao') {
     return (
-      <PanelLayout papel="gestor" nomeSalao={NOME_SALAO} caminhoAtual={caminho}>
+      <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_SALAO} caminhoAtual={caminho}>
         <div className={estilos.pagina}>
           <h1>Jornada de {NOME}</h1>
           <FormularioJornada acao={demonstrarJornadaAcao} profissionalId={PROFISSIONAL_DEMONSTRACAO} semana={SEMANA_PADRAO} />
@@ -68,7 +68,7 @@ export default async function DemonstracaoJornada({ searchParams }: Props) {
   }
   const vazia = modo === 'vazia';
   return (
-    <PanelLayout papel="profissional" nomeSalao={NOME_SALAO} caminhoAtual={caminho}>
+    <PanelLayout aviso={null} papel="profissional" nomeSalao={NOME_SALAO} caminhoAtual={caminho}>
       <div className={estilos.pagina}>
         <h1>Jornada de {NOME}</h1>
         {vazia ? <Alert variante="aviso">{MENSAGENS_JORNADA.semIntervalos}</Alert> : null}

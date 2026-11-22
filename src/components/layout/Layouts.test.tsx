@@ -84,7 +84,7 @@ const hrefsDoPainel = () =>
 describe('PanelLayout (CA-17, CA-11, RN-12, RN-16)', () => {
   it('gestor: marcos, nome do salão, área do usuário, 7 itens e sem rodapé', () => {
     const { container } = render(
-      <PanelLayout papel="gestor" nomeSalao="Salão Exemplo" areaUsuario={<button type="button">Sair</button>}>
+      <PanelLayout aviso={null} papel="gestor" nomeSalao="Salão Exemplo" areaUsuario={<button type="button">Sair</button>}>
         x
       </PanelLayout>,
     );
@@ -105,7 +105,7 @@ describe('PanelLayout (CA-17, CA-11, RN-12, RN-16)', () => {
 
   it('CA-11: profissional não tem links das áreas do gestor', () => {
     render(
-      <PanelLayout papel="profissional" nomeSalao="S">
+      <PanelLayout aviso={null} papel="profissional" nomeSalao="S">
         x
       </PanelLayout>,
     );
@@ -123,7 +123,7 @@ describe('PanelLayout (CA-17, CA-11, RN-12, RN-16)', () => {
 
   it.each(['super_admin', 'toString', undefined, 'x'])('CA-11: papel inválido %s → nenhum item, sem lançar', (papel) => {
     render(
-      <PanelLayout papel={papel as never} nomeSalao="S">
+      <PanelLayout aviso={null} papel={papel as never} nomeSalao="S">
         x
       </PanelLayout>,
     );
@@ -135,7 +135,7 @@ describe('PanelLayout (CA-17, CA-11, RN-12, RN-16)', () => {
 
   it('caminhoAtual marca só o item ativo (prefixo por segmento)', () => {
     render(
-      <PanelLayout papel="gestor" nomeSalao="S" caminhoAtual="/painel/agenda/nova">
+      <PanelLayout aviso={null} papel="gestor" nomeSalao="S" caminhoAtual="/painel/agenda/nova">
         x
       </PanelLayout>,
     );

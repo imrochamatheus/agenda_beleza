@@ -90,5 +90,6 @@ describe('CLI do seed', () => {
     const b = cli({});
     expect(b.status, b.stderr).toBe(0);
     expect(await salaos()).toBe(2);
-  });
+    // Dois processos filhos do CLI (semeiam um banco inteiro): 5 s não bastam sob a carga da CI.
+  }, 60_000);
 });

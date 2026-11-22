@@ -97,6 +97,10 @@
   padding: var(--espaco-6) var(--espaco-4) var(--espaco-12);
 }
 
+.faixaPlano {
+  margin-block-end: var(--espaco-6);
+}
+
 .rodape {
   padding: var(--espaco-4);
   border-block-start: 1px solid var(--cor-borda-sutil);

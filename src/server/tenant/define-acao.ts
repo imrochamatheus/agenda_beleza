@@ -2,8 +2,8 @@ import { ehCapacidade, ehPapelDeSalao } from './context';
 import type { Capacidade, PapelDeSalao, TenantContext } from './context';
 import { AcessoNegado, ehErroDeDominio } from './erros';
 import type { CodigoErro, StatusErro } from './erros';
+import { politicaDeOperacao } from '@/server/assinatura/politica-operacao';
 import { lerCredencialDoCookie } from './next';
-import { politicaDeOperacao } from './politica';
 import type { PoliticaOperacao } from './politica';
 import { resolverTenant } from './sessao';
 import type { Credencial } from './sessao';
@@ -82,7 +82,7 @@ export function defineAcao<I, O>(
       if (!metadados.papeis.includes(ctx.papel)) {
         throw new AcessoNegado('papel não permitido');
       }
-      const decisao = await politica(ctx, metadados.capacidade);
+      const decisao = await politica(ctx, metadados.capacidade, agora);
       if (!decisao.permitido) {
         throw new AcessoNegado(decisao.motivo);
       }

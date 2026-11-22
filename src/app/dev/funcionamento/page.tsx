@@ -37,7 +37,7 @@ export default async function DemonstracaoFuncionamento({ searchParams }: Props)
   const funcionamento: Funcionamento =
     params.modo === 'nao-informado' ? { definido: false } : params.modo === 'fechado' ? FUNCIONAMENTO_FECHADO : FUNCIONAMENTO_DEMONSTRACAO;
   return (
-    <PanelLayout papel="gestor" nomeSalao={NOME_DEMONSTRACAO} caminhoAtual={ROTAS.configuracoesFuncionamento}>
+    <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_DEMONSTRACAO} caminhoAtual={ROTAS.configuracoesFuncionamento}>
       <div className={estilos.pagina}>
         <p className={estilos.voltar}>
           <a href={ROTAS.configuracoes}>Voltar para Configurações</a>

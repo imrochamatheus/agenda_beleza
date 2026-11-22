@@ -1,10 +1,10 @@
 // Peças compartilhadas de remarcar, cancelar e marcar status (D-030). Sem 'use server' e sem next/*.
+import { politicaDeOperacao } from '@/server/assinatura/politica-operacao';
 import { exigirPermissao } from '@/server/auth/permissoes';
 import { repos } from '@/server/repos';
 import { ehUuid } from '@/server/repos/ids';
 import type { TenantContext } from '@/server/tenant/context';
 import { AcessoNegado, NaoEncontrado } from '@/server/tenant/erros';
-import { politicaDeOperacao } from '@/server/tenant/politica';
 
 import type { DependenciasAlteracao } from './tipos-alteracao';
 
@@ -34,9 +34,9 @@ export async function localizarReserva(ctx: TenantContext, reservaId: unknown): 
   return { id: r.id, profissionalId: r.profissionalId.toLowerCase(), clienteId: r.clienteId };
 }
 
-/** RN-2/CA-12: a política (gancho da E6.4) negando é 403, antes de qualquer transação. */
-export async function aplicarPolitica(ctx: TenantContext, capacidade: 'agendar' | 'cancelar', deps: DependenciasAlteracao): Promise<void> {
-  const decisao = await (deps.politica ?? politicaDeOperacao)(ctx, capacidade);
+/** RN-2/CA-12: a política (D-038) negando é 403, antes de qualquer transação. */
+export async function aplicarPolitica(ctx: TenantContext, capacidade: 'agendar' | 'cancelar', deps: DependenciasAlteracao, agora: Date): Promise<void> {
+  const decisao = await (deps.politica ?? politicaDeOperacao)(ctx, capacidade, agora);
   if (!decisao.permitido) throw new AcessoNegado(decisao.motivo);
 }
 

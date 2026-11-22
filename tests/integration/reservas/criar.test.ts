@@ -168,11 +168,12 @@ describe('CA-13: origem e isolamento', () => {
 });
 
 describe('CA-21: política e salão suspenso', () => {
-  it('política padrão: salão com suspenso_manual_em ainda cria (comportamento atual, a E6.4 muda)', async () => {
+  it('política padrão (D-038): salão com suspenso_manual_em recusa equipe (403) e público (salao_indisponivel)', async () => {
     const c = await criarCenarioReserva();
     await db().salao.update({ where: { id: c.s.salaoId }, data: { suspensoManualEm: new Date() } });
-    expect((await criarReserva(c.ctxEquipe, entradaReserva(c))).resultado).toBe('criada');
-    expect((await criarReserva(c.ctxSistema, entradaReserva(c, { inicio: sp(DIA, '12:00') }))).resultado).toBe('criada');
+    await expect(criarReserva(c.ctxEquipe, entradaReserva(c))).rejects.toMatchObject({ status: 403 });
+    expect(await criarReserva(c.ctxSistema, entradaReserva(c, { inicio: sp(DIA, '12:00') }))).toEqual({ resultado: 'salao_indisponivel' });
+    expect((await contarLinhas(c.s.salaoId)).reserva).toBe(0);
   });
 
   it('política injetada negando: nada é gravado', async () => {
