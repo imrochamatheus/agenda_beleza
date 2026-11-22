@@ -163,6 +163,7 @@ describe('CA-9: seleção "real" do MP e do WhatsApp liga os stubs NaoImplementa
       porta.consultarPagamento('x'),
       porta.cancelarAssinatura('x'),
       porta.adiarProximaCobranca('x', new Date()),
+      porta.urlAtualizarMeioPagamento('x'),
       porta.validarWebhook({ cabecalhos: {}, consulta: {}, corpo: {} }),
     ];
     expect(chamadas).toHaveLength(Object.keys(porta).length);

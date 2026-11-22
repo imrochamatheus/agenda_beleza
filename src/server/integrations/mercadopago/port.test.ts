@@ -16,13 +16,14 @@ const VALIDA = {
 };
 
 describe('mercadopago/port', () => {
-  it('declara as cinco operações da porta (além de validarWebhook)', () => {
+  it('declara as seis operações da porta (além de validarWebhook)', () => {
     expect(OPERACOES_MP).toEqual([
       'criarAssinatura',
       'consultarAssinatura',
       'consultarPagamento',
       'cancelarAssinatura',
       'adiarProximaCobranca',
+      'urlAtualizarMeioPagamento',
     ]);
   });
 

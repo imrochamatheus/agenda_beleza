@@ -19,6 +19,7 @@ export function criarMercadoPagoReal(opcoes: OpcoesMercadoPagoReal = {}): PortaM
     consultarPagamento: rejeitar,
     cancelarAssinatura: rejeitar,
     adiarProximaCobranca: rejeitar,
+    urlAtualizarMeioPagamento: rejeitar,
     validarWebhook: rejeitar,
   };
 }

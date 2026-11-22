@@ -82,7 +82,8 @@ describe('RepoAssinatura (D-040)', () => {
       await t.assinaturas.confirmarProvedor(b.ctx, { id: v.id, provedorId: 'p1' }),
       await t.assinaturas.confirmarProvedor(a.ctx, { id: randomUUID(), provedorId: 'p1' }),
       await t.assinaturas.confirmarProvedor(a.ctx, { id: 'x', provedorId: 'p1' }),
+      await t.assinaturas.confirmarProvedor(a.ctx, { id: v.id, provedorId: null }),
     ]);
-    expect(r).toEqual([true, false, false, false, false]);
+    expect(r).toEqual([true, false, false, false, false, false]);
   });
 });

@@ -141,6 +141,15 @@ export function criarMercadoPagoSimulado(o: OpcoesMpSimulado): PortaMercadoPago 
       if (r === 'data_invalida') throw new OperacaoInvalidaNoProvedor(DATA_INVALIDA);
     },
 
+    async urlAtualizarMeioPagamento(id) {
+      exigirId(id);
+      await falharSeForcado('urlAtualizarMeioPagamento');
+      const a = await repo.buscarAssinatura(id);
+      if (!a) throw new RecursoNaoEncontradoNoProvedor();
+      if (a.estado === 'cancelada') throw new OperacaoInvalidaNoProvedor(ESTADO_INVALIDO);
+      return `${baseCheckout}?assinatura=${id}`;
+    },
+
     async validarWebhook(n) {
       return validarNotificacaoSimulada(n);
     },

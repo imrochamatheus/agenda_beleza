@@ -47,6 +47,7 @@ export function espiar(porta: PortaMercadoPago = mp): Espiao {
     consultarPagamento: (id) => (chamadas.push('consultarPagamento'), porta.consultarPagamento(id)),
     cancelarAssinatura: (id) => porta.cancelarAssinatura(id),
     adiarProximaCobranca: (id, d) => porta.adiarProximaCobranca(id, d),
+    urlAtualizarMeioPagamento: (id) => porta.urlAtualizarMeioPagamento(id),
     validarWebhook: (n) => porta.validarWebhook(n),
   };
 }

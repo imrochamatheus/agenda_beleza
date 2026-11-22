@@ -254,6 +254,7 @@ describe('CA-15: ciclo de vida da assinatura simulada', () => {
       await expect(mp.adiarProximaCobranca(id, new Date(AGORA.getTime() + DIA_MS))).rejects.toBeInstanceOf(
         RecursoNaoEncontradoNoProvedor,
       );
+      await expect(mp.urlAtualizarMeioPagamento(id)).rejects.toBeInstanceOf(RecursoNaoEncontradoNoProvedor);
       await expect(mp.autorizar(id)).rejects.toBeInstanceOf(RecursoNaoEncontradoNoProvedor);
       await expect(mp.aprovarCobranca(id)).rejects.toBeInstanceOf(RecursoNaoEncontradoNoProvedor);
       await expect(mp.falharCobranca(id)).rejects.toBeInstanceOf(RecursoNaoEncontradoNoProvedor);
@@ -468,6 +469,21 @@ describe('CA-18: erro forçado por operação', () => {
     expect(await contar('sim_mp_adiamento', id)).toBe(0);
     await mp.adiarProximaCobranca(id, D);
     expect(await contar('sim_mp_adiamento', id)).toBe(1);
+  });
+
+  it('D-042: urlAtualizarMeioPagamento devolve a URL do checkout simulado sem efeito; erro forçado; cancelada é inválida', async () => {
+    const id = await autorizada();
+    const antes = await linha(id);
+    await expect(mp.urlAtualizarMeioPagamento(id)).resolves.toBe(`${APP_URL}/dev/mp-checkout?assinatura=${id}`);
+    expect(await linha(id)).toEqual(antes);
+
+    await mp.forcarErro('urlAtualizarMeioPagamento');
+    await expect(mp.urlAtualizarMeioPagamento(id)).rejects.toBeInstanceOf(ErroProvedor);
+    expect(await linha(id)).toEqual(antes);
+    await expect(mp.urlAtualizarMeioPagamento(id)).resolves.toContain(id);
+
+    await mp.cancelarAssinatura(id);
+    await expect(mp.urlAtualizarMeioPagamento(id)).rejects.toBeInstanceOf(OperacaoInvalidaNoProvedor);
   });
 
   it('RN-18: forcarErro recusa operação desconhecida sem gravar', async () => {

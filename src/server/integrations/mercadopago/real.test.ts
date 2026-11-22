@@ -19,6 +19,7 @@ const CHAMADAS: Record<keyof PortaMercadoPago, (p: PortaMercadoPago) => Promise<
   consultarPagamento: (p) => p.consultarPagamento(ASSINATURA_ID),
   cancelarAssinatura: (p) => p.cancelarAssinatura(ASSINATURA_ID),
   adiarProximaCobranca: (p) => p.adiarProximaCobranca(ASSINATURA_ID, new Date('2027-01-10T12:00:00Z')),
+  urlAtualizarMeioPagamento: (p) => p.urlAtualizarMeioPagamento(ASSINATURA_ID),
   validarWebhook: (p) => p.validarWebhook({ cabecalhos: {}, consulta: {}, corpo: {} }),
 };
 

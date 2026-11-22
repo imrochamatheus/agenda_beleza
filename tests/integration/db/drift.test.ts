@@ -87,7 +87,7 @@ const ENUMS: Record<string, string[]> = {
   resultado_auditoria: ['sucesso', 'falha'],
   sim_mp_estado_assinatura: ['pendente', 'autorizada', 'cancelada'],
   sim_mp_status_pagamento: ['aprovado', 'recusado'],
-  sim_mp_operacao: ['criarAssinatura', 'consultarAssinatura', 'consultarPagamento', 'cancelarAssinatura', 'adiarProximaCobranca'],
+  sim_mp_operacao: ['criarAssinatura', 'consultarAssinatura', 'consultarPagamento', 'cancelarAssinatura', 'adiarProximaCobranca', 'urlAtualizarMeioPagamento'],
   sim_whatsapp_tipo_falha: ['temporaria', 'permanente'],
 };
 
@@ -444,6 +444,7 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261123000000_totp_ultimo_passo', antes: false, ok: true },
       { migration_name: '20261124000000_avaliacao_denuncia', antes: false, ok: true },
       { migration_name: '20261125000000_convite_pendente_unico', antes: false, ok: true },
+      { migration_name: '20261126000000_sim_mp_operacao_atualizar_meio_pagamento', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,
