@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { origemE2E } from './suporte/ambiente';
 import { analisarComAxe, semRolagemHorizontal } from './suporte/vitrine';
 
 // D-034 CA-13 (e CA-2/CA-4 sem banco): /dev/admin-entrar (vitrine, mesmos componentes do login do admin,
@@ -11,7 +12,7 @@ test.use({ locale: 'en-US' });
 async function abrir(page: Page, caminho: string) {
   const resposta = await page.goto(caminho);
   if (resposta?.status() !== 200) {
-    throw new Error(`${caminho} respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta 3000.`);
+    throw new Error(`${caminho} respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta do E2E (E2E_PORT, padrão 3000).`);
   }
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
   return resposta;
@@ -90,7 +91,7 @@ test.describe('CA-13/CA-2: código e cadastro do autenticador', () => {
   test('cadastro: QR em SVG acessível, chave em texto, nenhuma requisição externa, axe limpo', async ({ page }) => {
     const externas: string[] = [];
     page.on('request', (r) => {
-      if (!r.url().startsWith('http://127.0.0.1:3000/')) externas.push(r.url());
+      if (!r.url().startsWith(`${origemE2E()}/`)) externas.push(r.url());
     });
     await abrir(page, '/dev/admin-entrar?vista=cadastro');
     const qr = page.getByRole('img', { name: 'QR code para o aplicativo autenticador' });
@@ -119,7 +120,7 @@ test.describe('CA-13/CA-4: rota real /admin/entrar sem banco', () => {
   test('/admin sem cookie → 307 para /admin/entrar (proxy)', async ({ request }) => {
     const r = await request.get('/admin', { maxRedirects: 0 });
     expect(r.status()).toBe(307);
-    expect(new URL(r.headers()['location'], 'http://127.0.0.1:3000').pathname).toBe('/admin/entrar');
+    expect(new URL(r.headers()['location'], origemE2E()).pathname).toBe('/admin/entrar');
     expect(r.headers()['cache-control']).toBe('no-store');
   });
 });

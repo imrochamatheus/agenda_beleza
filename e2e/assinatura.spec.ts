@@ -23,7 +23,7 @@ const ESTADOS = [
 
 async function abrir(page: Page, busca: string) {
   const r = await page.goto(`/dev/assinatura${busca}`);
-  expect(r?.status(), 'ligue VITRINE_COMPONENTES=true ou libere a porta 3000').toBe(200);
+  expect(r?.status(), 'ligue VITRINE_COMPONENTES=true ou libere a porta do E2E (E2E_PORT, padrão 3000)').toBe(200);
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }
 

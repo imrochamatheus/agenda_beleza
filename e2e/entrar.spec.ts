@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { origemE2E } from './suporte/ambiente';
 import { analisarComAxe, semRolagemHorizontal } from './suporte/vitrine';
 
 // D-010 CA-18 (tela /entrar: teclado, rótulos, atributos, sem rolagem horizontal e axe) e CA-9 com
@@ -72,7 +73,7 @@ test.describe('CA-9: proxy real do painel', () => {
   test('CA-9: o redirecionamento é 307 e /painel sem cookie também redireciona', async ({ request }) => {
     const r = await request.get('/painel', { maxRedirects: 0 });
     expect(r.status()).toBe(307);
-    const destino = new URL(r.headers()['location'], 'http://127.0.0.1:3000');
+    const destino = new URL(r.headers()['location'], origemE2E());
     expect(destino.pathname + destino.search).toBe('/entrar?proximo=%2Fpainel');
   });
 });

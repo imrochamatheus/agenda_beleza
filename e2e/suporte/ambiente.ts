@@ -2,7 +2,21 @@
 // playwright.config.ts e pelo preparar-banco.ts, para que ambos enxerguem o MESMO banco e diretório.
 import path from 'node:path';
 
-export const APP_URL_E2E = 'http://127.0.0.1:3000';
+/** Porta do servidor do E2E (`E2E_PORT`, padrão 3000; 1 a 65535). Lida a cada chamada, nunca fixada em módulo. */
+export function portaE2E(env: NodeJS.ProcessEnv = process.env): number {
+  const bruta = env.E2E_PORT;
+  if (bruta === undefined || bruta === '') return 3000;
+  const porta = Number(bruta);
+  if (!/^\d{1,5}$/.test(bruta) || porta < 1 || porta > 65535) {
+    throw new Error('E2E_PORT inválida: informe um inteiro de 1 a 65535.');
+  }
+  return porta;
+}
+
+/** Origem do servidor do E2E (também o `APP_URL` dele). */
+export function origemE2E(env: NodeJS.ProcessEnv = process.env): string {
+  return `http://127.0.0.1:${portaE2E(env)}`;
+}
 // Constante pública, só do E2E (nunca um segredo real); 32+ caracteres exigidos pelo schema.
 export const SEGREDO_E2E = 'e2e-segredo-publico-nao-e-segredo-0123456789';
 
@@ -42,7 +56,8 @@ export function ambienteDoServidorE2E(env: NodeJS.ProcessEnv, raiz?: string): Re
     RATE_LIMIT_SEGREDO: SEGREDO_E2E,
     AVALIACAO_SEGREDO: SEGREDO_E2E,
     ADMIN_TOTP_CHAVE: CHAVE_TOTP_E2E,
-    APP_URL: APP_URL_E2E,
+    APP_URL: origemE2E(env),
+    PORT: String(portaE2E(env)),
     VITRINE_COMPONENTES: 'true',
   };
 }

@@ -40,7 +40,8 @@ async function idsPorTabela(): Promise<string[]> {
 beforeAll(async () => {
   c = await conectar();
   arm = prepararArmazenamento();
-  const deps = { armazenamento: integracoes().armazenamento };
+  // Ambiente isolado: o par SUPERADMIN_* do `.env` de quem segue o README não pode mudar o super admin de demonstração.
+  const deps = { armazenamento: integracoes().armazenamento, env: { ...process.env, SUPERADMIN_EMAIL: undefined, SUPERADMIN_PASSWORD: undefined } };
   await Promise.all([semear(deps), semear(deps)]);
   contagens = await contar();
   ids = await idsPorTabela();
@@ -95,14 +96,14 @@ describe('CA-1: conteúdo', () => {
 
 describe('CA-2: idempotência', () => {
   it('uma terceira execução não muda contagens nem ids', async () => {
-    await semear({ armazenamento: integracoes().armazenamento });
+    await semear({ armazenamento: integracoes().armazenamento, env: { ...process.env, SUPERADMIN_EMAIL: undefined, SUPERADMIN_PASSWORD: undefined } });
     expect(await contar()).toEqual(contagens);
     expect(await idsPorTabela()).toEqual(ids);
   });
 
   it('nada é apagado nem alterado: um dado editado depois do seed sobrevive a nova execução', async () => {
     await c.query(`UPDATE servico SET nome = 'Corte editado' WHERE nome = 'Corte feminino'`);
-    await semear({ armazenamento: integracoes().armazenamento });
+    await semear({ armazenamento: integracoes().armazenamento, env: { ...process.env, SUPERADMIN_EMAIL: undefined, SUPERADMIN_PASSWORD: undefined } });
     expect((await c.query(`SELECT count(*)::int AS n FROM servico WHERE nome = 'Corte editado'`)).rows[0].n).toBe(1);
     await c.query(`UPDATE servico SET nome = 'Corte feminino' WHERE nome = 'Corte editado'`);
   });

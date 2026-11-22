@@ -54,7 +54,8 @@ services:
       # Fotos do armazenamento simulado (D-021); sobrevive a `down` (só `down -v` apaga). O worker não monta.
       - armazenamento:/app/.armazenamento
     ports:
-      - "3000:3000"
+      # Porta publicada no host (APP_PORT, padrão 3000). Dentro do container a app sempre escuta na 3000.
+      - "${APP_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy

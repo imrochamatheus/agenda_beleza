@@ -1,0 +1,9 @@
+# D-048 — E9.3 README (resumo da demanda)
+
+Fonte: issue #55 (`gh issue view 55 --json body --jq .body`), CLAUDE.md "Required stack" e docs/trinks-alinhamento.md (README lista S3 e os QUATRO modelos de WhatsApp).
+
+Etapas dispensadas pelo líder (registro): analista, web-designer e arquiteto — a issue já traz escopo, RNs e CAs verificáveis, não há UI nem desenho técnico novo. Participam: devops (README e portas configuráveis), tester (execução em clone limpo).
+
+Escopo: README completo (pré-requisitos; Docker e sem Docker; migrações, seed no container e super admin; banco de teste; `playwright install`; todos os comandos; credenciais de demonstração; tabela de variáveis (nome, modo em que é obrigatória, padrão) igual ao `.env.example`, inclusive `APP_URL`, `TRUSTED_PROXY_HOPS`, `RATE_LIMIT_SEGREDO`, `AVALIACAO_SEGREDO`, `ADMIN_TOTP_CHAVE`, `SUPERADMIN_*`, `PROTECAO_*`, `MP_*`, `WHATSAPP_*` (4 modelos), `S3_*`, Turnstile, SMTP; seção separada de credenciais dos 4 provedores reais (Mercado Pago, WhatsApp Business Platform com conta, número e 4 modelos, e-mail transacional, Cloudflare Turnstile) mais S3 para fotos; seção de riscos com o custo por mensagem da Meta; pendências de validação em sandbox (D-046/D-047); aviso de que os adaptadores reais NÃO foram validados contra os provedores).
+Extra decidido pelo líder: portas configuráveis `APP_PORT` (compose e smoke) e `E2E_PORT` (Playwright, ambiente.ts e specs que fixam :3000), padrão 3000, para rodar com a 3000 ocupada.
+CAs: CA-1 clone limpo (`npm ci`, `npm run db:generate`, `docker compose up -d --wait`, `npm run test:coverage`, `npm run test:e2e`) com código 0 seguindo SÓ o README (com portas alternativas porque a 3000 está ocupada nesta máquina); CA-2 uma subseção por provedor com as variáveis; CA-3 custo por mensagem da Meta como risco; CA-4 tabela do README = `.env.example` (teste automatizado).

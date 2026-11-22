@@ -4,9 +4,45 @@ SaaS multi-salão de agendamento para salões de beleza. A especificação da v1
 
 Stack: Next.js + TypeScript, PostgreSQL 17, Prisma 7, Vitest e Playwright. Tudo roda localmente com adaptadores **simulados**, sem nenhuma credencial real.
 
+## Índice
+
+- [Pré-requisitos](#pré-requisitos) e [Início rápido](#início-rápido-passo-a-passo)
+- [Executar com Docker](#executar-com-docker) · [Desenvolvimento sem Docker para a app](#desenvolvimento-sem-docker-para-a-app)
+- [Variáveis de ambiente](#variáveis-de-ambiente) · [Comandos](#comandos)
+- [Testes](#testes) (banco de teste, escopo de salão, migrações)
+- [Seed de demonstração](#seed-de-demonstração-e92) · [Super admin e TOTP](#super-admin-e-totp-e15)
+- [CI](#ci)
+- [Credenciais para os serviços reais](#credenciais-para-os-serviços-reais) · [Riscos](#riscos) · [O que não foi validado](#o-que-não-foi-validado)
+- Funcionalidades por demanda (uma seção cada, na ordem em que foram entregues): login, cadastro, recuperação de senha, profissionais, serviços, jornada, bloqueios, configurações, perfil, fotos, clientes, agenda, reservas, avaliações, moderação, auditoria, painel do super admin, integrações, fila e worker, mensagens de WhatsApp, página pública, proteção, assinatura, somente leitura, interface e acessibilidade.
+
+## Pré-requisitos
+
+- **Node 24:** o `.nvmrc` é a fonte única da versão (`package.json#engines` exige `>=24.15.0 <25`). Com o [nvm](https://github.com/nvm-sh/nvm): `nvm install && nvm use`.
+- **Docker** com Compose v2 (PostgreSQL 17, app e worker em containers; o PostgreSQL é necessário também para os testes).
+- **npm** (vem com o Node). As versões das dependências são exatas (`.npmrc`): instale sempre com `npm ci`.
+- Os comandos funcionam em caminhos com espaço e acento.
+
+## Início rápido, passo a passo
+
+```bash
+nvm use                           # Node do .nvmrc
+npm ci                            # instalação oficial (lock versionado)
+npm run db:generate               # obrigatório depois de todo npm ci
+cp .env.example .env              # valores de desenvolvimento, sem credenciais reais
+docker compose up -d --wait       # postgres + app (aplica as migrações) + worker
+docker compose exec -e SEED_PERMITIR_PRODUCAO=true app node dist/prisma/seed.js   # dois salões de demonstração
+npm run superadmin:criar          # opcional: super admin (SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD no .env; TOTP no primeiro login)
+npm run test:coverage             # unidade + integração, gate de 90% de linhas
+npx playwright install chromium   # uma vez por máquina
+npm run test:e2e                  # build + Playwright (viewport de celular)
+```
+
+Portas ocupadas (a 3000 no host, por exemplo): `APP_PORT` (app no compose) e `E2E_PORT` (E2E) no `.env`; ver "Variáveis de ambiente".
+Com `APP_PORT` diferente de 3000, ajuste também `APP_URL` (as ações com `Origin` e os links usam essa origem). Com a stack no ar, a porta do `npm run test:e2e` não pode ser a mesma da app.
+
 ## Executar com Docker
 
-Pré-requisitos: Docker com Compose v2 e as portas **3000** (app) e **5432** (PostgreSQL) livres no host.
+Pré-requisitos: Docker com Compose v2 e as portas **3000** (app, configurável por `APP_PORT`) e **5432** (PostgreSQL, `POSTGRES_PORT`) livres no host.
 
 ```bash
 cp .env.example .env          # valores de desenvolvimento; funciona sem alterações
@@ -16,13 +52,13 @@ docker compose up -d --wait   # builda a imagem e espera postgres e app ficarem 
 | Serviço | O que faz | Acesso |
 |---|---|---|
 | `postgres` | PostgreSQL 17; na primeira inicialização cria também a base de testes de `TEST_DATABASE_URL` | `localhost:5432` |
-| `app` | Valida o ambiente (o log mostra o modo de cada adaptador), aplica as migrações (`prisma migrate deploy`) e sobe o Next.js | http://localhost:3000 e http://localhost:3000/api/health |
+| `app` | Valida o ambiente (o log mostra o modo de cada adaptador), aplica as migrações (`prisma migrate deploy`) e sobe o Next.js | http://localhost:3000 e http://localhost:3000/api/health (porta `APP_PORT`) |
 | `worker` | Processo separado (mesma imagem) que consome a fila de jobs (pg-boss, schema `pgboss`; ver "Fila de jobs e worker"): valida o ambiente, registra os modos dos adaptadores, instala/migra o schema `pgboss`, processa os jobs com novas tentativas e emite um heartbeat em JSON a cada 30 s. `docker compose stop worker` espera até 25 s pelos jobs em andamento (`stop_grace_period: 30s`) | `docker compose logs -f worker` |
 
 App e worker rodam como usuário não root. Só a app aplica migrações.
 
 - **Porta 5432 ocupada:** defina `POSTGRES_PORT` no `.env` (por exemplo, `5433`) e troque a porta também em `DATABASE_URL` e `TEST_DATABASE_URL`, porque o Node não interpola variáveis do `.env`. Dentro do compose, a app sempre usa `postgres:5432`.
-- **Porta 3000 ocupada:** libere-a antes de subir (ela é fixa no compose).
+- **Porta 3000 ocupada:** defina `APP_PORT` no `.env` (por exemplo, `3100`) e ajuste `APP_URL` para a mesma porta (`http://localhost:3100`). Dentro do container a app sempre escuta na 3000. `sh docker/smoke.sh` usa a `APP_PORT` do ambiente ou do `.env`.
 - **Parar:** `docker compose down` (mantém os dados) ou `docker compose down -v` (apaga o volume do banco).
 - **Logs:** `docker compose logs app`, `docker compose logs worker`.
 - **Depois de mudar o código:** `docker compose up -d --build --wait` reconstrói a imagem (sem `--build`, o compose reaproveita a imagem `agenda-beleza:dev` já existente).
@@ -44,6 +80,95 @@ npm run worker                # em outro terminal; Ctrl-C encerra (espera os job
 npm run fila:exemplo -- 3000  # em outro terminal: enfileira um job de exemplo de 3 s
 ```
 
+## Variáveis de ambiente
+
+Todas ficam no `.env` (copie de `.env.example`, que documenta cada uma). Variáveis já definidas no ambiente do processo prevalecem sobre o `.env`. Um teste automatizado (`tests/integration/integracoes/documentacao.test.ts`) exige que esta tabela e o `.env.example` tenham exatamente as mesmas variáveis. O `docker compose` lê o `.env` só para interpolar `POSTGRES_*` e `APP_PORT`; o `node --env-file` não interpola, por isso as URLs levam a porta por extenso. Duas variáveis de uso pontual não entram no `.env`: `SEED_PERMITIR_PRODUCAO=true` (só no comando do seed dentro do container) e `SMOKE_URL_BASE`/`SMOKE_WAIT_TIMEOUT` (`docker/smoke.sh`).
+
+| Variável | Obrigatória quando | Padrão |
+|---|---|---|
+| `POSTGRES_USER` | compose | `agenda` |
+| `POSTGRES_PASSWORD` | compose | `agenda_dev` (só desenvolvimento) |
+| `POSTGRES_DB` | compose | `agenda_beleza` |
+| `POSTGRES_PORT` | opcional (compose) | `5432` |
+| `DATABASE_URL` | sempre (app, worker, migrações) | `postgresql://agenda:agenda_dev@localhost:5432/agenda_beleza` |
+| `TEST_DATABASE_URL` | testes de integração e E2E | `…/agenda_beleza_test` (base administrativa; diferente de `DATABASE_URL`) |
+| `APP_PORT` | opcional (compose, smoke) | `3000` |
+| `E2E_PORT` | opcional (E2E) | `3000` |
+| `APP_URL` | sempre; `https://` com `MP_ADAPTER=real` | `http://localhost:3000` |
+| `VITRINE_COMPONENTES` | opcional; nunca `true` em produção | `false` |
+| `QUEUE_RETRY_LIMIT` | opcional (worker) | `4` |
+| `QUEUE_RETRY_DELAY_SECONDS` | opcional (worker) | `30` |
+| `QUEUE_RETRY_BACKOFF` | opcional (worker) | `true` |
+| `EMAIL_ADAPTER` | opcional | `simulado` |
+| `WHATSAPP_ADAPTER` | opcional | `simulado` |
+| `MP_ADAPTER` | opcional | `simulado` |
+| `TURNSTILE_ADAPTER` | opcional | `simulado` |
+| `STORAGE_ADAPTER` | opcional | `simulado` |
+| `WHATSAPP_ACCESS_TOKEN` | `WHATSAPP_ADAPTER=real` | vazio (credencial) |
+| `WHATSAPP_API_VERSION` | opcional com `WHATSAPP_ADAPTER=real` | `v25.0` |
+| `WHATSAPP_PHONE_NUMBER_ID` | `WHATSAPP_ADAPTER=real` | vazio |
+| `WHATSAPP_TEMPLATE_CONFIRMACAO` | `WHATSAPP_ADAPTER=real` | vazio |
+| `WHATSAPP_TEMPLATE_REMARCACAO` | `WHATSAPP_ADAPTER=real` | vazio |
+| `WHATSAPP_TEMPLATE_CANCELAMENTO` | `WHATSAPP_ADAPTER=real` | vazio |
+| `WHATSAPP_TEMPLATE_CONVITE_AVALIACAO` | `WHATSAPP_ADAPTER=real` | vazio |
+| `WHATSAPP_TEMPLATE_IDIOMA` | opcional com `WHATSAPP_ADAPTER=real` | `pt_BR` |
+| `SMTP_HOST` | `EMAIL_ADAPTER=real` | vazio |
+| `SMTP_PORT` | opcional com `EMAIL_ADAPTER=real` | `587` (`465` com `SMTP_SECURE=true`) |
+| `SMTP_USER` | opcional (par com `SMTP_PASSWORD`) | vazio |
+| `SMTP_PASSWORD` | opcional (par com `SMTP_USER`) | vazio (credencial) |
+| `SMTP_SECURE` | opcional com `EMAIL_ADAPTER=real` | `false` (STARTTLS) |
+| `EMAIL_FROM` | `EMAIL_ADAPTER=real` | vazio |
+| `MP_ACCESS_TOKEN` | `MP_ADAPTER=real` | vazio (credencial) |
+| `MP_WEBHOOK_SECRET` | `MP_ADAPTER=real` | vazio (credencial) |
+| `MP_PREAPPROVAL_PLAN_ID` | `MP_ADAPTER=real` | vazio |
+| `TURNSTILE_SITE_KEY` | `TURNSTILE_ADAPTER=real` | vazio |
+| `TURNSTILE_SECRET_KEY` | `TURNSTILE_ADAPTER=real` | vazio (credencial) |
+| `ARMAZENAMENTO_DIR` | opcional com `STORAGE_ADAPTER=simulado` | `.armazenamento` |
+| `S3_ENDPOINT` | `STORAGE_ADAPTER=real` | vazio |
+| `S3_REGIAO` | `STORAGE_ADAPTER=real` | vazio |
+| `S3_BUCKET` | `STORAGE_ADAPTER=real` | vazio |
+| `S3_ACCESS_KEY_ID` | `STORAGE_ADAPTER=real` | vazio |
+| `S3_SECRET_ACCESS_KEY` | `STORAGE_ADAPTER=real` | vazio (credencial) |
+| `S3_URL_PUBLICA` | opcional com `STORAGE_ADAPTER=real` | vazio (fotos pela rota `/api/fotos/<id>`) |
+| `S3_FORCE_PATH_STYLE` | opcional com `STORAGE_ADAPTER=real` | `true` |
+| `TRUSTED_PROXY_HOPS` | opcional; informe o número de proxies em produção | `0` |
+| `RATE_LIMIT_SEGREDO` | produção (`NODE_ENV=production`) | padrão de desenvolvimento fora da produção; 32+ caracteres |
+| `AVALIACAO_SEGREDO` | produção (`NODE_ENV=production`) | padrão de desenvolvimento fora da produção; 32+ caracteres |
+| `ADMIN_TOTP_CHAVE` | produção (`NODE_ENV=production`) | sem padrão fora do compose; 32 bytes em base64 ou hex (`openssl rand -base64 32`) |
+| `SUPERADMIN_EMAIL` | `npm run superadmin:criar` | vazio |
+| `SUPERADMIN_PASSWORD` | `npm run superadmin:criar` | vazio (12 a 1024 caracteres) |
+| `PROTECAO_JANELA_SEGUNDOS` | opcional | `900` |
+| `PROTECAO_LIMITE_IP_RESERVA` | opcional | `10` |
+| `PROTECAO_LIMITE_IP_DISPONIBILIDADE` | opcional | `60` |
+| `PROTECAO_LIMITE_IP_AVALIACAO` | opcional | `5` |
+| `PROTECAO_LIMITE_IP_DENUNCIA` | opcional | `5` |
+| `PROTECAO_LIMITE_NUMERO` | opcional | `5` |
+
+Detalhes por serviço real: "Credenciais para os serviços reais". Credenciais reais nunca entram em arquivo versionado.
+
+## Comandos
+
+Referência completa (inclusive os laços de estabilidade e de fuso de cada demanda): `CLAUDE.md`, seção "Comandos e cobertura".
+
+| Objetivo | Comando |
+|---|---|
+| Lint (qualquer aviso reprova) | `npm run lint` |
+| Typecheck | `npm run typecheck` |
+| Build | `npm run build` (não precisa de `DATABASE_URL`) |
+| Todos os testes (PostgreSQL no ar) | `npm test` |
+| Só unidade / só integração | `npm run test:unit` / `npm run test:integration` |
+| Teste único | `npx vitest run src/lib/site.test.ts -t "define a marca"` ou `npx vitest run --project integration tests/integration/tenant/isolamento.test.ts` |
+| Cobertura (gate de 90% de linhas) | `npm run test:coverage` (relatório em `coverage/`) |
+| E2E completo | `npm run test:e2e` (porta `E2E_PORT`) |
+| E2E isolado | `npx playwright test e2e/smoke.spec.ts` (exige build e, para os specs com banco, a base `_e2e` preparada) |
+| Migrações | `npm run db:migrate:deploy` (no Docker só a app as aplica, ao iniciar) |
+| Seed de demonstração | `npm run db:seed` (ver "Seed de demonstração") |
+| Super admin | `npm run superadmin:criar` (ver "Super admin e TOTP") |
+| Worker local | `npm run worker` |
+| Smoke da imagem | `sh docker/smoke.sh` |
+
+Concorrência e estabilidade: cada demanda tem um laço de 10 repetições (`for i in $(seq 10); do npx vitest run --project integration <arquivo> || break; done`); os arquivos estão no `CLAUDE.md` e nas seções de cada funcionalidade. Os testes de fuso rodam com `TZ=UTC` e `TZ=America/Sao_Paulo`.
+
 ## Testes
 
 Os testes de integração rodam contra um PostgreSQL **real** (sem mocks de banco).
@@ -54,7 +179,7 @@ npm ci
 npm run db:generate
 npm test                       # unidade + integração
 npm run test:coverage          # o mesmo, com o gate de 90% de linhas (relatório em coverage/)
-npm run test:e2e               # build + base `_e2e` com seed + Playwright (viewport de celular); libere a porta 3000 antes
+npm run test:e2e               # build + base `_e2e` com seed + Playwright (viewport de celular); porta `E2E_PORT` (padrão 3000) livre
 npx playwright test e2e/a11y-base.spec.ts  # só o E2E de acessibilidade (exige build prévio)
 npx playwright test e2e/entrar.spec.ts     # só o E2E de /entrar e do proxy (exige build prévio; sem banco)
 npx playwright test e2e/recuperar-senha.spec.ts  # só o E2E da recuperação de senha (exige build prévio; sem banco)
@@ -65,7 +190,8 @@ npx playwright test e2e/reserva-publica.spec.ts e2e/reserva-publica-sem-js.spec.
 - Os testes de integração usam **somente** `TEST_DATABASE_URL`, nunca `DATABASE_URL`, e recusam rodar se as duas forem iguais. Sem `TEST_DATABASE_URL`, eles falham com uma mensagem que nomeia a variável.
 - **Volume antigo sem a base de testes** (criado antes do script de initdb): `docker compose exec postgres createdb -U agenda agenda_beleza_test`.
 - **Volume parcialmente inicializado:** se o `TEST_DATABASE_URL` tiver um nome de base inválido (fora de `[a-z0-9_]`, com mais de 63 caracteres (o harness de testes exige até 46), igual a `POSTGRES_DB` ou a `postgres`, `template0` ou `template1`), a primeira subida do `postgres` falha com `exited (1)`, e o log diz o motivo. Nos `up` seguintes, o initdb não roda de novo, e o banco sobe **sem** a base de testes. Corrija a variável e rode `docker compose down -v` antes de subir de novo (ou crie a base com o `createdb` acima).
-- Navegador do E2E (uma vez por máquina): `npx playwright install chromium`.
+- Navegador do E2E (uma vez por máquina): `npx playwright install chromium` (`--with-deps` só se o Chromium não abrir; instala bibliotecas do sistema e exige sudo).
+- **Porta do E2E:** `E2E_PORT` (padrão 3000) define a porta do servidor `next start` do Playwright, o `baseURL` e o `APP_URL` dele. Com a 3000 ocupada: `E2E_PORT=3110 npm run test:e2e`. `reuseExistingServer` é `false`: um servidor já rodando na porta escolhida faz o teste falhar em vez de ser reaproveitado.
 - **E2E com banco (D-036):** `npm run test:e2e` faz `next build` e `build:node`, roda `node dist/e2e/preparar-banco.js` (recria a base descartável `<TEST_DATABASE_URL>_e2e`, aplica as migrações, roda o seed e um complemento só do E2E: oito salões de reserva isolados e um salão suspenso; fotos em `.armazenamento-e2e/`) e então o Playwright, com `retries: 0` e `reuseExistingServer: false`. Precisa de `TEST_DATABASE_URL` (ou `E2E_DATABASE_URL`) e do PostgreSQL no ar (`docker compose up -d postgres`). **`npx playwright test` isolado exige a base já preparada**: rode antes `npm run build:node && node --env-file-if-exists=.env dist/e2e/preparar-banco.js` (e `npm run build`). Os specs `e2e/publico-*.spec.ts` percorrem a página pública real (`/studio-aurora`, `/e2e-reservas-N`, `/e2e-suspenso`); os demais continuam em `/dev/*`.
 
 ### Banco de teste: template por execução e uma base por worker
@@ -875,3 +1001,19 @@ PENDENTE DE VALIDAÇÃO NA META (não confirmado na documentação oficial; o sp
 - `message_status` (`held_for_quality_assessment`, `paused`) é tratado como aceito, desde que haja `messages[0].id`.
 - Versão padrão `v25.0` (vigente até 07/2028 segundo o changelog); a Meta pode descontinuá-la antes, e então `WHATSAPP_API_VERSION` a sobrescreve.
 - Categoria UTILITY do convite de avaliação: a Meta pode reclassificá-lo como MARKETING (custo maior).
+
+## Riscos
+
+- **Custo por mensagem do WhatsApp (Meta):** a Meta cobra por mensagem de modelo entregue (a cobrança é por mensagem, não mais por conversa), com preço que depende da categoria do modelo e do país do destinatário. As quatro mensagens do sistema (confirmação, remarcação, cancelamento e convite de avaliação) são modelos de categoria UTILITY, mais baratos que MARKETING. Se a Meta reclassificar o convite de avaliação como MARKETING, o custo dele sobe. Consulte a tabela de preços vigente da Meta para o Brasil antes de ativar o modo real e acompanhe o consumo no painel da Meta: o volume cresce com o número de reservas, remarcações e cancelamentos, e uma remarcação gera uma mensagem nova. O sistema não impõe teto de gastos.
+- **Mensagem duplicada:** a Cloud API não tem chave de idempotência; um tempo limite depois de a Meta aceitar o pedido pode gerar o reenvio de uma mensagem (e cobrança dela). Ver "WhatsApp Business Platform".
+- **Contas e credenciais de terceiros:** o modo real depende de contas aprovadas e pagas (Mercado Pago, Meta, SMTP, Cloudflare, bucket S3). Segredos só no provedor da implantação ou no `.env` local, nunca versionados. Trocar `ADMIN_TOTP_CHAVE` invalida todos os TOTP.
+- **Sem proteção de `main`:** o plano atual do repositório não permite exigir os checks (ver "CI").
+- **Sem implantação definida:** o compose é só para desenvolvimento e testes locais; a publicação em servidor ainda não existe.
+
+## O que não foi validado
+
+- **Mercado Pago real:** o adaptador (D-046) foi validado apenas por testes de contrato com servidor HTTP local. Nenhuma chamada foi feita ao sandbox ou à produção do Mercado Pago; os itens pendentes estão em "Mercado Pago (`MP_ADAPTER=real`)".
+- **WhatsApp Cloud API real:** o adaptador (D-047) foi validado apenas por testes de contrato com servidor HTTP local. Nenhuma mensagem foi enviada à Meta, e nenhum modelo foi aprovado; os itens pendentes estão em "WhatsApp Business Platform (`WHATSAPP_ADAPTER=real`)".
+- **Armazenamento S3 real:** só contrato com cliente injetado e servidor S3 falso local.
+- **SMTP e Turnstile reais:** cobertos por testes com servidores locais e clientes injetados; não foram exercitados contra os provedores.
+- Enquanto esses itens não forem validados em sandbox, use os adaptadores `simulado` ou trate o modo `real` como experimental.

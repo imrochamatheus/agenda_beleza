@@ -20,7 +20,7 @@ function proximaTerca(): string {
 async function abrir(page: Page, busca = '') {
   const resposta = await page.goto(`/dev/reserva-nova${busca}`);
   if (resposta?.status() !== 200) {
-    throw new Error(`/dev/reserva-nova respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta 3000.`);
+    throw new Error(`/dev/reserva-nova respondeu ${resposta?.status()}: ligue VITRINE_COMPONENTES=true ou libere a porta do E2E (E2E_PORT, padrão 3000).`);
   }
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }
