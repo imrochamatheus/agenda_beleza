@@ -133,12 +133,13 @@ describe('CA-25: README × .env.example × env.ts', () => {
     expect(email).toContain('`requireTLS`');
   });
 
-  it('CA-25: MP e WhatsApp reais aparecem como E6.6 e E7.2 e são de fato recusados na inicialização', () => {
+  it('CA-25 (D-046): o MP real está documentado e exige as variáveis; o WhatsApp real (E7.2) segue recusado', () => {
     const mp = secao('Mercado Pago', credenciais);
     const wa = secao('WhatsApp Business Platform', credenciais);
-    expect(mp).toContain(`Adaptador real: ${new NaoImplementado('E6.6').item}`);
+    expect(mp).toContain('PENDENTE DE VALIDAÇÃO NO SANDBOX');
+    expect(mp).toContain('<APP_URL>/api/webhooks/mercadopago');
+    expect(mp).not.toContain('recusado na inicialização');
     expect(wa).toContain(`Adaptador real: ${new NaoImplementado('E7.2').item}`);
-    expect(mp).toContain('recusado na inicialização');
     expect(wa).toContain('recusado na inicialização');
     expect(wa).toContain('4 templates aprovados');
 
@@ -150,7 +151,13 @@ describe('CA-25: README × .env.example × env.ts', () => {
       erro = e;
     }
     expect(erro).toBeInstanceOf(ErroDeAmbiente);
-    expect((erro as ErroDeAmbiente).variaveis).toEqual(['MP_ADAPTER', 'WHATSAPP_ADAPTER']);
+    expect((erro as ErroDeAmbiente).variaveis).toEqual([
+      'APP_URL',
+      'MP_ACCESS_TOKEN',
+      'MP_PREAPPROVAL_PLAN_ID',
+      'MP_WEBHOOK_SECRET',
+      'WHATSAPP_ADAPTER',
+    ]);
   });
 
   it('CA-25: credenciais exigidas pelo CLAUDE.md têm subseção própria (MP, WhatsApp, e-mail, Turnstile)', () => {

@@ -370,7 +370,7 @@ Entrega da D-035. Migração `20261124000000_avaliacao_denuncia` (tabela `avalia
 - **Lista:** nome, endereço atual, estado da assinatura vigente (salão só com `encerrada` = "Sem assinatura"), selo "Suspenso manualmente" e e-mail do gestor; busca por nome (sem acento/caixa), endereço atual ou e-mail do gestor (`%`, `_`, `\` literais); filtros por estado e suspensão; 20 por página em UMA instrução SQL.
 - **Editar** (um só formulário): nome, endereço (o anterior vira histórico), fuso, regras da agenda (mesmas validações da E2.5) e nome/e-mail do gestor. Trocar o e-mail desfaz a confirmação, revoga as sessões do gestor, invalida tokens pendentes e envia o link ao novo endereço depois do commit. Senha nunca é lida nem alterada. Valores iguais não gravam nem auditam.
 - **Suspender/reativar:** só `salao.suspenso_manual_em`, nunca a assinatura nem sessões. Suspender pede motivo (5 a 280, sem e-mail/telefone) e confirmação em duas etapas por POST; o motivo fica só na auditoria. Reativar o salão **não** reativa uma assinatura suspensa.
-- **Estender o teste:** assinatura `em_teste` com vínculo e fim com mais de 5 min; N de 1 a 90 dias (`^[1-9]\d?$`); chama `adiarProximaCobranca` FORA de transação e grava com comparação otimista do fim. Falha do provedor ou corrida: nada muda localmente e uma auditoria `falha` fica gravada. **O adaptador real do Mercado Pago ainda é `NaoImplementado` (E6.6): em produção a extensão só funciona depois dela.** Se o provedor adiou mas o estado local mudou, a divergência exige conferência manual.
+- **Estender o teste:** assinatura `em_teste` com vínculo e fim com mais de 5 min; N de 1 a 90 dias (`^[1-9]\d?$`); chama `adiarProximaCobranca` FORA de transação e grava com comparação otimista do fim. Falha do provedor ou corrida: nada muda localmente e uma auditoria `falha` fica gravada. **No Mercado Pago real (D-046) o adiamento usa `PUT /preapproval/{id}` com `next_payment_date`, que a documentação não confirma: se o provedor não refletir a data, a extensão falha, é auditada com o código `adiamento_nao_suportado` e nada muda localmente.** Se o provedor adiou mas o estado local mudou, a divergência exige conferência manual.
 - **Auditoria:** `salao.atualizar`, `salao.suspender`, `salao.reativar`, `salao.estender_teste`, `usuario.atualizar_email`, na mesma transação.
 - **Testes:** `npx vitest run src/server/admin src/app/admin/saloes src/app/dev/admin-saloes` e `npx vitest run --project integration tests/integration/admin-saloes`; demonstração `/dev/admin-saloes` (`?vista=detalhe|detalhe-suspenso|detalhe-sem-assinatura|detalhe-ativa`; na vitrine, 13/14/15 dias simulam falha do provedor, "mudou" e divergência); E2E: `npx playwright test e2e/admin-saloes.spec.ts e2e/admin-saloes-sem-js.spec.ts`. Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/admin-saloes/concorrencia.test.ts || break; done`.
 
@@ -405,11 +405,11 @@ Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<se
 | E-mail transacional | `EMAIL_ADAPTER` | grava cada mensagem na tabela `email_log` | SMTP (`nodemailer`), configurado pelas variáveis `SMTP_*` e `EMAIL_FROM` |
 | Cloudflare Turnstile | `TURNSTILE_ADAPTER` | aceita só o token de teste documentado abaixo | `siteverify` da Cloudflare, com `TURNSTILE_SITE_KEY` e `TURNSTILE_SECRET_KEY` |
 | Armazenamento de fotos | `STORAGE_ADAPTER` | arquivos em `ARMAZENAMENTO_DIR` (padrão `.armazenamento`) | compatível com S3 (`@aws-sdk/client-s3`), configurado pelas variáveis `S3_*` |
-| Mercado Pago (assinaturas) | `MP_ADAPTER` | estado nas tabelas `sim_mp_*` e checkout em `/dev/mp-checkout` | adaptador real: E6.6 (ainda recusado na inicialização) |
+| Mercado Pago (assinaturas) | `MP_ADAPTER` | estado nas tabelas `sim_mp_*` e checkout em `/dev/mp-checkout` | API de Assinaturas (preapproval) do Mercado Pago, com `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` e `MP_PREAPPROVAL_PLAN_ID` (D-046; ainda não validado no sandbox) |
 | WhatsApp Cloud API | `WHATSAPP_ADAPTER` | registra cada chamada em `sim_whatsapp_chamada` | adaptador real: E7.2 (ainda recusado na inicialização) |
 
 - **Valores aceitos:** `simulado` ou `real`. Vazio ou ausente vale `simulado`. Com o `.env.example` sem alterações, os cinco ficam no modo simulado, sem nenhuma credencial.
-- **Validação na inicialização:** o `check-env` (entrypoint da app e do worker) e o próprio worker validam o ambiente **antes** de migrar ou de processar qualquer coisa. Se faltar ou estiver inválida alguma variável exigida pelo modo `real`, o processo sai com código diferente de 0, e o log nomeia as variáveis, nunca os valores. Exemplo: `EMAIL_ADAPTER=real` sem `SMTP_HOST` nomeia `SMTP_HOST`. Com o `.env.example` sem alterações (em que `EMAIL_FROM` também está vazio), a saída real é `check-env: Variáveis de ambiente ausentes ou inválidas: EMAIL_FROM, SMTP_HOST`. Hoje `MP_ADAPTER=real` e `WHATSAPP_ADAPTER=real` são sempre recusados, nomeando o seletor.
+- **Validação na inicialização:** o `check-env` (entrypoint da app e do worker) e o próprio worker validam o ambiente **antes** de migrar ou de processar qualquer coisa. Se faltar ou estiver inválida alguma variável exigida pelo modo `real`, o processo sai com código diferente de 0, e o log nomeia as variáveis, nunca os valores. Exemplo: `EMAIL_ADAPTER=real` sem `SMTP_HOST` nomeia `SMTP_HOST`. Com o `.env.example` sem alterações (em que `EMAIL_FROM` também está vazio), a saída real é `check-env: Variáveis de ambiente ausentes ou inválidas: EMAIL_FROM, SMTP_HOST`. `MP_ADAPTER=real` exige `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `MP_PREAPPROVAL_PLAN_ID` e `APP_URL` com `https://` (todas as ausentes são nomeadas juntas; `APP_URL` http só vale no simulado); hoje `WHATSAPP_ADAPTER=real` é sempre recusado, nomeando o seletor.
 - **No modo simulado**, as variáveis do provedor são ignoradas, mesmo com valores inválidos.
 - **Modos ativos no log:** a app imprime `check-env: ambiente válido (adaptadores: armazenamento=simulado, email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado)`, e o worker emite o evento JSON `worker.adaptadores` antes do primeiro heartbeat (`docker compose logs app worker`).
 - **Build:** o `next build` não valida o ambiente e não precisa de `.env`. O registro só lê as variáveis no primeiro uso, em runtime.
@@ -627,7 +627,7 @@ O gestor abre **Assinatura** no menu (`/painel/assinatura`) e toca em "Assinar" 
 | suspenso pela administração | nenhuma | não |
 
 - **Cancelar em duas etapas, sem dialog e sem JavaScript:** "Cancelar assinatura" é um link GET (`?cancelar=1`, sem POST nem chamada ao provedor) que abre a confirmação na própria página; só "Sim, cancelar assinatura" faz POST. A ação cancela no provedor **fora de transação** e só então aplica `aplicarEventoAssinatura({ tipo: 'cancelamento' })` (ponto único de mudança de estado). Falha do provedor: "Erro de pagamento: Não foi possível concluir agora. Nada foi alterado; tente novamente." e o estado fica intacto. Se o provedor cancelou e o banco falhou, o gestor vê "tente novamente" (log `assinatura.cancelar_pos_provedor_falhou`); repetir é idempotente e o webhook ou o retorno convergem. Cancelar duas vezes (ou depois do webhook) mostra "Sua assinatura já estava cancelada." sem nova transição.
-- **Regularizar / atualizar meio de pagamento:** a porta do Mercado Pago ganhou `urlAtualizarMeioPagamento(id)` (simulado: a URL de `/dev/mp-checkout`, com `forcarErro('urlAtualizarMeioPagamento')`; real: `NaoImplementado('E6.6')`, que a E6.6 preenche). Nada é gravado: o estado só muda por webhook ou pela consulta do retorno (D-040). Em `pendente` reaproveita `iniciarAssinatura`.
+- **Regularizar / atualizar meio de pagamento:** a porta do Mercado Pago ganhou `urlAtualizarMeioPagamento(id)` (simulado: a URL de `/dev/mp-checkout`, com `forcarErro('urlAtualizarMeioPagamento')`; real: o `init_point` da assinatura no Mercado Pago, D-046). Nada é gravado: o estado só muda por webhook ou pela consulta do retorno (D-040). Em `pendente` reaproveita `iniciarAssinatura`.
 - **Assinar novamente:** `iniciarAssinatura` encerra (evento `prazo`) uma `cancelada` com o acesso vencido sob a trava, sem esperar o job, e cria a nova `pendente`; a antiga fica no histórico. Reativar uma `cancelada` dentro do prazo não existe na v1.
 - **Segurança:** nenhuma ação recebe id de assinatura (o alvo é sempre a do salão da sessão); o vínculo com o provedor nunca vai à tela; `estadoVisto` (campo oculto da etapa 2) é só dica de UX (valor fora da lista fechada é ignorado; diferente do real → "A assinatura mudou. Atualizamos as informações."). Profissional recebe 403; sem sessão, redireciona a `/entrar`. Nenhum dado de cartão.
 - **Migração:** `20261126000000_sim_mp_operacao_atualizar_meio_pagamento` (`ALTER TYPE "sim_mp_operacao" ADD VALUE`, só afeta as tabelas `sim_*`; parecer em `docs/demandas/D-042/dba.md`).
@@ -636,7 +636,7 @@ O gestor abre **Assinatura** no menu (`/painel/assinatura`) e toca em "Assinar" 
 
 ## Assinatura: webhooks do Mercado Pago (E6.2, D-041)
 
-`POST /api/webhooks/mercadopago` (sem cookie nem CSRF; a origem é validada pela porta `integracoes().mercadoPago`). **URL a cadastrar no Mercado Pago:** `<APP_URL>/api/webhooks/mercadopago`. Em produção, o proxy reverso deve repassar os cabeçalhos `x-request-id` e `x-signature` e o corpo sem alterá-lo (a E6.6 precisará do corpo exato para o HMAC real: a porta já recebe `corpoBruto`).
+`POST /api/webhooks/mercadopago` (sem cookie nem CSRF; a origem é validada pela porta `integracoes().mercadoPago`). **URL a cadastrar no Mercado Pago:** `<APP_URL>/api/webhooks/mercadopago`. Em produção, o proxy reverso deve repassar os cabeçalhos `x-request-id` e `x-signature` e o corpo sem alterá-lo (o HMAC do Mercado Pago real usa `data.id` da query, `x-request-id` e `ts`, não o corpo; a porta ainda recebe `corpoBruto`).
 
 Ordem: validar a origem, **persistir** em `webhook_evento` (a chave de deduplicação é o `x-request-id`; só eventos válidos deduplicam, então um evento forjado com o mesmo id não bloqueia o legítimo), consultar o provedor fora de transação e aplicar o efeito só por `aplicarEventoAssinatura`. O estado consultado vence o payload. Nunca é bloqueado por salão suspenso (é do sistema).
 
@@ -822,7 +822,30 @@ Credenciais: um widget Turnstile criado no painel da Cloudflare para o domínio 
 
 ### Mercado Pago (`MP_ADAPTER=real`)
 
-**Adaptador real: E6.6.** Hoje `MP_ADAPTER=real` é recusado na inicialização. Credenciais que serão necessárias: uma conta do Mercado Pago com assinaturas (planos de pagamento recorrente) habilitadas, o access token de produção e o segredo de assinatura dos webhooks. As variáveis serão definidas pela E6.6, que também implementa `urlAtualizarMeioPagamento` (link do provedor para o gestor atualizar o cartão; hoje `NaoImplementado('E6.6')`).
+Adaptador real da D-046, sobre `fetch` (sem SDK), em `src/server/integrations/mercadopago/`. **PENDENTE DE VALIDAÇÃO NO SANDBOX (E9.3):** o código foi validado só por testes de contrato com servidor HTTP local; nenhuma credencial real foi usada.
+
+| Variável | Uso |
+|---|---|
+| `MP_ACCESS_TOKEN` | access token da aplicação (credencial; só em memória, nunca em log nem erro) |
+| `MP_WEBHOOK_SECRET` | segredo de assinatura das notificações (HMAC-SHA256) |
+| `MP_PREAPPROVAL_PLAN_ID` | id do plano de assinatura |
+| `APP_URL` | com `MP_ADAPTER=real` deve começar com `https://` (a falha nomeia `APP_URL`) |
+
+Passos:
+1. Crie uma aplicação no painel do Mercado Pago ("Suas integrações") e copie o access token e o segredo de assinatura dos webhooks.
+2. Crie o plano de assinatura: R$ 79,00, `frequency` 1, `frequency_type` `months`, `currency_id` `BRL` e `free_trial` de 30 dias (`frequency` 30, `frequency_type` `days`). O código não envia preço nem teste: vêm do plano.
+3. Publique a app em HTTPS e cadastre `<APP_URL>/api/webhooks/mercadopago` como URL de notificações. Notificações de assinatura (`subscription_preapproval`, `subscription_authorized_payment`) são definidas na criação da assinatura; o adaptador envia `notification_url` com essa URL. O proxy reverso deve repassar `x-request-id` e `x-signature`.
+4. O webhook só é aceito com assinatura válida e `ts` dentro de 5 minutos (`ts` em segundos ou milissegundos).
+5. Nenhum dado de cartão passa pela aplicação: o pagador informa o cartão no checkout do Mercado Pago (`init_point`).
+
+PENDENTE DE VALIDAÇÃO NO SANDBOX (não confirmado na documentação oficial; o spike E9.3 confere cada item):
+- `POST /preapproval` com `preapproval_plan_id` e SEM `card_token_id` (`com_plano`, padrão): a documentação diz que, com plano, a assinatura é criada com cartão. Se o MP recusar, troque `ESTRATEGIA_CRIACAO` para `sem_plano` em `mercadopago/mapeamento.ts` (envia `auto_recurring` e `free_trial` com os valores de `src/config/plano.ts`); se o MP bloquear criação sem plano na conta, é preciso redirecionar ao `init_point` do plano (muda D-040/D-041).
+- `PUT /preapproval/{id}` com `next_payment_date` (adiar): sem confirmação; o adaptador relê e, se a data não mudar, falha com `adiamento_nao_suportado`.
+- `PUT` com `status: cancelled` e as enumerações de `authorized_payments` (`processed`, `recycling`, `cancelled`, `rejected`): estado desconhecido vira erro do provedor e nunca decide.
+- `X-Idempotency-Key` em `/preapproval`: o `POST` de criação só é repetido (uma vez, mesma chave) em 429 ou falha de conexão, nunca em 5xx ou timeout.
+- Unidade do `ts` (aceitos segundos e milissegundos) e `data.id` em minúsculas (tentadas as duas formas).
+- `notification_url` no corpo da criação e `init_point` quando se cria sem plano.
+- Semântica de `date_created`, `last_modified` e `next_payment_date`.
 
 ### WhatsApp Business Platform (`WHATSAPP_ADAPTER=real`)
 

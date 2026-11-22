@@ -179,11 +179,31 @@ describe('validarEnv', () => {
     expect(erro.variaveis).toEqual(['SMTP_HOST']);
   });
 
-  it.each([
-    ['MP_ADAPTER', 'MP_ADAPTER'],
-    ['WHATSAPP_ADAPTER', 'WHATSAPP_ADAPTER'],
-  ])('CA-9: %s=real é recusado nomeando o seletor (D-1)', (seletor, nome) => {
-    expect(falhaDe({ DATABASE_URL: URL_VALIDA, [seletor]: 'real' }).variaveis).toEqual([nome]);
+  it('CA-9: WHATSAPP_ADAPTER=real é recusado nomeando o seletor (D-1)', () => {
+    expect(falhaDe({ DATABASE_URL: URL_VALIDA, WHATSAPP_ADAPTER: 'real' }).variaveis).toEqual(['WHATSAPP_ADAPTER']);
+  });
+
+  it('CA-3 (D-046): MP_ADAPTER=real exige as MP_* e APP_URL https; APP_URL http só vale no simulado', () => {
+    expect(falhaDe({ DATABASE_URL: URL_VALIDA, MP_ADAPTER: 'real' }).variaveis).toEqual([
+      'APP_URL',
+      'MP_ACCESS_TOKEN',
+      'MP_PREAPPROVAL_PLAN_ID',
+      'MP_WEBHOOK_SECRET',
+    ]);
+    const completo = {
+      DATABASE_URL: URL_VALIDA,
+      MP_ADAPTER: 'real',
+      MP_ACCESS_TOKEN: 't',
+      MP_WEBHOOK_SECRET: 's',
+      MP_PREAPPROVAL_PLAN_ID: 'p',
+    };
+    expect(falhaDe({ ...completo, APP_URL: 'http://x.com' }).variaveis).toEqual(['APP_URL']);
+    const env = validarEnv({ ...completo, APP_URL: 'https://x.com.br' });
+    expect(env.integracoes.mercadoPago).toEqual({
+      modo: 'real',
+      config: { accessToken: 't', webhookSecret: 's', planoId: 'p' },
+    });
+    expect(validarEnv({ DATABASE_URL: URL_VALIDA, APP_URL: 'http://x.com' }).integracoes.mercadoPago).toEqual({ modo: 'simulado' });
   });
 
   it('RN-13: lista num único erro, ordenadas, as variáveis da base e de todas as integrações em real', () => {
@@ -196,9 +216,12 @@ describe('validarEnv', () => {
       WHATSAPP_ADAPTER: 'real',
     });
     expect(erro.variaveis).toEqual([
+      'APP_URL',
       'DATABASE_URL',
       'EMAIL_FROM',
-      'MP_ADAPTER',
+      'MP_ACCESS_TOKEN',
+      'MP_PREAPPROVAL_PLAN_ID',
+      'MP_WEBHOOK_SECRET',
       'SMTP_HOST',
       'SMTP_PASSWORD',
       'TURNSTILE_SECRET_KEY',

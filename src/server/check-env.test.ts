@@ -64,10 +64,28 @@ describe('executarCheckEnv', () => {
     expect(nomeadas(r.error[0])).toEqual(['SMTP_HOST']);
   });
 
-  it.each(['MP_ADAPTER', 'WHATSAPP_ADAPTER'])('CA-9: %s=real devolve 1 nomeando o seletor (D-1)', (seletor) => {
-    const r = executar({ [seletor]: 'real' });
+  it('CA-9: WHATSAPP_ADAPTER=real devolve 1 nomeando o seletor (D-1)', () => {
+    const r = executar({ WHATSAPP_ADAPTER: 'real' });
     expect(r.codigo).toBe(1);
-    expect(nomeadas(r.error[0])).toEqual([seletor]);
+    expect(nomeadas(r.error[0])).toEqual(['WHATSAPP_ADAPTER']);
+  });
+
+  it('CA-3/CA-4 (D-046): MP_ADAPTER=real sem credenciais devolve 1 nomeando as MP_* e APP_URL, sem valores', () => {
+    const r = executar({ MP_ADAPTER: 'real', MP_ACCESS_TOKEN: '', APP_URL: 'http://inseguro.exemplo.com' });
+    expect(r.codigo).toBe(1);
+    expect(nomeadas(r.error[0])).toEqual(['APP_URL', 'MP_ACCESS_TOKEN', 'MP_PREAPPROVAL_PLAN_ID', 'MP_WEBHOOK_SECRET']);
+    expect(r.error[0]).not.toContain('inseguro');
+  });
+
+  it('CA-4 (D-046): MP_ADAPTER=real completo e APP_URL https passa', () => {
+    const r = executar({
+      MP_ADAPTER: 'real',
+      MP_ACCESS_TOKEN: 'tok',
+      MP_WEBHOOK_SECRET: 'seg',
+      MP_PREAPPROVAL_PLAN_ID: 'pl',
+      APP_URL: 'https://agenda.exemplo.com.br',
+    });
+    expect(r.codigo).toBe(0);
   });
 
   it.each([

@@ -9,6 +9,8 @@ import type { ConfigSmtp } from './email/ambiente';
 import type { PortaEmail } from './email/port';
 import { criarEmailReal } from './email/real';
 import { criarEmailSimulado } from './email/simulado';
+import type { ConfigMercadoPagoReal } from './mercadopago/ambiente';
+import { CAMINHO_WEBHOOK } from './mercadopago/mapeamento';
 import type { PortaMercadoPago } from './mercadopago/port';
 import { criarMercadoPagoReal } from './mercadopago/real';
 import { criarMercadoPagoSimulado } from './mercadopago/simulado';
@@ -62,12 +64,12 @@ export function selecionarTurnstile(
   });
 }
 
-/**
- * Mercado Pago. `real` liga o stub NaoImplementado de `mercadopago/real.ts` (CA-9), embora o
- * `validarEnv` ainda recuse MP_ADAPTER=real (D-1). A E6.6 passa a repassar a config aqui.
- */
-export function selecionarMercadoPago(modo: Modo, o: { appUrl: string }): PortaMercadoPago {
-  return modo === 'real' ? criarMercadoPagoReal() : criarMercadoPagoSimulado({ appUrl: o.appUrl });
+/** Mercado Pago. `real` usa a ConfigMercadoPagoReal validada (D-046); simulado ignora as `MP_*`. */
+export function selecionarMercadoPago(
+  c: ConfigIntegracao<ConfigMercadoPagoReal>,
+  o: { appUrl: string },
+): PortaMercadoPago {
+  return c.modo === 'real' ? criarMercadoPagoReal(c.config, { urlNotificacao: `${o.appUrl.replace(/\/+$/, '')}${CAMINHO_WEBHOOK}` }) : criarMercadoPagoSimulado({ appUrl: o.appUrl });
 }
 
 /**
@@ -96,7 +98,7 @@ export function criarIntegracoes(fonte: Fonte): Integracoes {
   return {
     email: selecionarEmail(email),
     whatsapp: selecionarWhatsApp(whatsapp.modo),
-    mercadoPago: selecionarMercadoPago(mercadoPago.modo, { appUrl: env.APP_URL }),
+    mercadoPago: selecionarMercadoPago(mercadoPago, { appUrl: env.APP_URL }),
     turnstile: selecionarTurnstile(turnstile, () => fonte),
     armazenamento: selecionarArmazenamento(armazenamento, fonte),
     modos: {
