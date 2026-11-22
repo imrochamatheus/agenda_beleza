@@ -40,6 +40,23 @@ export type EstadoBrutoDaAssinatura = {
   assinatura: { estado: string; carenciaAte: Date | null; acessoAte: Date | null } | null;
 };
 
+/** D-042: leitura da tela. `provedorAssinaturaId` fica no servidor (nunca vai à tela). */
+export type DetalheAssinatura = {
+  fuso: string;
+  suspensoManualEm: Date | null;
+  assinatura: {
+    id: string;
+    estado: string;
+    testeFimEm: Date | null;
+    periodoPagoAte: Date | null;
+    carenciaAte: Date | null;
+    acessoAte: Date | null;
+    provedorAssinaturaId: string | null;
+  } | null;
+};
+
+export type PagamentoDoHistorico = { criadoEm: Date; valorCentavos: number; status: 'aprovado' | 'recusado' };
+
 export interface RepoAssinatura {
   /**
    * Trava a assinatura alvo. `assinaturaId`: essa (do salão do contexto); sem ele, a vigente
@@ -76,8 +93,15 @@ export interface RepoAssinatura {
   lerVigente(ctx: ContextoEscopado): Promise<AssinaturaVigente | null>;
   /** CAS: grava o vínculo só se a linha ainda é `pendente` com o vínculo `de`. `false` = perdeu a corrida. */
   trocarProvedor(ctx: ContextoEscopado, d: { id: string; de: string | null; para: string; agora: Date }): Promise<boolean>;
-  /** Trava a linha (`FOR NO KEY UPDATE`) e confere que o vínculo ainda é `provedorId`. Só em emTransacao. */
-  confirmarProvedor(ctx: ContextoEscopado, d: { id: string; provedorId: string }): Promise<boolean>;
+  /**
+   * Trava a linha (`FOR NO KEY UPDATE`) e confere que o vínculo ainda é `provedorId` (`null` = ainda sem
+   * vínculo; `IS NOT DISTINCT FROM`). Só em emTransacao.
+   */
+  confirmarProvedor(ctx: ContextoEscopado, d: { id: string; provedorId: string | null }): Promise<boolean>;
+  /** D-042: salão (fuso, suspensão manual) + assinatura mais recente com as datas, em um comando, sem trava. */
+  lerDetalhe(ctx: ContextoEscopado): Promise<DetalheAssinatura>;
+  /** D-042: pagamentos do salão, mais recentes primeiro, sem ids. */
+  listarPagamentos(ctx: ContextoEscopado, limite: number): Promise<PagamentoDoHistorico[]>;
   /** Salão suspenso manualmente + assinatura mais recente (um comando). Recusa admin. */
   lerEstadoBruto(ctx: ContextoDeLeituraDeAgenda): Promise<EstadoBrutoDaAssinatura>;
 }
@@ -255,7 +279,71 @@ export function criarRepoAssinatura(db: Executor): RepoAssinatura {
           FROM assinatura a
          WHERE a.id = ${d.id}::uuid AND a.salao_id = ${salaoId}::uuid
            FOR NO KEY UPDATE OF a`;
-      return linhas[0]?.provedor === d.provedorId;
+      const l = linhas[0];
+      return l !== undefined && l.provedor === d.provedorId;
+    },
+
+    async lerDetalhe(ctx) {
+      const salaoId = exigirEscopo(ctx);
+      const linhas = await db.$queryRaw<
+        {
+          fuso: string;
+          suspenso_manual_em: Date | null;
+          id: string | null;
+          estado: string | null;
+          teste_fim_em: Date | null;
+          periodo_pago_ate: Date | null;
+          carencia_ate: Date | null;
+          acesso_ate: Date | null;
+          provedor: string | null;
+        }[]
+      >`
+        SELECT s.fuso AS fuso, s.suspenso_manual_em, a.id::text AS id, a.estado::text AS estado,
+               a.teste_fim_em, a.periodo_pago_ate, a.carencia_ate, a.acesso_ate, a.provedor
+          FROM salao s
+          LEFT JOIN LATERAL (
+            SELECT id, estado, teste_fim_em, periodo_pago_ate, carencia_ate, acesso_ate,
+                   provedor_assinatura_id AS provedor
+              FROM assinatura
+             WHERE salao_id = s.id
+             ORDER BY criado_em DESC, id DESC
+             LIMIT 1
+          ) a ON true
+         WHERE s.id = ${salaoId}::uuid`;
+      const l = linhas[0];
+      if (!l) throw new NaoEncontrado();
+      return {
+        fuso: l.fuso,
+        suspensoManualEm: l.suspenso_manual_em,
+        assinatura:
+          l.id === null || l.estado === null
+            ? null
+            : {
+                id: l.id,
+                estado: l.estado,
+                testeFimEm: l.teste_fim_em,
+                periodoPagoAte: l.periodo_pago_ate,
+                carenciaAte: l.carencia_ate,
+                acessoAte: l.acesso_ate,
+                provedorAssinaturaId: l.provedor,
+              },
+      };
+    },
+
+    async listarPagamentos(ctx, limite) {
+      const salaoId = exigirEscopo(ctx);
+      const linhas = await db.$queryRaw<{ criado_em: Date; valor_centavos: number; status: string }[]>`
+        SELECT p.criado_em, p.valor_centavos, p.status::text AS status
+          FROM assinatura_pagamento p
+          JOIN assinatura a ON a.id = p.assinatura_id
+         WHERE a.salao_id = ${salaoId}::uuid
+         ORDER BY p.criado_em DESC, p.id DESC
+         LIMIT ${limite}::int`;
+      return linhas.map((l) => ({
+        criadoEm: l.criado_em,
+        valorCentavos: l.valor_centavos,
+        status: l.status === 'aprovado' ? 'aprovado' : 'recusado',
+      }));
     },
 
     async lerEstadoBruto(ctx) {

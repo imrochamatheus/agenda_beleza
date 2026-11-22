@@ -762,6 +762,7 @@ enum SimMpOperacao {
   consultarPagamento
   cancelarAssinatura
   adiarProximaCobranca
+  urlAtualizarMeioPagamento
 
   @@map("sim_mp_operacao")
 }

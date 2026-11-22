@@ -2,10 +2,10 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { demonstrarAssinarAcao } from './acoes';
+import { demonstrarAssinarAcao, demonstrarCancelarAcao, demonstrarRegularizarAcao } from './acoes';
 import DemonstracaoAssinatura, { dynamic, generateMetadata } from './page';
 
-// D-040: /dev/assinatura só com a vitrine ligada; "Assinar" só sem vigente ou pendente; ação sem provedor.
+// D-040/D-042: /dev/assinatura só com a vitrine ligada; os 9 estados, a etapa 2, o resultado e o histórico; ações sem provedor.
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -35,31 +35,80 @@ describe('página /dev/assinatura', () => {
   });
 
   it.each([
-    [{}, 'Sem assinatura', true],
-    [{ situacao: 'pendente' }, 'Assinatura pendente', true],
-    [{ situacao: 'em_teste' }, 'Em período de teste', false],
-    [{ situacao: 'qualquer' }, 'Sem assinatura', true],
-  ])('situação %j mostra "%s" e o botão Assinar = %s', async (params, rotulo, botao) => {
+    [{}, 'Você ainda não assinou.'],
+    [{ situacao: 'qualquer' }, 'Você ainda não assinou.'],
+    [{ situacao: 'pendente' }, 'Assinatura pendente de autorização.'],
+    [{ situacao: 'em_teste' }, 'Período de teste até 20/06/2027'],
+    [{ situacao: 'ativa' }, 'Assinatura ativa.'],
+    [{ situacao: 'em_carencia' }, 'Pagamento não confirmado.'],
+    [{ situacao: 'suspensa' }, 'Assinatura suspensa por falta de pagamento.'],
+    [{ situacao: 'cancelada' }, 'Assinatura cancelada.'],
+    [{ situacao: 'encerrada' }, 'Assinatura encerrada.'],
+    [{ situacao: 'manual' }, 'Salão suspenso pela administração.'],
+  ])('situação %j mostra "%s" (data em 23:30 locais, não no dia seguinte do UTC)', async (params, frase) => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
     await renderizar(params);
     expect(screen.getByRole('heading', { level: 1, name: 'Assinatura' })).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toContain(rotulo);
-    expect(screen.queryByRole('button', { name: 'Assinar' }) !== null).toBe(botao);
-    if (botao) expect(document.body.textContent).toMatch(/R\$.79,00 por mês, com 30 dias de teste/);
+    expect(screen.getByRole('heading', { level: 2, name: frase })).toBeTruthy();
+  });
+
+  it('?cancelar=1 abre a etapa 2 e os links preservam a situação e o histórico', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ situacao: 'ativa', cancelar: '1', historico: '12' });
+    expect(screen.getByRole('heading', { level: 2, name: 'Cancelar assinatura?' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Manter assinatura' }).getAttribute('href')).toBe('/dev/assinatura?situacao=ativa&historico=12');
+    expect(screen.getAllByRole('row')).toHaveLength(13);
+  });
+
+  it('a etapa 1 leva a ?cancelar=1 sem perder a situação', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ situacao: 'em_carencia' });
+    expect(screen.getByRole('link', { name: 'Cancelar assinatura' }).getAttribute('href')).toBe('/dev/assinatura?situacao=em_carencia&cancelar=1');
+  });
+
+  it.each([
+    ['cancelada', 'Sucesso:', 'Acesso até 20/06/2027'],
+    ['encerrada', 'Sucesso:', 'somente leitura'],
+    ['ja_cancelada', 'Informação:', 'já estava cancelada'],
+    ['mudou', 'Informação:', 'A assinatura mudou'],
+    ['erro', 'Erro de pagamento:', 'Nada foi alterado'],
+  ])('?resultado=%s mostra %s e o texto', async (resultado, rotulo, texto) => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ situacao: 'ativa', resultado });
+    const alerta = screen.getAllByRole(resultado === 'erro' ? 'alert' : 'status')[0];
+    expect(alerta.textContent).toContain(rotulo);
+    expect(alerta.textContent).toContain(texto);
+  });
+
+  it('histórico: 0 mostra o vazio; fora de 0..12 volta ao padrão do estado', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ situacao: 'ativa', historico: '0' });
+    expect(screen.getByText('Nenhum pagamento registrado.')).toBeTruthy();
+    document.body.innerHTML = '';
+    await renderizar({ situacao: 'ativa', historico: '99' });
+    expect(screen.getAllByRole('row')).toHaveLength(4);
+  });
+
+  it('parâmetro repetido usa o primeiro valor', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    render(await DemonstracaoAssinatura({ searchParams: Promise.resolve({ situacao: ['ativa', 'manual'] }) }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Assinatura ativa.' })).toBeTruthy();
   });
 });
 
-describe('demonstrarAssinarAcao', () => {
-  const anterior = { mensagem: null, sucesso: false };
-  it('desligada: devolve o estado anterior', async () => {
+describe('ações de demonstração', () => {
+  const anterior = { mensagem: null, variante: 'info' as const, em: 0 };
+  it('desligada: devolvem o estado anterior', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('VITRINE_COMPONENTES', 'false');
-    expect(await demonstrarAssinarAcao(anterior)).toBe(anterior);
+    for (const f of [demonstrarAssinarAcao, demonstrarRegularizarAcao, demonstrarCancelarAcao]) expect(await f(anterior)).toBe(anterior);
   });
-  it('ligada: responde provedor indisponível, sem sucesso', async () => {
+  it('ligada: respondem "erro de pagamento" sem tocar em provedor', async () => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
-    const r = await demonstrarAssinarAcao(anterior);
-    expect(r.sucesso).toBe(false);
-    expect(r.mensagem).toContain('provedor de pagamento');
+    for (const f of [demonstrarAssinarAcao, demonstrarRegularizarAcao, demonstrarCancelarAcao]) {
+      const r = await f(anterior);
+      expect(r.variante).toBe('erro');
+      expect(r.mensagem).not.toBeNull();
+    }
   });
 });

@@ -80,7 +80,7 @@ const todasAsAcoes: Registro[] = Object.entries(modulos).flatMap(([arquivo, modu
   }),
 );
 
-// D-040: as ações de capacidade `assinatura` (iniciarAssinatura) ficam fora da varredura porque o handler
+// D-040/D-042: as ações de capacidade `assinatura` (iniciar, cancelar e regularizar) ficam fora da varredura porque o handler
 // cria a assinatura `pendente` e mudaria a situação do salão compartilhado entre os casos. Elas valem em
 // QUALQUER situação (conferido na tabela abaixo) e o comportamento está em tests/integration/assinatura/.
 const acoesDeAssinatura = todasAsAcoes.filter((a) => a.capacidade === 'assinatura');
@@ -127,7 +127,11 @@ describe('registro de ações (CA-8)', () => {
   });
 
   it('a capacidade `assinatura` vale em toda situação e só o gestor a usa (D-040)', () => {
-    expect(acoesDeAssinatura.map((a) => a.chave)).toEqual(['assinatura/assinatura.acao.ts#iniciarAssinatura']);
+    expect(acoesDeAssinatura.map((a) => a.chave).sort()).toEqual([
+      'assinatura/assinatura.acao.ts#cancelarAssinatura',
+      'assinatura/assinatura.acao.ts#iniciarAssinatura',
+      'assinatura/assinatura.acao.ts#regularizarAssinatura',
+    ]);
     for (const [situacao, caps] of Object.entries(TABELA_CAPACIDADES)) {
       expect(caps.assinatura, situacao).toBe(true);
     }

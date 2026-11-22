@@ -9,6 +9,7 @@ import type { ContextoEscopado } from '@/server/tenant/context';
 
 import type { ResultadoIniciar } from './iniciar-tipos';
 import { processarAutorizada } from './retorno';
+import { aplicarEventoAssinatura } from './servico';
 
 // Início da assinatura (D-040 RN-1..RN-5). T1 cria/reutiliza a `pendente` sob a trava do salão e
 // comita; a chamada ao provedor NUNCA ocorre com transação aberta; T2 grava o vínculo por
@@ -40,6 +41,12 @@ export async function iniciarAssinatura(
 ): Promise<ResultadoIniciar> {
   const vigente = await emTransacao(async (r) => {
     await r.saloes.travar(ctx);
+    // RN-8 (D-042): uma `cancelada` com o acesso vencido é encerrada aqui, sem esperar o job, para que
+    // a nova pendente possa nascer. Ordem salão → assinatura; nenhuma chamada ao provedor na transação.
+    const alvo = await r.assinaturas.travar(ctx, {});
+    if (alvo !== null && alvo !== 'ocupada' && alvo.estado === 'cancelada') {
+      await aplicarEventoAssinatura(ctx, { tipo: 'prazo' }, agora, { r, assinaturaId: alvo.id });
+    }
     await r.assinaturas.criarPendenteSeNaoHouver(ctx, agora);
     return r.assinaturas.lerVigente(ctx);
   });

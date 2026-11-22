@@ -426,7 +426,7 @@ Com outro usuário ou outra base no `.env`, troque `-U agenda -d agenda_beleza` 
   await mp.forcarErro('cancelarAssinatura'); // a próxima chamada dessa operação, de qualquer processo, lança ErroProvedor sem efeito
   ```
 
-  Um disparo inválido para o estado atual (por exemplo, cobrar uma assinatura pendente) lança `OperacaoInvalidaNoProvedor` sem efeito. Os adiamentos de `adiarProximaCobranca` ficam em `sim_mp_adiamento` (`listarAdiamentos(id)`).
+  Um disparo inválido para o estado atual (por exemplo, cobrar uma assinatura pendente) lança `OperacaoInvalidaNoProvedor` sem efeito. Os adiamentos de `adiarProximaCobranca` ficam em `sim_mp_adiamento` (`listarAdiamentos(id)`). `urlAtualizarMeioPagamento(id)` (D-042) devolve a URL do checkout simulado e não tem efeito; numa assinatura `cancelada` lança `OperacaoInvalidaNoProvedor`.
 
 **WhatsApp simulado.** Cada chamada de `enviarModelo` vira uma linha em `sim_whatsapp_chamada`, com o destinatário, o modelo, os parâmetros, a chave de idempotência e o resultado, inclusive as que falham. O simulado **não** deduplica (isso é da fila de mensagens). Para forçar falhas:
 
@@ -584,9 +584,32 @@ Entrega da D-027 (E4.2). Sem migração. Módulo `src/server/protecao/` sobre `r
 O gestor abre **Assinatura** no menu (`/painel/assinatura`) e toca em "Assinar" (só aparece sem assinatura ou com a assinatura `pendente`). O sistema cria a assinatura `pendente` do salão, cria a assinatura no provedor (o `external_reference` é o `salaoId`; valor e prazo vêm de `src/config/plano.ts`) e leva o gestor ao checkout. Ao voltar, `/painel/assinatura/retorno` **ignora a query string** e consulta o provedor: só uma autorização confirmada por ele inicia o teste, que termina 30 dias **depois da autorização** (não do instante da consulta). Reprocessar o retorno não muda nada. A chamada ao provedor nunca ocorre com transação aberta; iniciar em paralelo deixa uma única assinatura vigente (quem perde a corrida cancela a que criou e vê "tente novamente"). Nenhum dado de cartão trafega ou é gravado.
 
 - Fluxo simulado (`MP_ADAPTER=simulado`): "Assinar" leva a `/dev/mp-checkout`; "Autorizar assinatura" volta ao retorno e o salão passa a `em_teste`.
-- Demonstração sem banco: `/dev/assinatura?situacao=pendente|em_teste` (com `VITRINE_COMPONENTES=true`).
+- Demonstração sem banco: `/dev/assinatura` (veja a seção da D-042 abaixo; com `VITRINE_COMPONENTES=true`).
 - Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/assinatura/concorrencia-iniciar.test.ts || break; done` (10 inícios e 10 retornos em paralelo, sem `23505` nem impasse).
 - Testes: `tests/integration/assinatura/{repo-iniciar,iniciar,concorrencia-iniciar,seguranca-iniciar}.test.ts`; E2E: `npx playwright test e2e/assinatura.spec.ts e2e/assinatura-sem-js.spec.ts`.
+
+## Assinatura no painel (E6.5, D-042)
+
+`/painel/assinatura` (só o gestor, em **qualquer** estado: a capacidade `assinatura` vale até suspensa e encerrada) é um "extrato de conta" em coluna única: a frase do estado, a data decisiva, o plano (R$ 79,00/mês, de `src/config/plano.ts`), as ações e os últimos 12 pagamentos (data, valor e Aprovado/Recusado, sem ids). Datas só por `formatarData` no fuso do salão; o estado exibido é o efetivo (`decidirEstadoEfetivo`, o mesmo da política operacional) e vem de uma única leitura (`lerTelaAssinatura`).
+
+| Estado | Ação principal | Cancelar |
+|---|---|---|
+| sem assinatura | Assinar | não |
+| `pendente` | Continuar assinatura (checkout) | sim (encerra) |
+| `em_teste` | nenhuma | sim (mantém o acesso até o fim do teste, sem cobrança) |
+| `ativa` | Atualizar meio de pagamento | sim (acesso até o fim do período pago) |
+| `em_carencia`, `suspensa` | Regularizar pagamento | sim (encerra) |
+| `cancelada` | nenhuma | não |
+| `encerrada` (inclui `cancelada` com o acesso vencido) | Assinar novamente | não |
+| suspenso pela administração | nenhuma | não |
+
+- **Cancelar em duas etapas, sem dialog e sem JavaScript:** "Cancelar assinatura" é um link GET (`?cancelar=1`, sem POST nem chamada ao provedor) que abre a confirmação na própria página; só "Sim, cancelar assinatura" faz POST. A ação cancela no provedor **fora de transação** e só então aplica `aplicarEventoAssinatura({ tipo: 'cancelamento' })` (ponto único de mudança de estado). Falha do provedor: "Erro de pagamento: Não foi possível concluir agora. Nada foi alterado; tente novamente." e o estado fica intacto. Se o provedor cancelou e o banco falhou, o gestor vê "tente novamente" (log `assinatura.cancelar_pos_provedor_falhou`); repetir é idempotente e o webhook ou o retorno convergem. Cancelar duas vezes (ou depois do webhook) mostra "Sua assinatura já estava cancelada." sem nova transição.
+- **Regularizar / atualizar meio de pagamento:** a porta do Mercado Pago ganhou `urlAtualizarMeioPagamento(id)` (simulado: a URL de `/dev/mp-checkout`, com `forcarErro('urlAtualizarMeioPagamento')`; real: `NaoImplementado('E6.6')`, que a E6.6 preenche). Nada é gravado: o estado só muda por webhook ou pela consulta do retorno (D-040). Em `pendente` reaproveita `iniciarAssinatura`.
+- **Assinar novamente:** `iniciarAssinatura` encerra (evento `prazo`) uma `cancelada` com o acesso vencido sob a trava, sem esperar o job, e cria a nova `pendente`; a antiga fica no histórico. Reativar uma `cancelada` dentro do prazo não existe na v1.
+- **Segurança:** nenhuma ação recebe id de assinatura (o alvo é sempre a do salão da sessão); o vínculo com o provedor nunca vai à tela; `estadoVisto` (campo oculto da etapa 2) é só dica de UX (valor fora da lista fechada é ignorado; diferente do real → "A assinatura mudou. Atualizamos as informações."). Profissional recebe 403; sem sessão, redireciona a `/entrar`. Nenhum dado de cartão.
+- **Migração:** `20261126000000_sim_mp_operacao_atualizar_meio_pagamento` (`ALTER TYPE "sim_mp_operacao" ADD VALUE`, só afeta as tabelas `sim_*`; parecer em `docs/demandas/D-042/dba.md`).
+- **Demonstração sem banco:** `/dev/assinatura?situacao=sem_assinatura|pendente|em_teste|ativa|em_carencia|suspensa|cancelada|encerrada|manual`, mais `&cancelar=1` (etapa 2), `&resultado=cancelada|encerrada|ja_cancelada|mudou|erro` e `&historico=0..12` (as ações respondem "Erro de pagamento", sem provedor nem banco).
+- **Testes:** `tests/integration/assinatura/{cancelar,cancelar-concorrencia,cancelar-seguranca,regularizar,tela,iniciar-nova,repo-detalhe}.test.ts` (PostgreSQL real e MP simulado), `src/server/assinatura/cancelar-tipos.test.ts`, `src/app/painel/assinatura/*.test.ts(x)` e `src/app/dev/assinatura/page.test.tsx`; E2E: `npx playwright test e2e/assinatura.spec.ts e2e/assinatura-sem-js.spec.ts` (sem banco, 375×812, teclado, axe 4.14.0, sem JavaScript). Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/assinatura/cancelar-concorrencia.test.ts || break; done` (cancelar × cancelar, cancelar × webhook × retorno e cancelar × iniciar, sem impasse nem `23505`). Fuso: `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/assinatura src/app/painel/assinatura src/app/dev/assinatura || break; done`.
 
 ## Assinatura: webhooks do Mercado Pago (E6.2, D-041)
 
@@ -776,7 +799,7 @@ Credenciais: um widget Turnstile criado no painel da Cloudflare para o domínio 
 
 ### Mercado Pago (`MP_ADAPTER=real`)
 
-**Adaptador real: E6.6.** Hoje `MP_ADAPTER=real` é recusado na inicialização. Credenciais que serão necessárias: uma conta do Mercado Pago com assinaturas (planos de pagamento recorrente) habilitadas, o access token de produção e o segredo de assinatura dos webhooks. As variáveis serão definidas pela E6.6.
+**Adaptador real: E6.6.** Hoje `MP_ADAPTER=real` é recusado na inicialização. Credenciais que serão necessárias: uma conta do Mercado Pago com assinaturas (planos de pagamento recorrente) habilitadas, o access token de produção e o segredo de assinatura dos webhooks. As variáveis serão definidas pela E6.6, que também implementa `urlAtualizarMeioPagamento` (link do provedor para o gestor atualizar o cartão; hoje `NaoImplementado('E6.6')`).
 
 ### WhatsApp Business Platform (`WHATSAPP_ADAPTER=real`)
 

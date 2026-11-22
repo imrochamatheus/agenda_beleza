@@ -1,7 +1,8 @@
-/* Assinatura (D-040). Só tokens do tema (globals.css); breakpoint único 48rem. */
+/* Assinatura (D-040, D-042): "extrato de conta" em uma coluna de 40rem. Só tokens do tema (globals.css),
+   sem cor literal; breakpoint único 48rem. */
 .pagina {
   display: grid;
-  gap: var(--espaco-6);
+  gap: var(--espaco-8);
   min-width: 0;
   max-width: 40rem;
 }
@@ -11,8 +12,148 @@
   overflow-wrap: anywhere;
 }
 
-.formulario {
+.tela {
+  display: grid;
+  gap: var(--espaco-8);
+  min-width: 0;
+}
+
+/* Única superfície de realce: o bloco de estado. */
+.situacao {
+  padding: var(--espaco-4);
+  border-radius: var(--raio);
+  background: var(--cor-superficie-alt);
+  min-width: 0;
+}
+
+.rotuloSituacao {
+  display: block;
+  margin-block-end: var(--espaco-2);
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.frase {
+  margin: 0 0 var(--espaco-2);
+  font-size: var(--texto-xl);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.apoio {
+  margin: 0 0 var(--espaco-4);
+}
+
+.dados {
+  display: grid;
+  gap: var(--espaco-3);
+  margin: 0;
+}
+
+.dado {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.dado dt {
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.dado dd {
+  margin: 0;
+}
+
+.valorPlano {
+  font-size: var(--texto-lg);
+  font-weight: 600;
+}
+
+.destaque {
+  font-size: var(--texto-2xl);
+  font-weight: 600;
+  line-height: var(--altura-linha-titulo);
+}
+
+.acoes {
+  display: grid;
+  gap: var(--espaco-3);
+  align-items: center;
+}
+
+.formAcao {
+  display: grid;
+  margin: 0;
+}
+
+.acoes > * {
+  min-width: 0;
+}
+
+.linkBotao {
+  text-decoration: none;
+}
+
+.manter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--alvo-minimo);
+}
+
+.secao {
   display: grid;
   gap: var(--espaco-4);
-  justify-items: start;
+  min-width: 0;
+  padding-block-start: var(--espaco-6);
+  border-block-start: 1px solid var(--cor-borda-sutil);
+}
+
+.secao > * {
+  margin: 0;
+}
+
+.tituloSecao {
+  font-size: var(--texto-xl);
+  overflow-wrap: anywhere;
+}
+
+.aprovado {
+  color: var(--cor-sucesso-texto);
+}
+
+.recusado {
+  color: var(--cor-erro-texto);
+}
+
+.valorMoeda {
+  white-space: nowrap;
+}
+
+@media (min-width: 48rem) {
+  .situacao {
+    padding: var(--espaco-6);
+  }
+
+  .dados {
+    grid-template-columns: max-content 1fr;
+    align-items: baseline;
+    gap: var(--espaco-2) var(--espaco-6);
+  }
+
+  .dado {
+    display: contents;
+  }
+
+  .acoes {
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    justify-content: start;
+  }
+
+  .valorMoeda {
+    display: block;
+    text-align: end;
+  }
 }

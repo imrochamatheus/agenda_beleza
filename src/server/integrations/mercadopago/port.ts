@@ -50,6 +50,8 @@ export interface PortaMercadoPago {
   /** Idempotente: cancelar uma assinatura já cancelada não falha. */
   cancelarAssinatura(id: string): Promise<void>;
   adiarProximaCobranca(id: string, novaData: Date): Promise<void>;
+  /** D-042: URL em que o gestor atualiza o meio de pagamento da assinatura (nenhum efeito local). */
+  urlAtualizarMeioPagamento(id: string): Promise<string>;
   /** Nunca lança: qualquer problema vira `{ valida: false }`. */
   validarWebhook(n: NotificacaoWebhook): Promise<ResultadoValidacaoWebhook>;
 }
@@ -60,6 +62,7 @@ export const OPERACOES_MP = [
   'consultarPagamento',
   'cancelarAssinatura',
   'adiarProximaCobranca',
+  'urlAtualizarMeioPagamento',
 ] as const;
 export type OperacaoMp = (typeof OPERACOES_MP)[number];
 

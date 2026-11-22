@@ -157,7 +157,8 @@ describe('iniciarAssinatura', () => {
     });
     for (const estado of ['em_teste', 'ativa', 'em_carencia', 'cancelada', 'suspensa'] as const) {
       const { salaoId, ctx } = await criarSalaoD40();
-      await criarAssinaturaEm(salaoId, estado);
+      // `cancelada` ainda dentro do acesso pago (D-042 RN-8: vencida seria encerrada e liberaria a nova).
+      await criarAssinaturaEm(salaoId, estado, estado === 'cancelada' ? { acessoAte: new Date(AGORA.getTime() + DIA_MS) } : {});
       expect(await iniciarAssinatura(ctx, AGORA, { mp: nunca, appUrl: APP_URL })).toEqual({ resultado: 'recusado', motivo: 'ja_existe' });
       expect(await vigenteDe(salaoId)).toHaveLength(1);
     }
