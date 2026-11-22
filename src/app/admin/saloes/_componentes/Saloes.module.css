@@ -48,7 +48,15 @@
   color: var(--cor-primaria-forte);
 }
 
-/* Selos: ícone (aria-hidden) + texto; a cor nunca é o único sinal. */
+/* Links de apoio lado a lado (D-045). */
+.acoesLinha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-2) var(--espaco-6);
+  margin: 0;
+}
+
+/* Os selos em si vivem em admin/_componentes/Admin.module.css (D-045). */
 .selos {
   display: flex;
   flex-wrap: wrap;
@@ -56,43 +64,6 @@
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.selo {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--espaco-2);
-  padding: var(--espaco-1) var(--espaco-3);
-  border: 1px solid var(--cor-borda-controle);
-  border-radius: var(--raio);
-  background: var(--cor-superficie-alt);
-  color: var(--cor-texto);
-  font-size: var(--texto-sm);
-  /* Quebra só nos espaços: o tema usa overflow-wrap: anywhere, que partiria "manualmente". */
-  overflow-wrap: normal;
-  word-break: normal;
-}
-
-.selo svg {
-  flex: none;
-}
-
-.sucesso {
-  border-color: var(--cor-sucesso-texto);
-  background: var(--cor-sucesso-fundo);
-  color: var(--cor-sucesso-texto);
-}
-
-.aviso {
-  border-color: var(--cor-aviso-texto);
-  background: var(--cor-aviso-fundo);
-  color: var(--cor-aviso-texto);
-}
-
-.erro {
-  border-color: var(--cor-erro-texto);
-  background: var(--cor-erro-fundo);
-  color: var(--cor-erro-texto);
 }
 
 /* Detalhe: uma coluna de leitura. */

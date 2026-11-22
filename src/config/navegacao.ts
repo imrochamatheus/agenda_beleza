@@ -71,6 +71,7 @@ export const ROTAS = {
   devFuncionamento: '/dev/funcionamento',
   devAdminEntrar: '/dev/admin-entrar',
   devAdminSaloes: '/dev/admin-saloes',
+  devAdminMensagens: '/dev/admin-mensagens',
   devFotos: '/dev/fotos',
   devAvisoPlano: '/dev/aviso-plano',
   devFotosEnvio: '/dev/fotos/enviar',
@@ -117,10 +118,10 @@ export const NAVEGACAO_ADMIN: readonly ItemNavegacao[] = Object.freeze([
 ]);
 
 /**
- * Rotas do menu do admin que JÁ têm página (D-044). Lista explícita: E8.3/E8.5 a ampliam quando criam a tela;
+ * Rotas do menu do admin que JÁ têm página (D-044). Lista explícita (D-045: Mensagens e Auditoria entraram): E8.5 a amplia quando criam a tela;
  * nunca um link para 404. Teste: cada rota listada tem `page.tsx` (navegacao-admin.test.ts).
  */
-export const ROTAS_ADMIN_EXISTENTES = Object.freeze(['adminSaloes'] as const) satisfies readonly RotaFixa[];
+export const ROTAS_ADMIN_EXISTENTES = Object.freeze(['adminSaloes', 'adminMensagens', 'adminAuditoria'] as const) satisfies readonly RotaFixa[];
 
 /** `NAVEGACAO_ADMIN` sem os itens cuja tela ainda não existe. */
 export const NAVEGACAO_ADMIN_DISPONIVEL: readonly ItemNavegacao[] = Object.freeze(

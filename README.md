@@ -356,7 +356,7 @@ Entrega da D-035. Migração `20261124000000_avaliacao_denuncia` (tabela `avalia
 
 ## Auditoria (serviço de escrita, E8.1)
 
-`src/server/auditoria/` registra as ações do super admin na tabela `auditoria` (somente inserção: triggers do banco rejeitam UPDATE/DELETE/TRUNCATE). Não há tela nem consulta ainda (E8.3).
+`src/server/auditoria/` registra as ações do super admin na tabela `auditoria` (somente inserção: triggers do banco rejeitam UPDATE/DELETE/TRUNCATE). A consulta é `/admin/auditoria` (D-045, E8.3; só leitura).
 
 - `registrarAuditoria(ctx: AdminContext, entrada, r)` grava na MESMA transação da mutação (`r` obrigatório): se a gravação falha, a mutação é desfeita. O ator é sempre `ctx.usuarioId` e o resultado, `sucesso`.
 - `registrarFalhaAuditoria(entrada)` grava `falha` em conexão própria; chame no `catch`, depois do rollback.
@@ -373,6 +373,17 @@ Entrega da D-035. Migração `20261124000000_avaliacao_denuncia` (tabela `avalia
 - **Estender o teste:** assinatura `em_teste` com vínculo e fim com mais de 5 min; N de 1 a 90 dias (`^[1-9]\d?$`); chama `adiarProximaCobranca` FORA de transação e grava com comparação otimista do fim. Falha do provedor ou corrida: nada muda localmente e uma auditoria `falha` fica gravada. **O adaptador real do Mercado Pago ainda é `NaoImplementado` (E6.6): em produção a extensão só funciona depois dela.** Se o provedor adiou mas o estado local mudou, a divergência exige conferência manual.
 - **Auditoria:** `salao.atualizar`, `salao.suspender`, `salao.reativar`, `salao.estender_teste`, `usuario.atualizar_email`, na mesma transação.
 - **Testes:** `npx vitest run src/server/admin src/app/admin/saloes src/app/dev/admin-saloes` e `npx vitest run --project integration tests/integration/admin-saloes`; demonstração `/dev/admin-saloes` (`?vista=detalhe|detalhe-suspenso|detalhe-sem-assinatura|detalhe-ativa`; na vitrine, 13/14/15 dias simulam falha do provedor, "mudou" e divergência); E2E: `npx playwright test e2e/admin-saloes.spec.ts e2e/admin-saloes-sem-js.spec.ts`. Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/admin-saloes/concorrencia.test.ts || break; done`.
+
+## Assinatura, mensagens e auditoria no painel do super admin (D-045, E8.3)
+
+Três telas de **leitura** e uma única escrita, só para super admin com TOTP (sem sessão: `/admin/entrar`; gestor e profissional: "Acesso negado"). Sem migração, variável ou job de CI novos (parecer do DBA em `docs/demandas/D-045/dba.md`). O menu do admin mostra Salões, Mensagens e Auditoria.
+
+- **`/admin/saloes/[id]/assinatura`:** resumo da assinatura (sem o id do provedor: só "vinculada ao Mercado Pago" sim/não), as 50 transições e os 50 eventos de webhook mais recentes do salão, no **fuso do salão**. O rejeitado se distingue por texto e forma. Eventos sem `salao_id` não aparecem em tela nenhuma. Link "Assinatura e eventos" e "Auditoria deste salão" no detalhe do salão.
+- **`/admin/mensagens`:** fila global (20 por página, filtros GET por situação, salão e tipo; tentativas em `?detalhe=<id>`). **Telefone sempre mascarado** (`+55 (71) 9****-1234`; cliente removida: "Cliente removida"): a máscara é feita no servidor e o DTO não carrega o E.164. Nunca aparecem parâmetros, link do convite, id do provedor, `erro_detalhe`, chave de idempotência, id da reserva/cliente nem nome da cliente. O `erro_codigo` só aparece no formato `^[a-z0-9_]{1,40}$`.
+- **Reenviar:** só mensagem `falhou` e ainda vigente. `?confirmar=<id>` (GET) abre a confirmação, "Confirmar reenvio" é POST e o resultado volta por PRG em `?reenvio=ok|ok_fila|recusada|obsoleta|anonimizada|inexistente`; funciona sem JavaScript. Numa transação: `mensagem FOR UPDATE` → `pendente` → auditoria `mensagem.reenviar` (antes `{estado:'falhou'}`, depois `{estado:'pendente', tipo, revisao}`); a fila só é usada depois do commit com a chave `reserva:tipo:revisao`, e o adaptador é chamado uma vez, pelo worker. Recusa pura não audita; cliente removida vira `cancelada_anonimizacao` e é auditada. Vale também para salão suspenso. O `reenviarMensagem` da equipe (E7.3) não mudou.
+- **`/admin/auditoria`:** consulta paginada com filtros GET por salão, ator (e-mail exato), ação, resultado e período (dias civis em `America/Sao_Paulo`, convertidos por `src/server/tempo/fuso.ts`); antes/depois em `<details>` com diff por campo e JSON recolhido. **Ler não grava auditoria.** As telas globais usam `America/Sao_Paulo` com o deslocamento visível.
+- **Limites:** página máxima 500 (acima, vale 500); o filtro de salão é um `Select` até 100 salões e, acima disso, um campo de código (UUID); filtro inválido é ignorado com aviso, nunca erro. Sem exportação, sem expurgo, sem tela global de eventos de webhook.
+- **Testes:** `npx vitest run src/server/admin src/app/admin src/app/dev/admin-mensagens src/components/ui` e `npx vitest run --project integration tests/integration/admin` (inclui o plano com ~100 mil mensagens e ~200 mil auditorias, `[CA-15]`); demonstração `/dev/admin-mensagens` (`?vista=auditoria|assinatura|assinatura-vazia|assinatura-mais`); E2E: `npx playwright test e2e/admin-mensagens.spec.ts e2e/admin-mensagens-sem-js.spec.ts` (build prévio e porta 3000 livre). Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/admin/concorrencia-reenvio.test.ts || break; done`; fuso: `for tz in UTC America/Sao_Paulo; do TZ=$tz npx vitest run src/server/admin src/lib/format.test.ts || break; done`.
 
 ## Super admin e TOTP (E1.5)
 
@@ -526,7 +537,7 @@ O worker (`src/worker/main.ts` → `src/worker/iniciar.ts`) é um processo separ
 
 ## Mensagens de WhatsApp (outbox, envio, tentativas e backoff)
 
-Pipeline da D-024 (E7.1). Ainda não há tela nem rota: as demandas de reserva (E3.2, E3.4, E3.5), de avaliação (E4.5), de anonimização (E5.2), de situação (E7.3) e do super admin (E8.3) usam as funções abaixo. O adaptador real do WhatsApp é a E7.2; até lá `WHATSAPP_ADAPTER=simulado` (o real ainda é recusado na inicialização).
+Pipeline da D-024 (E7.1). Ainda não há tela nem rota: as demandas de reserva (E3.2, E3.4, E3.5), de avaliação (E4.5), de anonimização (E5.2), de situação (E7.3) usam as funções abaixo (o super admin usa `reenviarMensagemAdmin`, D-045). O adaptador real do WhatsApp é a E7.2; até lá `WHATSAPP_ADAPTER=simulado` (o real ainda é recusado na inicialização).
 
 - **Tipos e chave:** `confirmacao`, `remarcacao`, `cancelamento` e `convite_avaliacao`. Uma mensagem por `reserva:tipo:revisao` (`<reservaId>:<tipo>:<revisao>`): é a `UNIQUE` do banco, a `singletonKey` do pg-boss e a chave de idempotência entregue ao adaptador. Revisões: `confirmacao` e `convite_avaliacao` = 0; `remarcacao` e `cancelamento` = `reserva.revisao` (a E3.4 incrementa antes de registrar).
 - **Estados:** `pendente` → `enviando` → `enviada`; `falhou` (só sai por reenvio manual); `nao_enviada` (sem consentimento da finalidade); `substituida` (obsoleta ou trocada por evento posterior); `cancelada_anonimizacao` (cliente anonimizada). `enviada`, `nao_enviada`, `substituida` e `cancelada_anonimizacao` são finais.

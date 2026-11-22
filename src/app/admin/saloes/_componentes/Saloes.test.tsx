@@ -10,7 +10,7 @@ import type { EstadoEdicao, EstadoExtensao, EstadoSuspensao } from '../estado';
 import { CabecalhoDoSalao } from './CabecalhoDoSalao';
 import { ListaDeSaloes } from './ListaDeSaloes';
 import { PainelDoSalao } from './PainelDoSalao';
-import { SeloDeEstado, SeloDeSuspensao } from './SeloDeEstado';
+import { SeloDaAssinatura, SeloDeSuspensao } from './SelosDoSalao';
 import type { AcoesDoSalao } from './PainelDoSalao';
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/admin/saloes' }));
@@ -20,12 +20,12 @@ const linha = (o: Partial<LinhaSalao> = {}): LinhaSalao => ({ id: 'id-1', nome: 
 const lista = (itens: LinhaSalao[], o: Partial<ListaSaloes> = {}): ListaSaloes => ({ itens, total: itens.length, pagina: 1, porPagina: 20, ...o });
 const SEM_FILTRO = { q: '', estado: null, suspenso: 'todas', pagina: 1 } as const;
 
-describe('SeloDeEstado e SeloDeSuspensao', () => {
+describe('SeloDaAssinatura e SeloDeSuspensao', () => {
   it('rótulo em texto e ícone decorativo (aria-hidden) em todo selo', () => {
     const { container } = render(
       <>
         {([null, 'ativa', 'em_teste', 'pendente', 'em_carencia', 'suspensa', 'cancelada', 'encerrada'] as const).map((e) => (
-          <SeloDeEstado key={String(e)} estado={e} />
+          <SeloDaAssinatura key={String(e)} estado={e} />
         ))}
         <SeloDeSuspensao />
       </>,

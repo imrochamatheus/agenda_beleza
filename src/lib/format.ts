@@ -274,6 +274,18 @@ export function formatarTelefone(e164: string): string {
   return `(${ddd}) ${numero.slice(0, corte)}-${numero.slice(corte)}`;
 }
 
+/**
+ * Telefone MASCARADO para o painel do super admin (D-045 RN-2): '+5571987651234' → '+55 (71) 9****-1234';
+ * fixo '+557133451234' → '+55 (71) ****-1234'. Só DDD e os 4 últimos dígitos. Nulo, não texto ou fora do
+ * formato gravado → '—' (nunca lança, nunca devolve dígitos do número).
+ */
+export function mascararTelefone(e164: unknown): string {
+  if (!ehTelefoneBrE164(e164)) return '—';
+  const ddd = e164.slice(3, 5);
+  const numero = e164.slice(5);
+  return `+55 (${ddd}) ${numero.length === 9 ? '9' : ''}****-${numero.slice(-4)}`;
+}
+
 /** CEP gravado com 8 dígitos (D-020 RN-6): '01310100' → '01310-100'. Fora de /^\d{8}$/ → RangeError. */
 export function formatarCep(cep: string): string {
   if (typeof cep !== 'string' || !/^\d{8}$/.test(cep)) {

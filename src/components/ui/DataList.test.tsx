@@ -53,3 +53,39 @@ describe('DataList (CA-17, RN-20)', () => {
     expect(screen.getByText('Sem serviços.')).toBeTruthy();
   });
 });
+
+describe('DataList: detalhe e classeCelula (D-045)', () => {
+  it('sem `detalhe`, o DOM é o de sempre: uma <tr> por linha, nenhuma linha de detalhe', () => {
+    const { container } = render(<DataList legenda="Serviços" colunas={COLUNAS} linhas={LINHAS} chaveDaLinha={(s) => s.id} />);
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(container.querySelectorAll('td[colspan]')).toHaveLength(0);
+  });
+
+  it('`detalhe` cria <tr><td colSpan> logo abaixo da linha; null não cria', () => {
+    const { container } = render(
+      <DataList
+        legenda="Serviços"
+        colunas={COLUNAS}
+        linhas={LINHAS}
+        chaveDaLinha={(s) => s.id}
+        detalhe={(s) => (s.id === '1' ? <p>Detalhe do corte</p> : null)}
+      />,
+    );
+    const trs = Array.from(container.querySelectorAll('tbody tr'));
+    expect(trs).toHaveLength(3);
+    const td = trs[1].querySelector('td')!;
+    expect(td.getAttribute('colspan')).toBe('2');
+    expect(td.textContent).toBe('Detalhe do corte');
+    expect(trs[0].querySelectorAll('td')).toHaveLength(2);
+    expect(trs[2].textContent).toContain('Escova');
+  });
+
+  it('`classeCelula` vai só na célula da coluna', () => {
+    const colunas: Coluna<Servico>[] = [COLUNAS[0], { ...COLUNAS[1], classeCelula: 'minha-classe' }];
+    const { container } = render(<DataList legenda="X" colunas={colunas} linhas={LINHAS} chaveDaLinha={(s) => s.id} />);
+    const tds = container.querySelectorAll('tbody tr:first-child td');
+    expect(tds[0].className).not.toContain('minha-classe');
+    expect(tds[1].className).toContain('minha-classe');
+  });
+});
+

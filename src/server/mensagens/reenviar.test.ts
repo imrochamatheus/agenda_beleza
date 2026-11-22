@@ -19,7 +19,7 @@ vi.mock('@/server/repos/transacao', () => ({
   emTransacao: (fn: (r: unknown) => unknown) => fn({ mensagens: { reenviar: reenviarRepo } }),
 }));
 
-import { reenviarMensagem } from './reenviar';
+import { enfileirarReenvio, reenviarMensagem, reenviarNoRepos } from './reenviar';
 
 const responder = (v: unknown) => {
   respostaDoRepo = async () => v;
@@ -60,5 +60,34 @@ describe('reenviarMensagem (RN-18; CA-6)', () => {
     };
     const erro = await reenviarMensagem(ctx, ID, AGORA, { enfileirar: vi.fn() }).catch((e: unknown) => e);
     expect(erro).toBeInstanceOf(NaoEncontrado);
+  });
+});
+
+describe('núcleo do reenvio para o admin (D-045)', () => {
+  const reenfileirada = { resultado: 'reenfileirada' as const, mensagemId: ID, reservaId: RESERVA, tipo: 'cancelamento' as const, revisao: 1 };
+
+  it('reenviarNoRepos usa o Repos recebido (a transação do chamador) e não enfileira', async () => {
+    const chamadas: unknown[][] = [];
+    const r = { mensagens: { reenviar: async (...a: unknown[]) => (chamadas.push(a), reenfileirada) } };
+    expect(await reenviarNoRepos(r as never, ctx, ID, AGORA)).toEqual(reenfileirada);
+    expect(chamadas).toEqual([[ctx, ID, AGORA, expect.any(Function)]]);
+  });
+
+  it('enfileirarReenvio devolve filaIndisponivel=false quando enfileira', async () => {
+    const enfileirar = vi.fn(async () => ({ criado: true as const, id: 'j' }));
+    expect(await enfileirarReenvio(reenfileirada, { enfileirar })).toEqual({
+      resultado: 'reenfileirada',
+      mensagemId: ID,
+      chave: `${RESERVA}:cancelamento:1`,
+      filaIndisponivel: false,
+    });
+  });
+
+  it('enfileirarReenvio: fila fora → filaIndisponivel=true, sem lançar e sem vazar a causa no log', async () => {
+    const linhas: string[] = [];
+    const r = await enfileirarReenvio(reenfileirada, { enfileirar: vi.fn().mockRejectedValue(new Error('segredo')), log: (l) => linhas.push(l) });
+    expect(r.filaIndisponivel).toBe(true);
+    expect(r.resultado).toBe('reenfileirada');
+    expect(linhas.join('')).not.toContain('segredo');
   });
 });

@@ -49,8 +49,8 @@ export default async function PaginaDoSalao({ params }: Props) {
         acoes={{ editar: editarSalaoAcao, suspender: suspenderSalaoAcao, reativar: reativarSalaoAcao, estender: estenderTesteAcao }}
         recusaDaExtensao={recusa}
         hrefVoltar={ROTAS.adminSalao(salao.id)}
-        // "Ver assinatura" só aparece quando a rota existir (E8.3 passa ROTAS.adminSalaoAssinatura).
-        hrefAssinatura={null}
+        hrefAssinatura={ROTAS.adminSalaoAssinatura(salao.id)}
+        hrefAuditoria={`${ROTAS.adminAuditoria}?salao=${encodeURIComponent(salao.id)}`}
       />
     </CascaAdmin>
   );

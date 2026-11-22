@@ -19,10 +19,12 @@ export const ACOES_AUDITAVEIS = [
   'salao.reativar',
   'salao.estender_teste',
   'usuario.atualizar_email',
+  // D-045 (E8.3): reenvio manual de mensagem `falhou` pelo super admin (entidade `mensagem`).
+  'mensagem.reenviar',
 ] as const;
 export type AcaoAuditavel = (typeof ACOES_AUDITAVEIS)[number];
 
-export const ENTIDADES_AUDITAVEIS = ['assinatura', 'avaliacao', 'avaliacao_denuncia', 'salao', 'usuario'] as const;
+export const ENTIDADES_AUDITAVEIS = ['assinatura', 'avaliacao', 'avaliacao_denuncia', 'mensagem', 'salao', 'usuario'] as const;
 export type EntidadeAuditavel = (typeof ENTIDADES_AUDITAVEIS)[number];
 
 /** Ações de "mutação com valor anterior e novo": `antes` e `depois` são obrigatórios em sucesso. */
@@ -35,6 +37,7 @@ export const ACOES_COM_ANTES_DEPOIS: readonly AcaoAuditavel[] = [
   'salao.reativar',
   'salao.estender_teste',
   'usuario.atualizar_email',
+  'mensagem.reenviar',
 ];
 
 export const FORMATO_ACAO = /^[a-z][a-z_]*\.[a-z][a-z_]*$/;

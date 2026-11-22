@@ -72,7 +72,7 @@ test.describe('CA-1/CA-14: lista de salões (375×812)', () => {
     await abrir(page);
     await page.getByRole('button', { name: 'Menu' }).click();
     const nav = page.getByRole('navigation', { name: 'Navegação da administração' });
-    await expect(nav.getByRole('link')).toHaveCount(1);
+    await expect(nav.getByRole('link')).toHaveCount(3);
     await expect(nav.getByRole('link', { name: 'Salões' })).toHaveAttribute('aria-current', 'page');
   });
 

@@ -21,9 +21,19 @@ describe('menu do admin só com rotas que existem', () => {
     expect(Object.isFrozen(NAVEGACAO_ADMIN_DISPONIVEL)).toBe(true);
   });
 
-  it('os itens do menu que ainda não têm tela ficam de fora', () => {
+  it('o menu mostra Salões, Mensagens e Auditoria, nessa ordem (D-045)', () => {
+    expect(NAVEGACAO_ADMIN_DISPONIVEL.map((i) => i.chave)).toEqual(['adminSaloes', 'adminMensagens', 'adminAuditoria']);
+    expect(NAVEGACAO_ADMIN_DISPONIVEL.map((i) => i.href)).toEqual([ROTAS.adminSaloes, ROTAS.adminMensagens, ROTAS.adminAuditoria]);
+  });
+
+  it('os itens do menu que ainda não têm tela ficam de fora (nenhum link para 404)', () => {
     const fora = NAVEGACAO_ADMIN.filter((i) => !NAVEGACAO_ADMIN_DISPONIVEL.includes(i));
-    expect(fora.map((i) => i.chave)).toEqual(expect.arrayContaining(['adminMensagens', 'adminAuditoria']));
     for (const i of fora) expect(existsSync(join(process.cwd(), 'src/app', i.href, 'page.tsx'))).toBe(false);
+  });
+
+  it('a assinatura do salão existe como rota com page.tsx e a vitrine tem a sua', () => {
+    expect(existsSync(join(process.cwd(), 'src/app/admin/saloes/[id]/assinatura/page.tsx'))).toBe(true);
+    expect(ROTAS.adminSalaoAssinatura('abc')).toBe('/admin/saloes/abc/assinatura');
+    expect(ROTAS.devAdminMensagens).toBe('/dev/admin-mensagens');
   });
 });

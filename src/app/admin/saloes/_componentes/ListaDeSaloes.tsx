@@ -9,7 +9,8 @@ import type { FiltrosSaloes, LinhaSalao, ListaSaloes as Lista } from '@/server/a
 import { rotuloDeSituacao } from '@/server/assinatura/rotulos';
 
 import { hrefDaLista } from '../estado';
-import { SeloDeEstado, SeloDeSuspensao } from './SeloDeEstado';
+import estilosAdmin from '../../_componentes/Admin.module.css';
+import { SeloDaAssinatura, SeloDeSuspensao } from './SelosDoSalao';
 import estilos from './Saloes.module.css';
 
 export type ListaDeSaloesProps = {
@@ -73,17 +74,29 @@ export function ListaDeSaloes({ lista, filtros, base, hrefDoSalao }: ListaDeSalo
         vazio={<EmptyState titulo={M.vazioTitulo} descricao={M.vazioDescricao} />}
         colunas={[
           {
-            chave: 'salao',
+            chave: 'salao', classeCelula: estilosAdmin.celulaTexto,
             rotulo: 'Salão',
             renderizar: (l) => (
-              <a href={hrefDoSalao(l.id)} aria-label={`Abrir ${l.nome}`} className={estilos.quebra}>
-                {l.nome}
-              </a>
+              <span className={estilosAdmin.pilha}>
+                <a href={hrefDoSalao(l.id)} aria-label={`Abrir ${l.nome}`} className={estilos.quebra}>
+                  {l.nome}
+                </a>
+                <span className={`${estilosAdmin.apoio} ${estilosAdmin.quebra}`}>/{l.slug}</span>
+              </span>
             ),
           },
-          { chave: 'endereco', rotulo: 'Endereço', renderizar: (l) => <span className={estilos.quebra}>/{l.slug}</span> },
-          { chave: 'assinatura', rotulo: 'Assinatura', renderizar: (l) => <SeloDeEstado estado={l.estado} /> },
-          { chave: 'suspensao', rotulo: 'Suspensão', renderizar: (l) => (l.suspenso ? <SeloDeSuspensao /> : '-') },
+          {
+            // Assinatura e suspensão numa só coluna: com o menu lateral, 768 px dá ~500 px ao conteúdo (D-045).
+            chave: 'assinatura',
+            rotulo: 'Assinatura',
+            classeCelula: estilosAdmin.celulaSelo,
+            renderizar: (l) => (
+              <span className={estilosAdmin.pilha}>
+                <SeloDaAssinatura estado={l.estado} />
+                {l.suspenso ? <SeloDeSuspensao /> : null}
+              </span>
+            ),
+          },
           { chave: 'gestor', rotulo: 'Gestor', renderizar: (l) => <span className={estilos.quebra}>{l.gestorEmail ?? '-'}</span> },
         ]}
       />
