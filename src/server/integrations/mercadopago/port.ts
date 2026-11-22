@@ -33,6 +33,8 @@ export type NotificacaoWebhook = {
   consulta: Readonly<Record<string, string>>;
   /** JSON já parseado. */
   corpo: unknown;
+  /** Texto exato recebido (até 16 KiB), para o HMAC do adaptador real (E6.6). O simulado o ignora. */
+  corpoBruto?: string;
 };
 
 export type ResultadoValidacaoWebhook =

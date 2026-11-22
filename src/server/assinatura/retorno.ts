@@ -24,7 +24,7 @@ export async function processarAutorizada(
   vigente: Pick<AssinaturaVigente, 'id'>,
   p: AssinaturaProvedor,
   agora: Date,
-  deps: Pick<DepsRetorno, 'log'> = {},
+  deps: Pick<DepsRetorno, 'log'> & { eventoId?: string } = {},
 ): Promise<ResultadoRetorno> {
   if (p.valorCentavos !== PRECO_MENSAL_CENTAVOS) {
     deps.log?.('assinatura.valor_divergente', { assinaturaId: vigente.id });
@@ -37,7 +37,12 @@ export async function processarAutorizada(
       ctx,
       { tipo: 'teste_iniciado', iniciadoEm: p.autorizadaEm ?? agora },
       agora,
-      { r, assinaturaId: vigente.id, ...(deps.log ? { log: deps.log } : {}) },
+      {
+        r,
+        assinaturaId: vigente.id,
+        ...(deps.eventoId ? { eventoId: deps.eventoId } : {}),
+        ...(deps.log ? { log: deps.log } : {}),
+      },
     );
     if (res.resultado === 'aplicado') return 'teste_iniciado';
     if (res.resultado === 'sem_efeito') return 'ja_em_teste';

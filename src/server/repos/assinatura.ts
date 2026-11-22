@@ -288,6 +288,8 @@ export function criarRepoAssinatura(db: Executor): RepoAssinatura {
 /** Varredura do job (sem contexto de salão): candidatas a transição por prazo, cursor por id, sem trava. */
 export interface RepoAssinaturaSistema {
   listarVencidas(agora: Date, depoisDoId: string | null, limite: number): Promise<{ id: string; salaoId: string }[]>;
+  /** D-041: resolve a assinatura local pelo vínculo com o provedor (sem filtro de estado). */
+  buscarPorProvedor(provedorId: string): Promise<{ id: string; salaoId: string; estado: string } | null>;
 }
 
 export function criarRepoAssinaturaSistema(db?: Executor): RepoAssinaturaSistema {
@@ -305,6 +307,16 @@ export function criarRepoAssinaturaSistema(db?: Executor): RepoAssinaturaSistema
          ORDER BY id
          LIMIT ${limite}::int`;
       return linhas.map((l) => ({ id: l.id, salaoId: l.salao_id }));
+    },
+
+    async buscarPorProvedor(provedorId) {
+      const cliente = db ?? obterPrisma();
+      const linhas = await cliente.$queryRaw<{ id: string; salao_id: string; estado: string }[]>`
+        SELECT id::text AS id, salao_id::text AS salao_id, estado::text AS estado
+          FROM assinatura
+         WHERE provedor_assinatura_id = ${provedorId}::text`;
+      const l = linhas[0];
+      return l ? { id: l.id, salaoId: l.salao_id, estado: l.estado } : null;
     },
   };
 }
