@@ -23,7 +23,7 @@ status=$(curl -sS -o /dev/null -w '%{http_code}' "$URL_BASE/api/health") || falh
 [ "$status" = "200" ] || falhar "GET /api/health respondeu $status"
 echo "smoke: GET /api/health -> 200"
 
-for caminho in /confirmar-email /redefinir-senha; do
+for caminho in /confirmar-email /redefinir-senha /convite/x; do
   cabecalhos=$(curl -sS -o /dev/null -D - "$URL_BASE$caminho") || falhar "GET $caminho sem resposta"
   printf '%s\n' "$cabecalhos" | tr -d '\r' | grep -qix 'referrer-policy: strict-origin' \
     || falhar "GET $caminho sem 'referrer-policy: strict-origin'"

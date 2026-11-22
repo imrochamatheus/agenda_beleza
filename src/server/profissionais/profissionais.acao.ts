@@ -23,7 +23,7 @@ export const criarProfissional = defineAcao<EntradaCriar, ResultadoSalvar>(
 
 export const editarProfissional = defineAcao<EntradaEditar, ResultadoSalvar>(
   { papeis: ['gestor'], capacidade: 'configurar' },
-  (ctx, e) => servico.editar(ctx, e),
+  (ctx, e, { agora }) => servico.editar(ctx, e, agora),
 );
 
 export const desativarProfissional = defineAcao<EntradaId, ResultadoDesativar>(

@@ -686,6 +686,8 @@ model RateLimitJanela {
 }
 
 /// Convite de profissional: 7 dias, uso único, token guardado como hash.
+/// Um pendente (aceito_em e invalidado_em nulos, vencido ou não) por profissional: índice parcial
+/// convite_pendente_por_profissional_uniq (SQL bruto, D-039; o Prisma não o expressa).
 model Convite {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   salaoId        String    @map("salao_id") @db.Uuid

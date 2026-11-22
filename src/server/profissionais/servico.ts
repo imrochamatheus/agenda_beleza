@@ -77,10 +77,10 @@ export async function criar(ctx: TenantContext, e: unknown): Promise<ResultadoSa
 }
 
 /**
- * RN-9, D-17: com usuário vinculado, o e-mail do perfil não muda (igual ao atual é ignorado,
+ * RN-9, D-17, D-039 RN-7: com usuário vinculado, o e-mail do perfil não muda (igual ao atual é ignorado,
  * diferente é recusado); `usuario.email` nunca é tocado.
  */
-export async function editar(ctx: TenantContext, e: unknown): Promise<ResultadoSalvar> {
+export async function editar(ctx: TenantContext, e: unknown, agora: Date = new Date()): Promise<ResultadoSalvar> {
   exigirPermissao(ctx, 'profissional.gerir');
   if (!ehObjeto(e)) {
     return { resultado: 'invalido', erros: { formulario: MENSAGENS_PROFISSIONAL.formulario } };
@@ -100,6 +100,11 @@ export async function editar(ctx: TenantContext, e: unknown): Promise<ResultadoS
         return { resultado: 'invalido', erros: { email: MENSAGENS_PROFISSIONAL.emailBloqueado } };
       }
       email = trava.email;
+    }
+    // D-039 RN-7: trocar o e-mail do perfil invalida os convites pendentes, na mesma transação (a trava
+    // FOR UPDATE do profissional já está tomada; ordem profissional → convite).
+    if (email !== (normalizarEmailOpcional(trava.email) ?? trava.email)) {
+      await t.convites.invalidarPendentes(ctx, id, agora);
     }
     await t.profissionais.atualizarDados(ctx, id, { nome: v.dados.nome, email });
     return { resultado: 'salvo', profissional: visao(ctx, await t.profissionais.buscarParaPainel(ctx, id)) };

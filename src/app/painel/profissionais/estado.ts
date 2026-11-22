@@ -35,3 +35,14 @@ export type EstadoDesativacao =
   | { status: 'erro'; mensagem: string };
 
 export const ESTADO_INICIAL_DESATIVACAO: EstadoDesativacao = Object.freeze({ status: 'ocioso' }) as EstadoDesativacao;
+
+/** Resultado do formulário "Enviar/Reenviar convite" (D-039). `aviso` = convite criado, e-mail não enviado. */
+export type EstadoConviteProfissional = {
+  variante: 'sucesso' | 'aviso' | 'erro' | null;
+  mensagem: string | null;
+};
+
+export const ESTADO_INICIAL_CONVITE_PROFISSIONAL: EstadoConviteProfissional = Object.freeze({
+  variante: null,
+  mensagem: null,
+}) as EstadoConviteProfissional;

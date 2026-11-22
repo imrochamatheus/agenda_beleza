@@ -4,6 +4,9 @@ import { notFound } from 'next/navigation';
 import { PanelLayout } from '@/components/layout/PanelLayout';
 import { ROTAS } from '@/config/navegacao';
 import { exigirAcessoAoPainel } from '@/server/auth/pagina';
+import { estadoDosConvites } from '@/server/convites/servico';
+import { SEM_CONVITE } from '@/server/convites/tipos';
+import type { EstadoConviteVisao } from '@/server/convites/tipos';
 import { obterParaEdicao } from '@/server/profissionais/servico';
 import type { ProfissionalVisao } from '@/server/profissionais/tipos';
 import { buscarIdentidadeDoPainel } from '@/server/repos/usuario';
@@ -11,15 +14,16 @@ import { NaoEncontrado } from '@/server/tenant/erros';
 
 import { AcessoNegado } from '../../_componentes/AcessoNegado';
 import { AreaUsuario } from '../../_componentes/AreaUsuario';
-import { desativarProfissionalAcao, editarProfissionalAcao, reativarProfissionalAcao } from '../acoes';
+import { convidarAcao, desativarProfissionalAcao, editarProfissionalAcao, reativarProfissionalAcao } from '../acoes';
+import { ConviteProfissional } from '../ConviteProfissional';
 import { ControleAtivacao } from '../ControleAtivacao';
 import { FormularioProfissional } from '../FormularioProfissional';
 import estilos from '../Profissionais.module.css';
 
 export const metadata: Metadata = { title: 'Profissional', robots: { index: false } };
 
-/** Seção "Acesso" (RN-9, RN-12). Sem acesso: é aqui que a E1.4 coloca "Enviar convite". */
-function Acesso({ p }: { p: ProfissionalVisao }) {
+/** Seção "Acesso" (RN-9, RN-12). Sem acesso: "Enviar convite" / "Reenviar convite" (D-039). */
+function Acesso({ p, convite }: { p: ProfissionalVisao; convite: EstadoConviteVisao }) {
   return (
     <section className={estilos.secao} aria-labelledby="acesso-profissional">
       <h2 id="acesso-profissional">Acesso ao painel</h2>
@@ -32,7 +36,10 @@ function Acesso({ p }: { p: ProfissionalVisao }) {
           Entra no painel com <strong className={estilos.emailLogin}>{p.emailLogin}</strong>.
         </p>
       ) : (
-        <p>Sem acesso ao painel. O convite por e-mail ainda não está disponível.</p>
+        <>
+          <p>Sem acesso ao painel.</p>
+          <ConviteProfissional id={p.id} ativo={p.ativo} email={p.email} convite={convite} acao={convidarAcao} />
+        </>
       )}
     </section>
   );
@@ -60,6 +67,7 @@ export default async function PaginaProfissional({ params }: { params: Promise<{
     notFound();
   }
   const { nomeUsuario, nomeSalao } = await buscarIdentidadeDoPainel(acesso.ctx);
+  const convite = (await estadoDosConvites(acesso.ctx, [profissional.id], new Date()))[profissional.id] ?? SEM_CONVITE;
   return (
     <PanelLayout
       papel={acesso.ctx.papel}
@@ -70,7 +78,7 @@ export default async function PaginaProfissional({ params }: { params: Promise<{
       <div className={estilos.pagina}>
         <h1>{profissional.nome}</h1>
         <FormularioProfissional modo="editar" acao={editarProfissionalAcao} profissional={profissional} />
-        <Acesso p={profissional} />
+        <Acesso p={profissional} convite={convite} />
         <section className={estilos.secao} aria-labelledby="jornada-profissional">
           <h2 id="jornada-profissional">Jornada</h2>
           <p>

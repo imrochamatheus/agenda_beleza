@@ -23,6 +23,16 @@ const nextConfig: NextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex' },
         ],
       },
+      // D-039: o token do convite de profissional está no CAMINHO (/convite/<token>). Mesma política de
+      // referrer (nunca `no-referrer`: o POST sem JS sairia com `Origin: null`), sem cache e fora dos buscadores.
+      {
+        source: '/convite/:token',
+        headers: [
+          ...referrer,
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex' },
+        ],
+      },
       // D-032: o token do convite de avaliação está no CAMINHO. Mesma política de referrer (nunca
       // `no-referrer`: o POST sem JS sairia com `Origin: null`), sem cache e fora dos buscadores.
       {

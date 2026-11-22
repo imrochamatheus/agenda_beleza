@@ -52,4 +52,29 @@ describe('ListaProfissionais', () => {
     expect(screen.getByRole('heading', { name: 'Nenhum profissional cadastrado' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Cadastrar profissional' }).getAttribute('href')).toBe('/painel/profissionais/novo');
   });
+
+  it('D-039 CA-16: selo do convite só para quem está sem acesso (pendente, expirado); sem convite e aceito ficam como estão', () => {
+    render(
+      <ListaProfissionais
+        profissionais={[
+          p({ id: 'a', nome: 'Pendente' }),
+          p({ id: 'b', nome: 'Expirada' }),
+          p({ id: 'c', nome: 'Sem convite' }),
+          p({ id: 'd', nome: 'Com acesso', acesso: 'com_acesso' }),
+        ]}
+        convites={{
+          a: { estado: 'pendente', ate: '26/11/2026' },
+          b: { estado: 'expirado', ate: '10/11/2026' },
+          d: { estado: 'pendente', ate: '26/11/2026' },
+        }}
+      />,
+    );
+    const celulas = screen.getAllByRole('row').slice(1).map((l) => within(l).getAllByRole('cell').at(-1)!.textContent);
+    expect(celulas.map((t) => t?.replace(/^Acesso/, ''))).toEqual([
+      'Sem acesso (convite pendente)',
+      'Sem acesso (convite expirado)',
+      'Sem acesso',
+      'Com acesso',
+    ]);
+  });
 });

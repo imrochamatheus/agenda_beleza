@@ -10,6 +10,8 @@ import { criarRepoBloqueio } from './bloqueio';
 import type { RepoBloqueio } from './bloqueio';
 import { criarRepoCliente } from './cliente';
 import type { RepoCliente } from './cliente';
+import { criarRepoConvite } from './convite';
+import type { RepoConvite } from './convite';
 import { criarRepoConsentimento } from './consentimento';
 import type { RepoConsentimento } from './consentimento';
 import { obterPrisma } from './db';
@@ -37,7 +39,7 @@ import { criarRepoServico } from './servico';
 import type { RepoServico } from './servico';
 import type { Executor } from './transacao';
 
-export type { RepoAgenda, RepoAssinatura, RepoAuditoria, RepoAvaliacao, RepoBloqueio, RepoCliente, RepoConsentimento, RepoDenuncia, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoReservaAlteracao, RepoSalao, RepoServico };
+export type { RepoAgenda, RepoAssinatura, RepoAuditoria, RepoAvaliacao, RepoBloqueio, RepoCliente, RepoConsentimento, RepoConvite, RepoDenuncia, RepoDisponibilidade, RepoFoto, RepoFuncionamento, RepoJornada, RepoMensagem, RepoProfissional, RepoReserva, RepoReservaAlteracao, RepoSalao, RepoServico };
 
 /** Repositórios de tenant: toda operação recebe ContextoEscopado e filtra salao_id (RN-8). */
 export interface Repos {
@@ -59,6 +61,8 @@ export interface Repos {
   fotos: RepoFoto;
   /** Leituras de agenda para o cálculo de disponibilidade (D-018): aceita também PublicoContext. */
   disponibilidade: RepoDisponibilidade;
+  /** Convites de profissional por e-mail (D-039). */
+  convites: RepoConvite;
   /** Mensagens de WhatsApp do salão (D-024): registro, substituição, reenvio e leitura. */
   mensagens: RepoMensagem;
   /** Leituras da agenda da equipe (D-028), somente leitura. */
@@ -88,6 +92,7 @@ export function criarRepos(db: Executor): Repos {
     funcionamento: criarRepoFuncionamento(db),
     fotos: criarRepoFoto(db),
     disponibilidade: criarRepoDisponibilidade(db),
+    convites: criarRepoConvite(db),
     mensagens: criarRepoMensagem(db),
     agenda: criarRepoAgenda(db),
     avaliacoes: criarRepoAvaliacao(db),
