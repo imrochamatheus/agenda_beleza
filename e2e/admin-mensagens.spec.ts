@@ -72,8 +72,11 @@ test.describe('CA-9/CA-14: fila de mensagens (375×812)', () => {
     // O HTML nunca tem o número completo: só DDD e os quatro últimos dígitos.
     const html = await page.content();
     expect(html).toContain('+55 (71) 9****-1234');
-    expect(html).not.toMatch(/\+55\d{10,11}/);
-    expect(html).not.toMatch(/9\d{4}-?\d{4}/);
+    // Sem <script>/<style>: os nomes de arquivo com hash do build (que mudam a cada compilação) têm
+    // sequências de dígitos que casariam com o padrão de telefone e tornariam o teste instável.
+    const marcacao = html.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, '');
+    expect(marcacao).not.toMatch(/\+55\d{10,11}/);
+    expect(marcacao).not.toMatch(/9\d{4}-?\d{4}/);
     await semRolagemHorizontal(page, `${ROTA} (lista)`);
     await analisarComAxe(page, `${ROTA} (lista)`);
   });
