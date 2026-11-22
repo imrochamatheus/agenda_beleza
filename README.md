@@ -588,6 +588,25 @@ O gestor abre **Assinatura** no menu (`/painel/assinatura`) e toca em "Assinar" 
 - Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/assinatura/concorrencia-iniciar.test.ts || break; done` (10 inícios e 10 retornos em paralelo, sem `23505` nem impasse).
 - Testes: `tests/integration/assinatura/{repo-iniciar,iniciar,concorrencia-iniciar,seguranca-iniciar}.test.ts`; E2E: `npx playwright test e2e/assinatura.spec.ts e2e/assinatura-sem-js.spec.ts`.
 
+## Assinatura: webhooks do Mercado Pago (E6.2, D-041)
+
+`POST /api/webhooks/mercadopago` (sem cookie nem CSRF; a origem é validada pela porta `integracoes().mercadoPago`). **URL a cadastrar no Mercado Pago:** `<APP_URL>/api/webhooks/mercadopago`. Em produção, o proxy reverso deve repassar os cabeçalhos `x-request-id` e `x-signature` e o corpo sem alterá-lo (a E6.6 precisará do corpo exato para o HMAC real: a porta já recebe `corpoBruto`).
+
+Ordem: validar a origem, **persistir** em `webhook_evento` (a chave de deduplicação é o `x-request-id`; só eventos válidos deduplicam, então um evento forjado com o mesmo id não bloqueia o legítimo), consultar o provedor fora de transação e aplicar o efeito só por `aplicarEventoAssinatura`. O estado consultado vence o payload. Nunca é bloqueado por salão suspenso (é do sistema).
+
+| Resposta | Quando |
+|---|---|
+| 200 `{"ok":true}` | processado, ignorado (assinatura desconhecida, recurso inexistente, pendente), repetido ou outra entrega em andamento |
+| 401 `{"erro":"nao_autorizado"}` | origem inválida (registrada como `rejeitado`); também acima de 120 inválidos por minuto (global, sem persistir) |
+| 400 / 413 | JSON inválido / corpo acima de 16 KiB (contado em streaming; só metadados são gravados) |
+| 503 + `Retry-After: 60` | falha transitória do provedor ou do banco; a linha fica `erro` e a reentrega do MP a reprocessa (também reprocessa `recebido` há mais de 2 min) |
+
+O `payload` guarda só uma lista branca (`id`, `type`, `action`, `live_mode`, `data.id`, `date_created`) com sequências de 13 ou mais dígitos redigidas.
+
+- Como simular: com `MP_ADAPTER=simulado`, as funções de controle do adaptador (`autorizar`, `aprovarCobranca`, `falharCobranca`, `cancelar`) devolvem a notificação assinada; envie-a como `POST` (query `data.id`/`type`, cabeçalhos e corpo dela). Exemplos em `tests/integration/assinatura/apoio-webhook.ts`.
+- Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/assinatura/webhook-concorrencia.test.ts tests/integration/assinatura/webhook.test.ts || break; done` (3 entregas paralelas, mesmo pagamento em notificações distintas, webhook x retorno x job de prazo, sem `23505` nem impasse).
+- Testes: `src/server/assinatura/webhook-{decisao,estatico}.test.ts` e `tests/integration/assinatura/webhook{,-repo,-concorrencia}.test.ts`.
+
 ## Somente leitura e página indisponível (E6.4, D-038)
 
 Um salão `pendente`, `suspensa`, `encerrada` (inclui `cancelada` vencida) ou suspenso manualmente fica somente leitura. **Uma única política, no servidor** (`src/server/assinatura/politica-operacao.ts`) lê o estado efetivo do salão (`estadoEfetivoDoSalao`, D-037) e responde `capacidades[capacidade]` da tabela `TABELA_CAPACIDADES` (`src/domain/assinatura/capacidades.ts`, a única fonte). Ela é aplicada em `defineAcao` (toda ação de equipe, inclusive o `POST /api/painel/fotos`), em `criarReserva` (contexto de equipe e público/sistema) e em remarcar/cancelar/marcar status; a UI nunca é o controle.

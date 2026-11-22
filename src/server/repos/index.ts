@@ -3,6 +3,8 @@ import type { RepoAgenda } from './agenda';
 import { criarRepoAuditoria } from './auditoria';
 import type { RepoAuditoria } from './auditoria';
 import { criarRepoAssinatura } from './assinatura';
+export { criarRepoWebhookSistema, repoWebhookSistema } from './webhook';
+export type { RepoWebhookSistema } from './webhook';
 import type { RepoAssinatura } from './assinatura';
 import { criarRepoAvaliacao } from './avaliacao';
 import type { RepoAvaliacao } from './avaliacao';
