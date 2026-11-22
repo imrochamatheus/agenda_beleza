@@ -25,6 +25,19 @@ describe('vocabulário', () => {
   });
 });
 
+describe('vocabulário da D-044', () => {
+  const NOVAS = ['salao.atualizar', 'salao.suspender', 'salao.reativar', 'salao.estender_teste', 'usuario.atualizar_email'] as const;
+  it('as cinco ações novas existem, exigem antes e depois em sucesso e a entidade assinatura é aceita', () => {
+    for (const acao of NOVAS) {
+      expect(ACOES_AUDITAVEIS as readonly string[]).toContain(acao);
+      expect(() => montarEntrada({ ...base, acao, entidade: 'salao', entidadeId: SALAO, antes: { a: 1 } })).toThrow(ErroAuditoriaEntrada);
+      expect(montarEntrada({ ...base, acao, entidade: 'salao', entidadeId: SALAO, antes: { a: 1 }, depois: { a: 2 } }).acao).toBe(acao);
+    }
+    expect(ENTIDADES_AUDITAVEIS as readonly string[]).toContain('assinatura');
+    expect(montarEntrada({ atorId: UUID, resultado: 'falha', acao: 'salao.estender_teste', entidade: 'assinatura', entidadeId: SALAO, depois: { dias: 5 } }).entidade).toBe('assinatura');
+  });
+});
+
 describe('montarEntrada (CA-7, CA-9)', () => {
   it('monta a entrada válida de uma mutação', () => {
     const e = montarEntrada({

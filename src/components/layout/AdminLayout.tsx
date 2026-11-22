@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { NAVEGACAO_ADMIN } from '@/config/navegacao';
+import type { ItemNavegacao } from '@/config/navegacao';
 import { siteConfig } from '@/lib/site';
 
 import { Estrutura } from './Estrutura';
@@ -16,6 +17,8 @@ export type AdminLayoutProps = {
   rotuloArea?: string;
   /** Sem o menu: enquanto as telas do menu não existem (D-034, /admin mínima não aponta para 404). */
   semNavegacao?: boolean;
+  /** Itens do menu (D-044: só as telas que existem); padrão NAVEGACAO_ADMIN. */
+  itensNavegacao?: readonly ItemNavegacao[];
 };
 
 /** Layout do super admin (D-009 RN-12, RN-16). */
@@ -25,6 +28,7 @@ export function AdminLayout({
   children,
   rotuloArea = 'Administração da plataforma',
   semNavegacao = false,
+  itensNavegacao = NAVEGACAO_ADMIN,
 }: AdminLayoutProps) {
   return (
     <Estrutura
@@ -38,7 +42,7 @@ export function AdminLayout({
       complementoCabecalho={areaUsuario}
       navegacao={
         semNavegacao ? undefined : (
-          <MenuNavegacao itens={NAVEGACAO_ADMIN} rotulo="Navegação da administração" caminhoAtual={caminhoAtual} />
+          <MenuNavegacao itens={itensNavegacao} rotulo="Navegação da administração" caminhoAtual={caminhoAtual} />
         )
       }
     >

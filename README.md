@@ -363,6 +363,17 @@ Entrega da D-035. Migração `20261124000000_avaliacao_denuncia` (tabela `avalia
 - `acao` e `entidade` vêm de listas fechadas em `tipos.ts` (acrescente por PR). `antes`/`depois`: JSON puro, até 6 níveis e 16 KiB; chaves suspeitas de segredo (`senha`, `token`, `totp`, ...) fazem a gravação FALHAR, nunca são redigidas. Grave só campos de negócio escolhidos, sem PII em valores livres.
 - Testes: `npx vitest run src/server/auditoria` e `npx vitest run --project integration tests/integration/auditoria`.
 
+## Salões no painel do super admin (D-044, E8.2)
+
+`/admin/saloes` (lista) e `/admin/saloes/[id]` (detalhe) só para super admin com TOTP (sem sessão: `/admin/entrar`; gestor e profissional: "Acesso negado"; id malformado ou desconhecido: 404). Todas as ações são `defineAcaoAdmin` (`src/server/admin/saloes.acao.ts`), sem migração, variável ou CI novos.
+
+- **Lista:** nome, endereço atual, estado da assinatura vigente (salão só com `encerrada` = "Sem assinatura"), selo "Suspenso manualmente" e e-mail do gestor; busca por nome (sem acento/caixa), endereço atual ou e-mail do gestor (`%`, `_`, `\` literais); filtros por estado e suspensão; 20 por página em UMA instrução SQL.
+- **Editar** (um só formulário): nome, endereço (o anterior vira histórico), fuso, regras da agenda (mesmas validações da E2.5) e nome/e-mail do gestor. Trocar o e-mail desfaz a confirmação, revoga as sessões do gestor, invalida tokens pendentes e envia o link ao novo endereço depois do commit. Senha nunca é lida nem alterada. Valores iguais não gravam nem auditam.
+- **Suspender/reativar:** só `salao.suspenso_manual_em`, nunca a assinatura nem sessões. Suspender pede motivo (5 a 280, sem e-mail/telefone) e confirmação em duas etapas por POST; o motivo fica só na auditoria. Reativar o salão **não** reativa uma assinatura suspensa.
+- **Estender o teste:** assinatura `em_teste` com vínculo e fim com mais de 5 min; N de 1 a 90 dias (`^[1-9]\d?$`); chama `adiarProximaCobranca` FORA de transação e grava com comparação otimista do fim. Falha do provedor ou corrida: nada muda localmente e uma auditoria `falha` fica gravada. **O adaptador real do Mercado Pago ainda é `NaoImplementado` (E6.6): em produção a extensão só funciona depois dela.** Se o provedor adiou mas o estado local mudou, a divergência exige conferência manual.
+- **Auditoria:** `salao.atualizar`, `salao.suspender`, `salao.reativar`, `salao.estender_teste`, `usuario.atualizar_email`, na mesma transação.
+- **Testes:** `npx vitest run src/server/admin src/app/admin/saloes src/app/dev/admin-saloes` e `npx vitest run --project integration tests/integration/admin-saloes`; demonstração `/dev/admin-saloes` (`?vista=detalhe|detalhe-suspenso|detalhe-sem-assinatura|detalhe-ativa`; na vitrine, 13/14/15 dias simulam falha do provedor, "mudou" e divergência); E2E: `npx playwright test e2e/admin-saloes.spec.ts e2e/admin-saloes-sem-js.spec.ts`. Estabilidade: `for i in $(seq 10); do npx vitest run --project integration tests/integration/admin-saloes/concorrencia.test.ts || break; done`.
+
 ## Super admin e TOTP (E1.5)
 
 Acesso da operação da plataforma, só com senha **e** código TOTP (RFC 6238, HMAC-SHA1, 6 dígitos, 30 s, ±1 janela). Não há cadastro público: a única forma de criar a conta é o script abaixo (e, depois, o seed).
