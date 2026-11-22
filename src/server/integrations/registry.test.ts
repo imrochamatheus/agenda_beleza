@@ -10,7 +10,6 @@ import { criarEmailReal } from './email/real';
 import { criarEmailSimulado } from './email/simulado';
 import { criarMercadoPagoReal } from './mercadopago/real';
 import { criarMercadoPagoSimulado } from './mercadopago/simulado';
-import { NaoImplementado } from './nao-implementado';
 import {
   criarIntegracoes,
   integracoes,
@@ -147,7 +146,7 @@ describe('CA-1: .env.example sem alterações → cinco simulados', () => {
   });
 });
 
-describe('CA-9: seleção "real" do MP e do WhatsApp liga os stubs NaoImplementado', () => {
+describe('CA-9: seleção "real" do MP e do WhatsApp seleciona o adaptador real', () => {
   it('CA-10 (D-046): selecionarMercadoPago real constrói o adaptador real com a config e não o simulado', () => {
     const config = { accessToken: 't', webhookSecret: 's', planoId: 'p' };
     const porta = selecionarMercadoPago({ modo: 'real', config }, { appUrl: 'https://a.com.br' });
@@ -162,32 +161,32 @@ describe('CA-9: seleção "real" do MP e do WhatsApp liga os stubs NaoImplementa
     );
   });
 
-  it('CA-9: selecionarWhatsApp("real") é a instância de whatsapp/real.ts e enviarModelo rejeita (E7.2)', async () => {
-    const porta = selecionarWhatsApp('real');
+  it('CA-11 (D-047): selecionarWhatsApp real constrói o adaptador real com a config e não o simulado', () => {
+    const config = {
+      accessToken: 't',
+      phoneNumberId: '123',
+      versaoApi: 'v25.0',
+      idioma: 'pt_BR',
+      modelos: { confirmacao: 'a', remarcacao: 'b', cancelamento: 'c', convite_avaliacao: 'd' },
+    };
+    const porta = selecionarWhatsApp({ modo: 'real', config });
 
     expect(porta).toBe(ultimaInstancia(criarWhatsAppReal));
+    expect(criarWhatsAppReal).toHaveBeenCalledWith(config);
     expect(criarWhatsAppSimulado).not.toHaveBeenCalled();
     expect(Object.keys(porta)).toEqual(['enviarModelo']);
-    const envio = porta.enviarModelo({
-      destinatarioE164: '+5511987654321',
-      modelo: 'confirmacao',
-      parametros: {},
-      chaveIdempotencia: 'r:confirmacao:1',
-    });
-    await expect(envio).rejects.toBeInstanceOf(NaoImplementado);
-    await expect(envio).rejects.toThrow('E7.2');
   });
 
   it('CA-9: seleção "simulado" liga os simulados', () => {
     expect(selecionarMercadoPago({ modo: 'simulado' }, { appUrl: 'http://localhost:3000' })).toBe(
       ultimaInstancia(criarMercadoPagoSimulado),
     );
-    expect(selecionarWhatsApp('simulado')).toBe(ultimaInstancia(criarWhatsAppSimulado));
+    expect(selecionarWhatsApp({ modo: 'simulado' })).toBe(ultimaInstancia(criarWhatsAppSimulado));
     expect(criarMercadoPagoReal).not.toHaveBeenCalled();
     expect(criarWhatsAppReal).not.toHaveBeenCalled();
   });
 
-  it('D-1 (D-046): o registro recusa WHATSAPP_ADAPTER=real; o MP real sem credenciais nomeia as MP_* e APP_URL, sem construir nada', () => {
+  it('D-047: o registro com MP e WhatsApp reais sem credenciais nomeia as MP_*, APP_URL e as WHATSAPP_* obrigatórias, sem construir nada', () => {
     const erro = erroDe(() =>
       criarIntegracoes({ DATABASE_URL: URL_BANCO, MP_ADAPTER: 'real', WHATSAPP_ADAPTER: 'real' }),
     );
@@ -197,10 +196,33 @@ describe('CA-9: seleção "real" do MP e do WhatsApp liga os stubs NaoImplementa
       'MP_ACCESS_TOKEN',
       'MP_PREAPPROVAL_PLAN_ID',
       'MP_WEBHOOK_SECRET',
-      'WHATSAPP_ADAPTER',
+      'WHATSAPP_ACCESS_TOKEN',
+      'WHATSAPP_PHONE_NUMBER_ID',
+      'WHATSAPP_TEMPLATE_CANCELAMENTO',
+      'WHATSAPP_TEMPLATE_CONFIRMACAO',
+      'WHATSAPP_TEMPLATE_CONVITE_AVALIACAO',
+      'WHATSAPP_TEMPLATE_REMARCACAO',
     ]);
     expect(criarMercadoPagoReal).not.toHaveBeenCalled();
     expect(criarWhatsAppReal).not.toHaveBeenCalled();
+  });
+
+  it('CA-11 (D-047): WHATSAPP_ADAPTER=real com a config completa devolve o adaptador real', () => {
+    const r = criarIntegracoes({
+      DATABASE_URL: URL_BANCO,
+      WHATSAPP_ADAPTER: 'real',
+      WHATSAPP_ACCESS_TOKEN: 'tok',
+      WHATSAPP_PHONE_NUMBER_ID: '123456',
+      WHATSAPP_TEMPLATE_CONFIRMACAO: 'agenda_confirmacao',
+      WHATSAPP_TEMPLATE_REMARCACAO: 'agenda_remarcacao',
+      WHATSAPP_TEMPLATE_CANCELAMENTO: 'agenda_cancelamento',
+      WHATSAPP_TEMPLATE_CONVITE_AVALIACAO: 'agenda_convite_avaliacao',
+    });
+    expect(r.modos.whatsapp).toBe('real');
+    expect(criarWhatsAppReal).toHaveBeenCalledWith(
+      expect.objectContaining({ phoneNumberId: '123456', versaoApi: 'v25.0', idioma: 'pt_BR' }),
+    );
+    expect(criarWhatsAppSimulado).not.toHaveBeenCalled();
   });
 
   it('CA-10: MP_ADAPTER=real com credenciais e APP_URL https devolve o adaptador real', () => {

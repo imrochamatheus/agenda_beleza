@@ -331,7 +331,17 @@ describe('iniciarWorker', () => {
 
     it.each([
       ['MP_ADAPTER', ['APP_URL', 'MP_ACCESS_TOKEN', 'MP_PREAPPROVAL_PLAN_ID', 'MP_WEBHOOK_SECRET']],
-      ['WHATSAPP_ADAPTER', ['WHATSAPP_ADAPTER']],
+      [
+        'WHATSAPP_ADAPTER',
+        [
+          'WHATSAPP_ACCESS_TOKEN',
+          'WHATSAPP_PHONE_NUMBER_ID',
+          'WHATSAPP_TEMPLATE_CANCELAMENTO',
+          'WHATSAPP_TEMPLATE_CONFIRMACAO',
+          'WHATSAPP_TEMPLATE_CONVITE_AVALIACAO',
+          'WHATSAPP_TEMPLATE_REMARCACAO',
+        ],
+      ],
     ])('D-007 CA-9: com %s=real sai com 1 nomeando as variáveis exigidas', async (seletor, nomes) => {
       const { deps, erros } = dependencias({}, { DATABASE_URL: URL_BANCO, [seletor]: 'real' });
       await iniciarWorker(deps).pronto;

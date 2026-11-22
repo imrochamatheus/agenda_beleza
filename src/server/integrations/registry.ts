@@ -18,6 +18,7 @@ import type { ConfigTurnstile } from './turnstile/ambiente';
 import type { PortaTurnstile } from './turnstile/port';
 import { criarTurnstileReal } from './turnstile/real';
 import { criarTurnstileSimulado } from './turnstile/simulado';
+import type { ConfigWhatsAppReal } from './whatsapp/ambiente';
 import type { PortaWhatsApp } from './whatsapp/port';
 import { criarWhatsAppReal } from './whatsapp/real';
 import { criarWhatsAppSimulado } from './whatsapp/simulado';
@@ -82,9 +83,9 @@ export function selecionarArmazenamento(c: ConfigIntegracao<ConfigS3>, fonte: Fo
   return criarArmazenamentoSimulado({ diretorio: dir === undefined || dir === '' ? DIRETORIO_PADRAO : dir });
 }
 
-/** WhatsApp. `real` liga o stub NaoImplementado de `whatsapp/real.ts` (CA-9; E7.2). */
-export function selecionarWhatsApp(modo: Modo): PortaWhatsApp {
-  return modo === 'real' ? criarWhatsAppReal() : criarWhatsAppSimulado();
+/** WhatsApp. `real` usa a ConfigWhatsAppReal validada (D-047); simulado ignora as `WHATSAPP_*`. */
+export function selecionarWhatsApp(c: ConfigIntegracao<ConfigWhatsAppReal>): PortaWhatsApp {
+  return c.modo === 'real' ? criarWhatsAppReal(c.config) : criarWhatsAppSimulado();
 }
 
 /**
@@ -97,7 +98,7 @@ export function criarIntegracoes(fonte: Fonte): Integracoes {
   const { email, whatsapp, mercadoPago, turnstile, armazenamento } = env.integracoes;
   return {
     email: selecionarEmail(email),
-    whatsapp: selecionarWhatsApp(whatsapp.modo),
+    whatsapp: selecionarWhatsApp(whatsapp),
     mercadoPago: selecionarMercadoPago(mercadoPago, { appUrl: env.APP_URL }),
     turnstile: selecionarTurnstile(turnstile, () => fonte),
     armazenamento: selecionarArmazenamento(armazenamento, fonte),

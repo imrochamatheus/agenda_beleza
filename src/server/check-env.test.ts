@@ -64,10 +64,35 @@ describe('executarCheckEnv', () => {
     expect(nomeadas(r.error[0])).toEqual(['SMTP_HOST']);
   });
 
-  it('CA-9: WHATSAPP_ADAPTER=real devolve 1 nomeando o seletor (D-1)', () => {
-    const r = executar({ WHATSAPP_ADAPTER: 'real' });
+  it('CA-9 (D-047): WHATSAPP_ADAPTER=real sem credenciais devolve 1 nomeando todas as faltantes, sem valores', () => {
+    const r = executar({ WHATSAPP_ADAPTER: 'real', WHATSAPP_API_VERSION: 'abc' });
     expect(r.codigo).toBe(1);
-    expect(nomeadas(r.error[0])).toEqual(['WHATSAPP_ADAPTER']);
+    expect(r.log).toEqual([]);
+    expect(nomeadas(r.error[0])).toEqual([
+      'WHATSAPP_ACCESS_TOKEN',
+      'WHATSAPP_API_VERSION',
+      'WHATSAPP_PHONE_NUMBER_ID',
+      'WHATSAPP_TEMPLATE_CANCELAMENTO',
+      'WHATSAPP_TEMPLATE_CONFIRMACAO',
+      'WHATSAPP_TEMPLATE_CONVITE_AVALIACAO',
+      'WHATSAPP_TEMPLATE_REMARCACAO',
+    ]);
+    expect(r.error[0]).not.toContain('abc');
+  });
+
+  it('CA-9 (D-047): WHATSAPP_ADAPTER=real completo passa e o log mostra whatsapp=real, sem o token', () => {
+    const r = executar({
+      WHATSAPP_ADAPTER: 'real',
+      WHATSAPP_ACCESS_TOKEN: 'token-whatsapp-secreto',
+      WHATSAPP_PHONE_NUMBER_ID: '123456789',
+      WHATSAPP_TEMPLATE_CONFIRMACAO: 'agenda_confirmacao',
+      WHATSAPP_TEMPLATE_REMARCACAO: 'agenda_remarcacao',
+      WHATSAPP_TEMPLATE_CANCELAMENTO: 'agenda_cancelamento',
+      WHATSAPP_TEMPLATE_CONVITE_AVALIACAO: 'agenda_convite_avaliacao',
+    });
+    expect(r.codigo).toBe(0);
+    expect(r.log[0]).toContain('whatsapp=real');
+    expect(r.tudo).not.toContain('token-whatsapp-secreto');
   });
 
   it('CA-3/CA-4 (D-046): MP_ADAPTER=real sem credenciais devolve 1 nomeando as MP_* e APP_URL, sem valores', () => {

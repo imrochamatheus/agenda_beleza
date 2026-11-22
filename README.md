@@ -406,10 +406,10 @@ Cada serviço externo fica atrás de uma **porta** (`src/server/integrations/<se
 | Cloudflare Turnstile | `TURNSTILE_ADAPTER` | aceita só o token de teste documentado abaixo | `siteverify` da Cloudflare, com `TURNSTILE_SITE_KEY` e `TURNSTILE_SECRET_KEY` |
 | Armazenamento de fotos | `STORAGE_ADAPTER` | arquivos em `ARMAZENAMENTO_DIR` (padrão `.armazenamento`) | compatível com S3 (`@aws-sdk/client-s3`), configurado pelas variáveis `S3_*` |
 | Mercado Pago (assinaturas) | `MP_ADAPTER` | estado nas tabelas `sim_mp_*` e checkout em `/dev/mp-checkout` | API de Assinaturas (preapproval) do Mercado Pago, com `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` e `MP_PREAPPROVAL_PLAN_ID` (D-046; ainda não validado no sandbox) |
-| WhatsApp Cloud API | `WHATSAPP_ADAPTER` | registra cada chamada em `sim_whatsapp_chamada` | adaptador real: E7.2 (ainda recusado na inicialização) |
+| WhatsApp Cloud API | `WHATSAPP_ADAPTER` | registra cada chamada em `sim_whatsapp_chamada` | adaptador real: D-047 (WhatsApp Cloud API; ver "Credenciais para os serviços reais") |
 
 - **Valores aceitos:** `simulado` ou `real`. Vazio ou ausente vale `simulado`. Com o `.env.example` sem alterações, os cinco ficam no modo simulado, sem nenhuma credencial.
-- **Validação na inicialização:** o `check-env` (entrypoint da app e do worker) e o próprio worker validam o ambiente **antes** de migrar ou de processar qualquer coisa. Se faltar ou estiver inválida alguma variável exigida pelo modo `real`, o processo sai com código diferente de 0, e o log nomeia as variáveis, nunca os valores. Exemplo: `EMAIL_ADAPTER=real` sem `SMTP_HOST` nomeia `SMTP_HOST`. Com o `.env.example` sem alterações (em que `EMAIL_FROM` também está vazio), a saída real é `check-env: Variáveis de ambiente ausentes ou inválidas: EMAIL_FROM, SMTP_HOST`. `MP_ADAPTER=real` exige `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `MP_PREAPPROVAL_PLAN_ID` e `APP_URL` com `https://` (todas as ausentes são nomeadas juntas; `APP_URL` http só vale no simulado); hoje `WHATSAPP_ADAPTER=real` é sempre recusado, nomeando o seletor.
+- **Validação na inicialização:** o `check-env` (entrypoint da app e do worker) e o próprio worker validam o ambiente **antes** de migrar ou de processar qualquer coisa. Se faltar ou estiver inválida alguma variável exigida pelo modo `real`, o processo sai com código diferente de 0, e o log nomeia as variáveis, nunca os valores. Exemplo: `EMAIL_ADAPTER=real` sem `SMTP_HOST` nomeia `SMTP_HOST`. Com o `.env.example` sem alterações (em que `EMAIL_FROM` também está vazio), a saída real é `check-env: Variáveis de ambiente ausentes ou inválidas: EMAIL_FROM, SMTP_HOST`. `MP_ADAPTER=real` exige `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `MP_PREAPPROVAL_PLAN_ID` e `APP_URL` com `https://` (todas as ausentes são nomeadas juntas; `APP_URL` http só vale no simulado); `WHATSAPP_ADAPTER=real` exige `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` e os quatro nomes de template (`WHATSAPP_TEMPLATE_CONFIRMACAO` etc.) (todas as ausentes ou inválidas são nomeadas juntas; `WHATSAPP_API_VERSION` e `WHATSAPP_TEMPLATE_IDIOMA` têm padrão, mas se informadas precisam ser válidas).
 - **No modo simulado**, as variáveis do provedor são ignoradas, mesmo com valores inválidos.
 - **Modos ativos no log:** a app imprime `check-env: ambiente válido (adaptadores: armazenamento=simulado, email=simulado, mp=simulado, turnstile=simulado, whatsapp=simulado)`, e o worker emite o evento JSON `worker.adaptadores` antes do primeiro heartbeat (`docker compose logs app worker`).
 - **Build:** o `next build` não valida o ambiente e não precisa de `.env`. O registro só lê as variáveis no primeiro uso, em runtime.
@@ -537,7 +537,7 @@ O worker (`src/worker/main.ts` → `src/worker/iniciar.ts`) é um processo separ
 
 ## Mensagens de WhatsApp (outbox, envio, tentativas e backoff)
 
-Pipeline da D-024 (E7.1). Ainda não há tela nem rota: as demandas de reserva (E3.2, E3.4, E3.5), de avaliação (E4.5), de anonimização (E5.2), de situação (E7.3) usam as funções abaixo (o super admin usa `reenviarMensagemAdmin`, D-045). O adaptador real do WhatsApp é a E7.2; até lá `WHATSAPP_ADAPTER=simulado` (o real ainda é recusado na inicialização).
+Pipeline da D-024 (E7.1). Ainda não há tela nem rota: as demandas de reserva (E3.2, E3.4, E3.5), de avaliação (E4.5), de anonimização (E5.2), de situação (E7.3) usam as funções abaixo (o super admin usa `reenviarMensagemAdmin`, D-045). O adaptador real do WhatsApp (D-047) é ligado por `WHATSAPP_ADAPTER=real` (ver "Credenciais para os serviços reais"); o padrão local é `simulado`.
 
 - **Tipos e chave:** `confirmacao`, `remarcacao`, `cancelamento` e `convite_avaliacao`. Uma mensagem por `reserva:tipo:revisao` (`<reservaId>:<tipo>:<revisao>`): é a `UNIQUE` do banco, a `singletonKey` do pg-boss e a chave de idempotência entregue ao adaptador. Revisões: `confirmacao` e `convite_avaliacao` = 0; `remarcacao` e `cancelamento` = `reserva.revisao` (a E3.4 incrementa antes de registrar).
 - **Estados:** `pendente` → `enviando` → `enviada`; `falhou` (só sai por reenvio manual); `nao_enviada` (sem consentimento da finalidade); `substituida` (obsoleta ou trocada por evento posterior); `cancelada_anonimizacao` (cliente anonimizada). `enviada`, `nao_enviada`, `substituida` e `cancelada_anonimizacao` são finais.
@@ -849,4 +849,29 @@ PENDENTE DE VALIDAÇÃO NO SANDBOX (não confirmado na documentação oficial; o
 
 ### WhatsApp Business Platform (`WHATSAPP_ADAPTER=real`)
 
-**Adaptador real: E7.2.** Hoje `WHATSAPP_ADAPTER=real` é recusado na inicialização. Credenciais que serão necessárias: uma conta do WhatsApp Business Platform (Cloud API), um número de telefone registrado, um token de acesso e **4 templates aprovados**: confirmação, remarcação, cancelamento e o convite de avaliação (`convite_avaliacao`, acrescentado na D-024). Os parâmetros são nomeados e a E7.2 os mapeia à posição de cada template: `confirmacao` e `remarcacao` com `salao`, `servicos`, `profissional`, `data` e `horario`; `cancelamento` com `salao`, `servicos`, `data` e `horario`; `convite_avaliacao` com `salao` e `link`. As variáveis serão definidas pela E7.2.
+Adaptador real da D-047, sobre `fetch` (sem SDK), em `src/server/integrations/whatsapp/` (`POST https://graph.facebook.com/{versão}/{phone-number-id}/messages`, mensagem de modelo). **PENDENTE DE VALIDAÇÃO NA META (E9.3):** o código foi validado só por testes de contrato com servidor HTTP local; nenhuma credencial real foi usada.
+
+| Variável | Uso |
+|---|---|
+| `WHATSAPP_ACCESS_TOKEN` | token de acesso (credencial; só em memória, nunca em log nem erro) |
+| `WHATSAPP_PHONE_NUMBER_ID` | id do número de telefone da conta (só dígitos) |
+| `WHATSAPP_API_VERSION` | versão da Graph API; opcional, padrão `v25.0` (constante `VERSAO_API_PADRAO`) |
+| `WHATSAPP_TEMPLATE_CONFIRMACAO`, `WHATSAPP_TEMPLATE_REMARCACAO`, `WHATSAPP_TEMPLATE_CANCELAMENTO`, `WHATSAPP_TEMPLATE_CONVITE_AVALIACAO` | nomes dos **4 templates aprovados** (`^[a-z0-9_]{1,512}$`) |
+| `WHATSAPP_TEMPLATE_IDIOMA` | idioma dos templates; opcional, padrão `pt_BR` |
+
+Passos:
+1. Crie a conta do WhatsApp Business Platform (Cloud API), registre o número e gere um token de acesso permanente.
+2. Cadastre e aprove os **4 templates** (confirmação, remarcação, cancelamento e convite de avaliação) com os textos, a categoria (UTILITY), as variáveis e os exemplos de `docs/whatsapp-templates.md`. A ordem das variáveis é fixa: `confirmacao` e `remarcacao` com `salao`, `servicos`, `profissional`, `data`, `horario`; `cancelamento` com `salao`, `servicos`, `data`, `horario`; `convite_avaliacao` com `salao`, `link`. Valor vazio vai como `-`.
+3. Preencha as variáveis acima e use `WHATSAPP_ADAPTER=real` (app e worker). Faltando alguma, o `check-env` e o worker saem com código diferente de 0 nomeando as variáveis.
+4. Erros: permanentes (número inválido, template inexistente ou pausado, parâmetros inválidos, não entregue) vão a `falhou` sem nova tentativa; temporários (rede, tempo limite de 10 s, HTTP 5xx, 429/limite de taxa, `error.code` de indisponibilidade e de credencial/configuração, como 401/403/190) voltam a `pendente` com backoff e, esgotadas as tentativas, a `falhou` (reenviável pelo super admin). O adaptador **nunca** repete a chamada sozinho. Lista fechada de `erro_codigo` do adaptador: `limite_de_taxa`, `provedor_indisponivel`, `configuracao_invalida`, `numero_invalido`, `destinatario_recusado`, `nao_entregue`, `modelo_invalido`, `parametros_invalidos`, `requisicao_invalida`, `resposta_inesperada`, `resposta_invalida`, `parametro_ausente`, `rede`, `timeout`.
+5. **Duplicidade aceita:** a Cloud API não tem chave de idempotência em `/messages`; se a chamada expirar depois de a Meta aceitar o pedido (ou a resposta 2xx vier malformada), a mensagem é reenviada e pode chegar duas vezes. A chave `reserva:tipo:revisao` garante a unicidade dentro do sistema e não vai à Meta.
+
+PENDENTE DE VALIDAÇÃO NA META (não confirmado na documentação oficial; o spike E9.3 confere cada item):
+- Corpo `type: "template"`, `template.language.code` e `components[{type:"body",parameters:[{type:"text",text}]}]`: só confirmados por exemplos de terceiros e pelo guia de templates (que diz apenas que o número de strings deve igualar o de parâmetros do modelo).
+- Normalização dos parâmetros (sem `\n`, `\t` e sem mais de 4 espaços seguidos) e limite de 1024 caracteres por parâmetro: sem fonte oficial; parâmetro vazio vai como `-` por defesa (o código 132012 não é confirmado para esse caso).
+- HTTP associado a cada `error.code`: a página oficial de erros não o informa; a classificação usa `error.code` primeiro e o HTTP só como reserva (5xx e 429 sempre temporários). O código 131030 não consta da página oficial (fonte secundária: só número de teste fora da lista permitida); 131047 e 132012 têm sinal conflitante.
+- Ausência de chave de idempotência (confirmada só por silêncio da documentação).
+- `to` só com dígitos (a Meta aceita `+`, `-`, parênteses e espaços; escolhido o formato sem ambiguidade).
+- `message_status` (`held_for_quality_assessment`, `paused`) é tratado como aceito, desde que haja `messages[0].id`.
+- Versão padrão `v25.0` (vigente até 07/2028 segundo o changelog); a Meta pode descontinuá-la antes, e então `WHATSAPP_API_VERSION` a sobrescreve.
+- Categoria UTILITY do convite de avaliação: a Meta pode reclassificá-lo como MARKETING (custo maior).
