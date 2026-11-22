@@ -12,10 +12,17 @@ export const ACOES_AUDITAVEIS = [
   'totp.cadastrar',
   // D-035 (E8.4): arquivar denúncias de avaliação sem retirar (entidade `avaliacao_denuncia`).
   'avaliacao.denuncia_resolver',
+  // D-044 (E8.2): salões no painel do super admin. `salao.renomear` segue reservado e NÃO é usado (o nome
+  // sai em `salao.atualizar`, só com os campos alterados). `usuario.atualizar_email` é do gestor.
+  'salao.atualizar',
+  'salao.suspender',
+  'salao.reativar',
+  'salao.estender_teste',
+  'usuario.atualizar_email',
 ] as const;
 export type AcaoAuditavel = (typeof ACOES_AUDITAVEIS)[number];
 
-export const ENTIDADES_AUDITAVEIS = ['avaliacao', 'avaliacao_denuncia', 'salao', 'usuario'] as const;
+export const ENTIDADES_AUDITAVEIS = ['assinatura', 'avaliacao', 'avaliacao_denuncia', 'salao', 'usuario'] as const;
 export type EntidadeAuditavel = (typeof ENTIDADES_AUDITAVEIS)[number];
 
 /** Ações de "mutação com valor anterior e novo": `antes` e `depois` são obrigatórios em sucesso. */
@@ -23,6 +30,11 @@ export const ACOES_COM_ANTES_DEPOIS: readonly AcaoAuditavel[] = [
   'avaliacao.retirar',
   'avaliacao.restaurar',
   'salao.renomear',
+  'salao.atualizar',
+  'salao.suspender',
+  'salao.reativar',
+  'salao.estender_teste',
+  'usuario.atualizar_email',
 ];
 
 export const FORMATO_ACAO = /^[a-z][a-z_]*\.[a-z][a-z_]*$/;

@@ -41,6 +41,8 @@ vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
   },
+  // O menu do admin (D-044) é um componente cliente que lê o caminho.
+  usePathname: () => '/admin',
 }));
 
 let c: pg.Client;

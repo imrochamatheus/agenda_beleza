@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { PublicLayout } from '@/components/layout/PublicLayout';
 import { Button } from '@/components/ui/Button';
-import { ROTAS } from '@/config/navegacao';
+import { NAVEGACAO_ADMIN_DISPONIVEL, ROTAS } from '@/config/navegacao';
 import { exigirAcessoAoAdmin } from '@/server/auth/admin/pagina';
 import { lerIdentidadeDoAdmin } from '@/server/repos/admin';
 
@@ -12,7 +12,7 @@ import { sairAdminAcao } from './acoes';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Administração', robots: { index: false, follow: false } };
 
-/** /admin mínima (D-034 CA-12): nome do admin e "Sair", sem links para telas que ainda não existem. */
+/** /admin mínima (D-034 CA-12): nome do admin e "Sair"; o menu e os atalhos só levam a telas que existem. */
 export default async function PaginaAdmin() {
   const acesso = await exigirAcessoAoAdmin();
   if (acesso.tipo === 'negado') {
@@ -30,7 +30,7 @@ export default async function PaginaAdmin() {
   return (
     <AdminLayout
       caminhoAtual={ROTAS.admin}
-      semNavegacao
+      itensNavegacao={NAVEGACAO_ADMIN_DISPONIVEL}
       areaUsuario={
         <form action={sairAdminAcao}>
           <Button type="submit" variante="discreta">
@@ -43,6 +43,9 @@ export default async function PaginaAdmin() {
       <p>{identidade?.email}</p>
       <nav aria-label="Atalhos da administração">
         <ul>
+          <li>
+            <a href={ROTAS.adminSaloes}>Salões</a>
+          </li>
           <li>
             <a href={ROTAS.adminAvaliacoes}>Moderação de avaliações</a>
           </li>

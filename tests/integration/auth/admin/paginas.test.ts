@@ -47,6 +47,8 @@ vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
   },
+  // O menu do admin (D-044) é um componente cliente que lê o caminho.
+  usePathname: () => '/admin',
 }));
 
 const form = (campos: Record<string, string>) => {
@@ -113,7 +115,9 @@ describe('fluxo completo pelas ações e páginas', () => {
     expect(painel).toContain('Olá, Admin de teste');
     expect(painel).toContain(admin.email);
     expect(painel).toContain('Sair');
-    expect(painel).not.toContain('/admin/saloes');
+    // D-044: Salões existe; as telas que ainda não existem continuam sem link.
+    expect(painel).toContain('/admin/saloes');
+    expect(painel).not.toMatch(/\/admin\/(mensagens|auditoria)/);
     expect(await destinoDe(PaginaAdminEntrar({ searchParams: Promise.resolve({}) }))).toBe('/admin');
 
     // Sair: revoga, apaga o cookie (Max-Age 0) e volta ao login.
