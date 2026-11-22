@@ -173,6 +173,70 @@
   overflow-wrap: anywhere;
 }
 
+/* Falha de mensagem vigente (D-043): o bloco só ganha respiro à direita; altura e posição não mudam. */
+.evento.comFalha {
+  padding-right: 1.5rem;
+}
+
+.marcaFalha {
+  position: absolute;
+  top: 0.125rem;
+  right: 0.125rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  text-decoration: none;
+  pointer-events: none;
+}
+
+.marcaIcone {
+  display: block;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.marcaForma {
+  fill: var(--cor-erro-texto);
+  stroke: var(--cor-erro-texto);
+  stroke-linejoin: round;
+  stroke-width: 1;
+}
+
+.marcaSinal {
+  fill: none;
+  stroke: var(--cor-sobre-perigo);
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
+.marcaPonto {
+  fill: var(--cor-sobre-perigo);
+}
+
+/* Texto só para leitor de tela (sem cor, sem token). */
+.somenteLeitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Lista da semana: o texto fica visível; o inline-flex é atômico, então não herda o riscado do cancelado. */
+.linhaFalha {
+  display: block;
+}
+
+.marcaLista {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espaco-1);
+  color: var(--cor-erro-texto);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
 a.evento:focus-visible {
   z-index: 3;
   outline: var(--foco-largura) solid var(--cor-foco);

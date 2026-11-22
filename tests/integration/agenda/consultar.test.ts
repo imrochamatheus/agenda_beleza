@@ -170,7 +170,7 @@ describe('CA-5, CA-6, CA-12: reservas', () => {
 });
 
 describe('detalhe: contato (CA-17) e campos', () => {
-  it('gestor e a profissional da reserva recebem o telefone; sem mensagens no DTO', async () => {
+  it('gestor e a profissional da reserva recebem o telefone; sem lista de mensagens no DTO', async () => {
     const ce = await criarCenario();
     const cli = await inserirCliente(c, ce.s.salaoId, 'Maria', '+5511955550002');
     const id = await reservar(c, ce, { profissionalId: ce.ana, inicio: hora('10:00'), clienteId: cli });
@@ -190,7 +190,8 @@ describe('detalhe: contato (CA-17) e campos', () => {
         duracaoTotalMin: 60,
       });
       expect(d.inicio).toEqual(hora('10:00'));
-      expect(Object.keys(d).join()).not.toMatch(/mensag|whatsapp|parametros/i);
+      // D-043: o DTO só ganha o indicador de falha vigente; nenhuma lista de mensagens, parâmetro nem WhatsApp.
+      expect(Object.keys(d).filter((k) => k !== 'temFalhaDeMensagem').join()).not.toMatch(/mensag|whatsapp|parametros/i);
     }
   });
 

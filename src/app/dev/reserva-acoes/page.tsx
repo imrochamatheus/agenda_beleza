@@ -42,7 +42,7 @@ export default async function DemonstracaoReservaAcoes({ searchParams }: Props) 
     : acoesPermitidas({ status: reserva.status, inicio: reserva.inicio, fim: reserva.fim, agora });
   return (
     <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_SALAO_DEMO} caminhoAtual={ROTAS.agenda}>
-      <DetalheDaReserva reserva={reserva} hrefVoltar={ROTAS.devAgenda} />
+      <DetalheDaReserva reserva={reserva} hrefVoltar={ROTAS.devAgenda} mensagens={[]} />
       <AcoesDaReserva
         reservaId={reserva.id}
         resultado={resultado}

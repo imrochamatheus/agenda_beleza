@@ -43,6 +43,8 @@ export type ReservaDaAgenda = {
   origem: OrigemAgenda;
   encaixe: boolean;
   clienteNome: string | null;
+  /** Há mensagem de WhatsApp `falhou` vigente (D-043 RN-11). */
+  temFalhaDeMensagem: boolean;
   itens: ItemDaAgenda[];
 };
 
@@ -111,6 +113,7 @@ export type DetalheDaReserva = {
   status: StatusAgenda;
   origem: OrigemAgenda;
   encaixe: boolean;
+  temFalhaDeMensagem: boolean;
   itens: ItemDaAgenda[];
   totalCentavos: number;
   duracaoTotalMin: number;

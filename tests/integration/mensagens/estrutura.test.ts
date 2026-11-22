@@ -75,7 +75,9 @@ describe('CA-26: sem rota, sem ação, sem "use server" e sem repositório em sr
     for (const f of arquivos('src/app')) {
       const t = ler(f);
       expect(t, f).not.toMatch(/repos\/mensagem/);
-      expect(t, f).not.toMatch(/@\/server\/mensagens/);
+      // D-043 (E7.3): a UI só lê a situação por estes módulos (rótulos e tipos client-safe e a consulta
+      // com escopo de agenda.ver); pipeline, registro, envio e reenvio seguem fora de src/app.
+      expect(t, f).not.toMatch(/@\/server\/mensagens(?!\/(rotulos|situacao-tipos|tipos|consultar-por-reserva)')/);
     }
   });
 });

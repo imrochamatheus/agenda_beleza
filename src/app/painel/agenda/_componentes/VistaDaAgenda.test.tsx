@@ -158,3 +158,31 @@ describe('aviso de truncamento', () => {
     expect(screen.getByText('Nenhum profissional com agenda neste período.')).toBeTruthy();
   });
 });
+
+describe('marca de falha de mensagem (D-043 CA-8, CA-14)', () => {
+  it('dia: só os blocos com falha vigente têm a marca, com texto acessível dentro do link, sem nova parada de tabulação', () => {
+    renderizar({ data: '2026-12-01' });
+    const comFalha = screen.getAllByRole('link', { name: /Falha ao enviar mensagem/ });
+    expect(comFalha.map((l) => l.getAttribute('href'))).toEqual(['/r/demo-r1', '/r/demo-r4']);
+    // O texto acessível vem antes do horário e fica dentro do link.
+    expect(comFalha[0].textContent).toMatch(/^Falha ao enviar mensagem\. 10:00–11:00 Maria Souza/);
+    expect(comFalha[0].querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+    expect(comFalha[0].querySelectorAll('a, button, [tabindex]')).toHaveLength(0);
+    // Sem a falha, o nome do link não muda.
+    const sem = screen.getByRole('link', { name: /Joana Lima/ });
+    expect(sem.textContent).not.toContain('Falha');
+    expect(sem.querySelector('svg')).toBeNull();
+  });
+
+  it('semana: a marca tem texto visível dentro do item da reserva', () => {
+    renderizar({ data: '2026-12-01', visao: 'semana' });
+    const terca = screen.getByRole('region', { name: 'Terça-feira, 01/12/2026' });
+    const links = within(terca).getAllByRole('link', { name: /Falha ao enviar mensagem/ });
+    expect(links).toHaveLength(2);
+    for (const l of links) {
+      expect(l.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+      expect(l.textContent).toMatch(/Falha ao enviar mensagem$/);
+    }
+    expect(within(terca).getByRole('link', { name: /Joana Lima/ }).textContent).not.toContain('Falha');
+  });
+});

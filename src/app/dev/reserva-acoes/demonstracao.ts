@@ -39,6 +39,7 @@ export function detalheDemo(vista: Vista, agora: Date): DetalheDaReserva {
     status: vista === 'concluida' ? 'concluido' : vista === 'cancelada' ? 'cancelado' : 'confirmado',
     origem: 'equipe',
     encaixe: false,
+    temFalhaDeMensagem: false,
     itens: [{ nome: SERVICOS_DEMO[0].nome, precoCentavos: SERVICOS_DEMO[0].precoCentavos, duracaoMin: SERVICOS_DEMO[0].duracaoMin }],
     totalCentavos: SERVICOS_DEMO[0].precoCentavos,
     duracaoTotalMin: SERVICOS_DEMO[0].duracaoMin,

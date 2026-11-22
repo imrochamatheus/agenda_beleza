@@ -4,7 +4,7 @@ import { MENSAGENS_AGENDA } from '@/server/agenda/tipos';
 import type { AgendaVista, FaixaDoDia } from '@/server/agenda/tipos';
 
 import estilos from './Agenda.module.css';
-import { ConteudoDaReserva, rotuloDoBloqueio } from './Eventos';
+import { ConteudoDaReserva, MarcaDeFalha, rotuloDoBloqueio } from './Eventos';
 
 type Props = { vista: AgendaVista; hrefReserva: (id: string) => string };
 
@@ -55,6 +55,7 @@ export function ListaDaSemana({ vista, hrefReserva }: Props) {
                         <li key={it.chave} className={`${estilos.item} ${estilos[r.status]}`}>
                           <a href={hrefReserva(r.id)}>
                             <ConteudoDaReserva reserva={r} faixa={it.faixa} />
+                            {r.temFalhaDeMensagem ? <MarcaDeFalha variante="lista" /> : null}
                           </a>
                         </li>
                       );

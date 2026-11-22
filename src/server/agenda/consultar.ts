@@ -32,6 +32,7 @@ function paraReserva(l: LinhaAgenda): ReservaDaAgenda {
     origem: l.origem,
     encaixe: l.encaixe,
     clienteNome: l.clienteNome,
+    temFalhaDeMensagem: l.temFalhaDeMensagem,
     itens: l.itens,
   };
 }
@@ -106,7 +107,8 @@ export async function consultarAgenda(
 /**
  * Detalhe somente leitura de uma reserva (RN-10, RN-11). Reserva inexistente, malformada, de outro
  * salão ou de outro profissional → NaoEncontrado, sempre o mesmo. O telefone vem de lerContatoDaCliente
- * (operação `cliente.contato`); se essa leitura falhar, o detalhe abre sem o telefone. Sem mensagens.
+ * (operação `cliente.contato`); se essa leitura falhar, o detalhe abre sem o telefone. As mensagens vêm de consultarMensagensDaReserva
+ * (D-043); aqui só o indicador de falha vigente.
  */
 export async function lerReservaDaAgenda(ctx: TenantContext, id: unknown): Promise<DetalheDaReserva> {
   exigirPermissao(ctx, 'agenda.ver');
@@ -135,6 +137,7 @@ export async function lerReservaDaAgenda(ctx: TenantContext, id: unknown): Promi
     status: linha.status,
     origem: linha.origem,
     encaixe: linha.encaixe,
+    temFalhaDeMensagem: linha.temFalhaDeMensagem,
     itens: linha.itens,
     totalCentavos: linha.itens.reduce((t, i) => t + i.precoCentavos, 0),
     duracaoTotalMin: linha.itens.reduce((t, i) => t + i.duracaoMin, 0),

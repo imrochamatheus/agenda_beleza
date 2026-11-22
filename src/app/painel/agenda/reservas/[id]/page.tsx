@@ -6,6 +6,8 @@ import { ROTAS } from '@/config/navegacao';
 import { formatarDuracao, formatarMinutosDoDia, formatarMoeda } from '@/lib/format';
 import { lerReservaDaAgenda } from '@/server/agenda/consultar';
 import type { DetalheDaReserva as Detalhe } from '@/server/agenda/tipos';
+import { consultarMensagensDaReserva } from '@/server/mensagens/consultar-por-reserva';
+import type { MensagemSituacao } from '@/server/mensagens/situacao-tipos';
 import { isoDaData } from '@/server/agenda/validacao';
 import { exigirAcessoAoPainel } from '@/server/auth/pagina';
 import { repos } from '@/server/repos';
@@ -41,8 +43,9 @@ export default async function PaginaReserva({ params, searchParams }: Props) {
     return <AcessoNegado />;
   }
   let reserva: Detalhe | null = null;
+  let mensagens: MensagemSituacao[] = [];
   try {
-    reserva = await lerReservaDaAgenda(acesso.ctx, id);
+    [reserva, mensagens] = await Promise.all([lerReservaDaAgenda(acesso.ctx, id), consultarMensagensDaReserva(acesso.ctx, id)]);
   } catch (e) {
     if (!(e instanceof NaoEncontrado)) throw e;
   }
@@ -68,7 +71,7 @@ export default async function PaginaReserva({ params, searchParams }: Props) {
       caminhoAtual={ROTAS.agenda}
       areaUsuario={<AreaUsuario nome={nomeUsuario} />}
     >
-      <DetalheDaReserva reserva={reserva} hrefVoltar={voltar} />
+      <DetalheDaReserva reserva={reserva} hrefVoltar={voltar} mensagens={mensagens} />
       <AcoesDaReserva
         reservaId={reserva.id}
         resultado={resultado}
