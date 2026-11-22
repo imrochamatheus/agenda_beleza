@@ -22,7 +22,7 @@ export async function alterarStatus(
   deps: DependenciasAlteracao,
 ): Promise<ResultadoStatus> {
   const previa = await localizarReserva(ctx, reservaId);
-  await aplicarPolitica(ctx, 'cancelar', deps);
+  await aplicarPolitica(ctx, 'cancelar', deps, agora);
   const para = permitidos.find((p) => p === destino);
   if (para === undefined) {
     // Destino fora do que a operação aceita: recusado sem gravar (a máquina também recusaria).

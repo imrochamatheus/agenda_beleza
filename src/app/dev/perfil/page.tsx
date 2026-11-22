@@ -35,7 +35,7 @@ export default async function DemonstracaoPerfil({ searchParams }: Props) {
   const params = await searchParams;
   const valores = params.vazio === '1' ? VALORES_PERFIL_VAZIOS : valoresDoPerfil(PERFIL_DEMONSTRACAO);
   return (
-    <PanelLayout papel="gestor" nomeSalao={NOME_DEMONSTRACAO} caminhoAtual={ROTAS.configuracoesPerfil}>
+    <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_DEMONSTRACAO} caminhoAtual={ROTAS.configuracoesPerfil}>
       <div className={estilos.pagina}>
         <p className={estilos.voltar}>
           <a href={ROTAS.configuracoes}>Voltar para Configurações</a>

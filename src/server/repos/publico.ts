@@ -197,47 +197,6 @@ export async function lerFotosPublicasDoSalao(ctx: PublicoContext): Promise<Linh
      ORDER BY posicao`;
 }
 
-/** Estado bruto para decidir "agendamento disponível" (D-026 §2): sem e-mail, sem ids de provedor. */
-export type EstadoBrutoDeAgendamento = {
-  suspensoManualEm: Date | null;
-  assinatura: {
-    estado: 'pendente' | 'em_teste' | 'ativa' | 'em_carencia' | 'suspensa' | 'cancelada' | 'encerrada';
-    acessoAte: Date | null;
-  } | null;
-};
-
-type LinhaEstadoAgendamento = {
-  suspenso_manual_em: Date | null;
-  estado: NonNullable<EstadoBrutoDeAgendamento['assinatura']>['estado'] | null;
-  acesso_ate: Date | null;
-};
-
-/**
- * ÚNICA leitura de assinatura em rota pública (D-026): um comando, `salao.suspenso_manual_em` e a
- * assinatura mais recente (`criado_em DESC, id DESC`), só `estado` e `acesso_ate`.
- */
-export async function lerEstadoDeAgendamento(ctx: PublicoContext): Promise<EstadoBrutoDeAgendamento> {
-  const salaoId = exigirPublico(ctx);
-  const linhas = await obterPrisma().$queryRaw<LinhaEstadoAgendamento[]>`
-    SELECT s.suspenso_manual_em, a.estado::text AS estado, a.acesso_ate
-      FROM salao s
-      LEFT JOIN LATERAL (
-        SELECT estado, acesso_ate FROM assinatura
-         WHERE salao_id = s.id
-         ORDER BY criado_em DESC, id DESC
-         LIMIT 1
-      ) a ON true
-     WHERE s.id = ${salaoId}::uuid`;
-  const l = linhas[0];
-  if (!l) {
-    throw new NaoEncontrado();
-  }
-  return {
-    suspensoManualEm: l.suspenso_manual_em,
-    assinatura: l.estado === null ? null : { estado: l.estado, acessoAte: l.acesso_ate },
-  };
-}
-
 /**
  * Nomes para a tela de confirmação (D-026 RN-11): do salão do contexto, mesmo de serviço ou profissional
  * desativado depois (a reserva guarda o snapshot de preço e duração, não o nome). Ids de outro salão não

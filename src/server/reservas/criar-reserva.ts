@@ -6,6 +6,7 @@
 // FOR SHARE → serviços FOR SHARE por id → cliente (upsert) → reserva → itens → consentimento → mensagem.
 // Todo desfecho que não é `criada` é uma exceção-sentinela (`DesfazerReserva`) lançada de dentro da
 // transação, que a desfaz inteira, e capturada FORA dela (RN-13). O 23P01 também é traduzido fora.
+import { politicaDeOperacao } from '@/server/assinatura/politica-operacao';
 import { enfileirarMensagens } from '@/server/mensagens/enfileirar';
 import { registrarMensagem } from '@/server/mensagens/registrar';
 import type { ResultadoRegistro } from '@/server/mensagens/tipos';
@@ -18,7 +19,6 @@ import { emTransacao } from '@/server/repos/transacao';
 import { exigirEscopo } from '@/server/tenant/context';
 import type { ContextoEscopado } from '@/server/tenant/context';
 import { AcessoNegado, NaoEncontrado } from '@/server/tenant/erros';
-import { politicaDeOperacao } from '@/server/tenant/politica';
 import { partesLocais } from '@/server/tempo/fuso';
 import { validarConsentimentoDaReserva } from '@/server/consentimento/validacao';
 
@@ -35,12 +35,8 @@ import type {
 } from './tipos';
 import { validarEntradaReserva } from './validacao';
 
-/**
- * Política padrão (A-9): equipe passa por `politicaDeOperacao`; o público (sistema) hoje sempre pode.
- * A E6.4 troca esta função pela decisão por estado do salão.
- */
-export const politicaPadraoDeReserva: PoliticaDeReserva = (ctx, capacidade) =>
-  ctx.tipo === 'tenant' ? politicaDeOperacao(ctx, capacidade) : { permitido: true };
+/** Política padrão (D-038 RN-4): equipe e público (sistema) passam pela mesma política por estado. */
+export const politicaPadraoDeReserva: PoliticaDeReserva = politicaDeOperacao;
 
 type SaidaDeNegocio = Extract<
   ResultadoCriarReserva,
@@ -116,7 +112,7 @@ export async function criarReserva(
     return concluir({ resultado: 'consentimento_ausente', erros: aceites.erros });
   }
 
-  const decisao = await (deps.politica ?? politicaPadraoDeReserva)(ctx, 'agendar');
+  const decisao = await (deps.politica ?? politicaPadraoDeReserva)(ctx, 'agendar', entrada.agora);
   if (!decisao.permitido) {
     if (ctx.tipo === 'tenant') throw new AcessoNegado(decisao.motivo);
     return concluir({ resultado: 'salao_indisponivel' });

@@ -42,7 +42,7 @@ export default async function DemonstracaoFotos({ searchParams }: Props) {
   const acao = ehCodigoAcao(params.acao) ? params.acao : null;
   const resultado = envio !== null ? resultadoDoEnvio(envio) : acao !== null ? resultadoDaAcao(acao) : null;
   return (
-    <PanelLayout papel="gestor" nomeSalao={NOME_DEMONSTRACAO} caminhoAtual={ROTAS.configuracoesFotos}>
+    <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_DEMONSTRACAO} caminhoAtual={ROTAS.configuracoesFotos}>
       <div className={estilos.pagina}>
         <p className={estilos.voltar}>
           <a href={ROTAS.configuracoes}>Voltar para Configurações</a>

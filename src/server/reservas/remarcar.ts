@@ -35,7 +35,7 @@ export async function remarcarReserva(
   const alvoId = typeof e.profissionalId === 'string' ? e.profissionalId.trim().toLowerCase() : '';
   // Profissional não troca de profissional: o alvo também passa pela matriz (403).
   exigirPermissao(ctx, 'reserva.alterar', { profissionalId: alvoId });
-  await aplicarPolitica(ctx, 'agendar', deps);
+  await aplicarPolitica(ctx, 'agendar', deps, agora);
 
   const concluir = (r: ResultadoRemarcar, extra: Record<string, unknown> = {}): ResultadoRemarcar => {
     registrarEvento({ operacao: 'remarcar', salaoId: ctx.salaoId, reservaId: previa.id, resultado: r.resultado, ...extra });

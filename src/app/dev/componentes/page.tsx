@@ -46,7 +46,7 @@ export default async function VitrineDeComponentes({ searchParams }: Props) {
       );
     case 'painel':
       return (
-        <PanelLayout papel={opcoes.papel} nomeSalao={NOME_SALAO} caminhoAtual={opcoes.caminho}>
+        <PanelLayout aviso={null} papel={opcoes.papel} nomeSalao={NOME_SALAO} caminhoAtual={opcoes.caminho}>
           {conteudo}
         </PanelLayout>
       );

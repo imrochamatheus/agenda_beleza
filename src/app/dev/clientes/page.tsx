@@ -68,7 +68,7 @@ export default async function DemonstracaoClientes({ searchParams }: Props) {
   const vista = params.vista;
   const aviso = mensagemDeExclusao(params.exclusao);
   return (
-    <PanelLayout papel="gestor" nomeSalao={NOME_SALAO_DEMONSTRACAO} caminhoAtual={ROTAS.clientes}>
+    <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_SALAO_DEMONSTRACAO} caminhoAtual={ROTAS.clientes}>
       <div className={estilos.pagina}>
         {vista === 'detalhe' ? (
           <>

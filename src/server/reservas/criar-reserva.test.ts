@@ -48,6 +48,8 @@ beforeEach(() => {
   vi.spyOn(console, 'info').mockImplementation(() => {});
 });
 
+const liberada = () => ({ permitido: true as const });
+
 function semBanco() {
   expect(repos).not.toHaveBeenCalled();
   expect(emTransacao).not.toHaveBeenCalled();
@@ -86,19 +88,22 @@ describe('criarReserva: fase pura, sem banco', () => {
     const politica = vi.fn(() => ({ permitido: false as const, motivo: 'suspenso' }));
     await expect(criarReserva(equipe, entrada(), { politica })).rejects.toBeInstanceOf(AcessoNegado);
     expect(await criarReserva(sistema, entrada(), { politica })).toEqual({ resultado: 'salao_indisponivel' });
-    expect(politica).toHaveBeenCalledWith(equipe, 'agendar');
+    expect(politica).toHaveBeenCalledWith(equipe, 'agendar', expect.any(Date));
     semBanco();
   });
 
   it('ids malformados: indisponível sem banco', async () => {
-    expect(await criarReserva(sistema, entrada({ profissionalId: 'xyz' }))).toEqual({ resultado: 'profissional_indisponivel' });
-    expect(await criarReserva(sistema, entrada({ servicoIds: ['nao-uuid'] }))).toEqual({ resultado: 'servico_indisponivel' });
+    expect(await criarReserva(sistema, entrada({ profissionalId: 'xyz' }), { politica: liberada })).toEqual({ resultado: 'profissional_indisponivel' });
+    expect(await criarReserva(sistema, entrada({ servicoIds: ['nao-uuid'] }), { politica: liberada })).toEqual({ resultado: 'servico_indisponivel' });
     semBanco();
   });
 
-  it('política padrão: equipe passa por politicaDeOperacao; sistema sempre pode', async () => {
-    expect(await politicaPadraoDeReserva(equipe, 'agendar')).toEqual({ permitido: true });
-    expect(await politicaPadraoDeReserva(sistema, 'agendar')).toEqual({ permitido: true });
+  it('política padrão (D-038): com o estado ilegível, equipe e público são negados (falha fechada)', async () => {
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const agora = new Date('2026-11-20T12:00:00Z');
+    expect(await politicaPadraoDeReserva(equipe, 'agendar', agora)).toEqual({ permitido: false, motivo: 'estado_ilegivel' });
+    expect(await politicaPadraoDeReserva(sistema, 'agendar', agora)).toEqual({ permitido: false, motivo: 'estado_ilegivel' });
+    aviso.mockRestore();
   });
 
   it('o log de um desfecho não traz nome, telefone nem chave', async () => {
@@ -120,6 +125,6 @@ describe('criarReserva: fase pura, sem banco', () => {
 
   it('D-029: com consentimentoOpcional, aceite ausente não é consentimento_ausente', async () => {
     // Passa da fase pura e só então tenta o banco (espionado: falha ali), provando que não parou no aceite.
-    await expect(criarReserva(equipe, entrada({ aceites: {} }), { consentimentoOpcional: true })).rejects.toThrow(/não deveria ser chamad/);
+    await expect(criarReserva(equipe, entrada({ aceites: {} }), { consentimentoOpcional: true, politica: liberada })).rejects.toThrow(/não deveria ser chamad/);
   });
 });

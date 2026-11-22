@@ -44,7 +44,7 @@ export default async function DemonstracaoConfiguracoes({ searchParams }: Props)
   const fuso = params.fuso === 'alias' ? FUSO_ALIAS_DEMONSTRACAO : FUSO_DEMONSTRACAO;
   const valores: ValoresRegras = { nome: NOME_DEMONSTRACAO, fuso, grade: '15', antecedencia: '2', janela: '60', intervalo: '0' };
   return (
-    <PanelLayout papel="gestor" nomeSalao={NOME_DEMONSTRACAO} caminhoAtual={ROTAS.configuracoes}>
+    <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_DEMONSTRACAO} caminhoAtual={ROTAS.configuracoes}>
       <div className={estilos.pagina}>
         <h1>Configurações</h1>
         <section className={estilos.secao} aria-labelledby="config-dados">

@@ -41,7 +41,7 @@ export default async function DemonstracaoReservaNova({ searchParams }: Props) {
     hoje: partesLocais(new Date(), FUSO_DEMO).data,
   });
   return (
-    <PanelLayout papel={proprio ? 'profissional' : 'gestor'} nomeSalao={NOME_SALAO_DEMO} caminhoAtual={ROTAS.agenda}>
+    <PanelLayout aviso={null} papel={proprio ? 'profissional' : 'gestor'} nomeSalao={NOME_SALAO_DEMO} caminhoAtual={ROTAS.agenda}>
       <div className={estilos.pagina}>
         <h1>Nova reserva</h1>
         <FormularioReservaManual

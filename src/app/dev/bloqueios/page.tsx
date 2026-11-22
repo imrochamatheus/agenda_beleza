@@ -85,7 +85,7 @@ export default async function DemonstracaoBloqueios({ searchParams }: Props) {
   if (modo === 'edicao') {
     const item = paraItem(ana, FUSO, { papel: 'gestor', profissionalId: null });
     return (
-      <PanelLayout papel="gestor" nomeSalao={NOME_SALAO} caminhoAtual={ROTAS.bloqueios}>
+      <PanelLayout aviso={null} papel="gestor" nomeSalao={NOME_SALAO} caminhoAtual={ROTAS.bloqueios}>
         <div className={estilos.pagina}>
           <h1>Editar bloqueio</h1>
           <p>
@@ -109,7 +109,7 @@ export default async function DemonstracaoBloqueios({ searchParams }: Props) {
   const linhas = gestor ? [ana, bia, salao] : [ana, salao];
   const itens = linhas.map((l) => paraItem(l, FUSO, ctx));
   return (
-    <PanelLayout papel={ctx.papel} nomeSalao={NOME_SALAO} caminhoAtual={ROTAS.bloqueios}>
+    <PanelLayout aviso={null} papel={ctx.papel} nomeSalao={NOME_SALAO} caminhoAtual={ROTAS.bloqueios}>
       <div className={estilos.pagina}>
         <h1>Bloqueios</h1>
         <AlertaDeRemocao remocao={params.remocao} />
