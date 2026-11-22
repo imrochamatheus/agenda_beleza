@@ -1,18 +1,36 @@
-import { NaoImplementado } from '../nao-implementado';
+import type { ConfigWhatsAppReal } from './ambiente';
+import { criarClienteHttp } from './http';
+import { caminhoDeEnvio, classificarResposta, montarCorpo } from './mapeamento';
+import { ErroEnvioPermanente, ErroEnvioTemporario, validarEnvioModelo } from './port';
 import type { PortaWhatsApp } from './port';
 
-// Stub do adaptador real do WhatsApp Cloud API (D-1, CA-9). A E7.2 substitui o corpo deste
-// arquivo e o `whatsapp/ambiente.ts`; a assinatura pode ganhar campos (token, número, templates).
+// Adaptador real do WhatsApp Cloud API (D-047): mensagem de modelo por HTTP. Validado só por testes
+// de contrato com servidor local (README, "Pendente de validação na Meta"). Sem estado, sem log,
+// sem retentativa interna. `chaveIdempotencia` só é validada: a Meta não tem campo para ela.
 
 export type OpcoesWhatsAppReal = {
-  /** URL base da Graph API, injetável para os testes com stub local (RN-6). */
+  /** URL base da Graph API, injetável para os testes com servidor local. */
   urlBase?: string;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 };
 
-/** `enviarModelo` rejeita com NaoImplementado('E7.2'). */
-export function criarWhatsAppReal(opcoes: OpcoesWhatsAppReal = {}): PortaWhatsApp {
-  void opcoes;
+export function criarWhatsAppReal(config: ConfigWhatsAppReal, opcoes: OpcoesWhatsAppReal = {}): PortaWhatsApp {
+  const http = criarClienteHttp({
+    token: config.accessToken,
+    urlBase: opcoes.urlBase,
+    fetchImpl: opcoes.fetchImpl,
+    timeoutMs: opcoes.timeoutMs,
+  });
   return {
-    enviarModelo: () => Promise.reject(new NaoImplementado('E7.2')),
+    async enviarModelo(e) {
+      const invalida = validarEnvioModelo(e);
+      if (invalida) throw invalida;
+      const corpo = montarCorpo(config, e);
+      const resposta = await http.postar(caminhoDeEnvio(config), corpo);
+      const c = classificarResposta(resposta);
+      if (c.tipo === 'sucesso') return { provedorMensagemId: c.id };
+      throw c.tipo === 'temporario' ? new ErroEnvioTemporario(c.codigo) : new ErroEnvioPermanente(c.codigo);
+    },
   };
 }

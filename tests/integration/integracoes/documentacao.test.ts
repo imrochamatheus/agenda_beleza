@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 
 import type pg from 'pg';
@@ -13,7 +14,6 @@ import { criarEmailSimulado } from '@/server/integrations/email/simulado';
 import * as ambienteMercadoPago from '@/server/integrations/mercadopago/ambiente';
 import { criarMercadoPagoSimulado } from '@/server/integrations/mercadopago/simulado';
 import { SEGREDO_WEBHOOK_SIMULADO } from '@/server/integrations/mercadopago/webhook-simulado';
-import { NaoImplementado } from '@/server/integrations/nao-implementado';
 import * as ambienteTurnstile from '@/server/integrations/turnstile/ambiente';
 import {
   CHAVE_SITE_TURNSTILE_SIMULADA,
@@ -21,6 +21,8 @@ import {
   criarTurnstileSimulado,
 } from '@/server/integrations/turnstile/simulado';
 import * as ambienteWhatsApp from '@/server/integrations/whatsapp/ambiente';
+import { CODIGOS_ERRO_WHATSAPP, ORDEM_PARAMETROS } from '@/server/integrations/whatsapp/mapeamento';
+import { MODELOS_WHATSAPP } from '@/server/integrations/whatsapp/port';
 import { criarWhatsAppSimulado } from '@/server/integrations/whatsapp/simulado';
 
 import { conectar, emailNovo, telefoneNovo } from '../../support/sql';
@@ -133,15 +135,17 @@ describe('CA-25: README × .env.example × env.ts', () => {
     expect(email).toContain('`requireTLS`');
   });
 
-  it('CA-25 (D-046): o MP real está documentado e exige as variáveis; o WhatsApp real (E7.2) segue recusado', () => {
+  it('CA-13 (D-047): o MP e o WhatsApp reais estão documentados e exigem as variáveis', () => {
     const mp = secao('Mercado Pago', credenciais);
     const wa = secao('WhatsApp Business Platform', credenciais);
     expect(mp).toContain('PENDENTE DE VALIDAÇÃO NO SANDBOX');
     expect(mp).toContain('<APP_URL>/api/webhooks/mercadopago');
     expect(mp).not.toContain('recusado na inicialização');
-    expect(wa).toContain(`Adaptador real: ${new NaoImplementado('E7.2').item}`);
-    expect(wa).toContain('recusado na inicialização');
+    expect(wa).toContain('PENDENTE DE VALIDAÇÃO NA META');
     expect(wa).toContain('4 templates aprovados');
+    expect(wa).toContain('docs/whatsapp-templates.md');
+    expect(wa).not.toContain('recusado na inicialização');
+    for (const codigo of CODIGOS_ERRO_WHATSAPP) expect(wa, codigo).toContain(`\`${codigo}\``);
 
     const fonte = { DATABASE_URL: 'postgresql://u:p@localhost:5432/b', MP_ADAPTER: 'real', WHATSAPP_ADAPTER: 'real' };
     let erro: unknown;
@@ -156,8 +160,25 @@ describe('CA-25: README × .env.example × env.ts', () => {
       'MP_ACCESS_TOKEN',
       'MP_PREAPPROVAL_PLAN_ID',
       'MP_WEBHOOK_SECRET',
-      'WHATSAPP_ADAPTER',
+      'WHATSAPP_ACCESS_TOKEN',
+      'WHATSAPP_PHONE_NUMBER_ID',
+      'WHATSAPP_TEMPLATE_CANCELAMENTO',
+      'WHATSAPP_TEMPLATE_CONFIRMACAO',
+      'WHATSAPP_TEMPLATE_CONVITE_AVALIACAO',
+      'WHATSAPP_TEMPLATE_REMARCACAO',
     ]);
+  });
+
+  it('CA-13 (D-047): docs/whatsapp-templates.md traz os 4 modelos, as variáveis e a ordem do código', () => {
+    const doc = readFileSync(fileURLToPath(new URL('../../../docs/whatsapp-templates.md', import.meta.url)), 'utf8');
+    for (const modelo of MODELOS_WHATSAPP) expect(doc, modelo).toContain(`\`${modelo}\``);
+    for (const [modelo, ordem] of Object.entries(ORDEM_PARAMETROS)) {
+      expect(doc, modelo).toContain(`${modelo}: ${ordem.join(', ')}`);
+    }
+    for (const n of ['{{1}}', '{{5}}']) expect(doc).toContain(n);
+    expect(doc).toContain('UTILITY');
+    expect(doc).toContain('pt_BR');
+    for (const codigo of CODIGOS_ERRO_WHATSAPP) expect(doc, codigo).toContain(`\`${codigo}\``);
   });
 
   it('CA-25: credenciais exigidas pelo CLAUDE.md têm subseção própria (MP, WhatsApp, e-mail, Turnstile)', () => {

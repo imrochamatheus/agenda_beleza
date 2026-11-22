@@ -19,6 +19,25 @@ const exemplo = parseEnv(readFileSync(caminhoExemplo, 'utf8')) as Record<string,
 
 const URL_VALIDA = 'postgresql://agenda:segredo123@localhost:5432/agenda_beleza';
 
+const WHATSAPP_OBRIGATORIAS = [
+  'WHATSAPP_ACCESS_TOKEN',
+  'WHATSAPP_PHONE_NUMBER_ID',
+  'WHATSAPP_TEMPLATE_CANCELAMENTO',
+  'WHATSAPP_TEMPLATE_CONFIRMACAO',
+  'WHATSAPP_TEMPLATE_CONVITE_AVALIACAO',
+  'WHATSAPP_TEMPLATE_REMARCACAO',
+];
+const WHATSAPP_COMPLETO = {
+  DATABASE_URL: URL_VALIDA,
+  WHATSAPP_ADAPTER: 'real',
+  WHATSAPP_ACCESS_TOKEN: 'tok-secreto',
+  WHATSAPP_PHONE_NUMBER_ID: '123456789',
+  WHATSAPP_TEMPLATE_CONFIRMACAO: 'agenda_confirmacao',
+  WHATSAPP_TEMPLATE_REMARCACAO: 'agenda_remarcacao',
+  WHATSAPP_TEMPLATE_CANCELAMENTO: 'agenda_cancelamento',
+  WHATSAPP_TEMPLATE_CONVITE_AVALIACAO: 'agenda_convite_avaliacao',
+};
+
 const CHAVE_TOTP = Buffer.alloc(32, 7).toString('base64');
 
 function falhaDe(fonte: Record<string, string | undefined>): ErroDeAmbiente {
@@ -179,8 +198,42 @@ describe('validarEnv', () => {
     expect(erro.variaveis).toEqual(['SMTP_HOST']);
   });
 
-  it('CA-9: WHATSAPP_ADAPTER=real é recusado nomeando o seletor (D-1)', () => {
-    expect(falhaDe({ DATABASE_URL: URL_VALIDA, WHATSAPP_ADAPTER: 'real' }).variaveis).toEqual(['WHATSAPP_ADAPTER']);
+  it('CA-9 (D-047): WHATSAPP_ADAPTER=real sem nada nomeia todas as obrigatórias, ordenadas e sem valores', () => {
+    expect(falhaDe({ DATABASE_URL: URL_VALIDA, WHATSAPP_ADAPTER: 'real' }).variaveis).toEqual(WHATSAPP_OBRIGATORIAS);
+  });
+
+  it('CA-9/CA-10 (D-047): config completa vale (padrões v25.0 e pt_BR); versão, id e modelo inválidos são nomeados', () => {
+    const env = validarEnv({ ...WHATSAPP_COMPLETO, WHATSAPP_TEMPLATE_IDIOMA: '' });
+    expect(env.integracoes.whatsapp).toEqual({
+      modo: 'real',
+      config: {
+        accessToken: 'tok-secreto',
+        phoneNumberId: '123456789',
+        versaoApi: 'v25.0',
+        idioma: 'pt_BR',
+        modelos: {
+          confirmacao: 'agenda_confirmacao',
+          remarcacao: 'agenda_remarcacao',
+          cancelamento: 'agenda_cancelamento',
+          convite_avaliacao: 'agenda_convite_avaliacao',
+        },
+      },
+    });
+    const erro = falhaDe({
+      ...WHATSAPP_COMPLETO,
+      WHATSAPP_API_VERSION: 'abc',
+      WHATSAPP_PHONE_NUMBER_ID: '12a',
+      WHATSAPP_TEMPLATE_IDIOMA: 'portugues',
+      WHATSAPP_TEMPLATE_REMARCACAO: 'Nome Inválido',
+    });
+    expect(erro.variaveis).toEqual([
+      'WHATSAPP_API_VERSION',
+      'WHATSAPP_PHONE_NUMBER_ID',
+      'WHATSAPP_TEMPLATE_IDIOMA',
+      'WHATSAPP_TEMPLATE_REMARCACAO',
+    ]);
+    expect(erro.message).not.toContain('tok-secreto');
+    expect(validarEnv({ DATABASE_URL: URL_VALIDA, WHATSAPP_API_VERSION: 'abc' }).integracoes.whatsapp).toEqual({ modo: 'simulado' });
   });
 
   it('CA-3 (D-046): MP_ADAPTER=real exige as MP_* e APP_URL https; APP_URL http só vale no simulado', () => {
@@ -226,7 +279,7 @@ describe('validarEnv', () => {
       'SMTP_PASSWORD',
       'TURNSTILE_SECRET_KEY',
       'TURNSTILE_SITE_KEY',
-      'WHATSAPP_ADAPTER',
+      ...WHATSAPP_OBRIGATORIAS,
     ]);
     expect(erro.message).not.toContain('usuario');
   });

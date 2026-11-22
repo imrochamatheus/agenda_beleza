@@ -1,7 +1,6 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { NaoImplementado } from '@/server/integrations/nao-implementado';
 import { MODELOS_WHATSAPP, validarEnvioModelo } from '@/server/integrations/whatsapp/port';
 import { criarWhatsAppReal } from '@/server/integrations/whatsapp/real';
 import { criarWhatsAppSimulado } from '@/server/integrations/whatsapp/simulado';
@@ -38,9 +37,26 @@ describe('CA-23: MODELOS_WHATSAPP é o enum tipo_mensagem do banco', () => {
     expect(chamada).toMatchObject({ modelo: 'convite_avaliacao', resultado: 'sucesso' });
   });
 
-  it('o adaptador real continua NaoImplementado(E7.2) para o 4º modelo', async () => {
-    const real = criarWhatsAppReal();
-    await expect(real.enviarModelo({ destinatarioE164: telefoneNovo(), modelo: 'convite_avaliacao', parametros: {}, chaveIdempotencia: 'k' })).rejects.toBeInstanceOf(NaoImplementado);
+  it('o adaptador real (D-047) envia o 4º modelo com [salao, link] e o nome configurado', async () => {
+    let corpo: { template: { name: string; components: { parameters: { text: string }[] }[] } } | undefined;
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      corpo = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({ messages: [{ id: 'wamid.X' }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const real = criarWhatsAppReal(
+      {
+        accessToken: 't',
+        phoneNumberId: '1',
+        versaoApi: 'v25.0',
+        idioma: 'pt_BR',
+        modelos: { confirmacao: 'a', remarcacao: 'b', cancelamento: 'c', convite_avaliacao: 'agenda_convite' },
+      },
+      { fetchImpl },
+    );
+    const r = await real.enviarModelo({ destinatarioE164: telefoneNovo(), modelo: 'convite_avaliacao', parametros: { salao: 'S', link: 'https://x.test/a' }, chaveIdempotencia: 'k' });
+    expect(r).toEqual({ provedorMensagemId: 'wamid.X' });
+    expect(corpo?.template.name).toBe('agenda_convite');
+    expect(corpo?.template.components[0].parameters.map((p) => p.text)).toEqual(['S', 'https://x.test/a']);
   });
 });
 
