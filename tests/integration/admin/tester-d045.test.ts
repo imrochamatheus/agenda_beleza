@@ -52,7 +52,7 @@ describe('tester', () => {
 
   it('admin sem TOTP: as páginas não mostram dados (nem redirecionam para dados)', async () => {
     const semTotp = await criarSuperAdmin({ totpVerificado: false });
-    jar.admin = semTotp.credencial.admin?.token ?? semTotp.credencial.salao?.token;
+    jar.admin = semTotp.credencial?.token;
     for (const p of [PaginaDeMensagens({ searchParams: Promise.resolve({}) }), PaginaDeAuditoria({ searchParams: Promise.resolve({}) })]) {
       const r = await Promise.resolve(p).then((e) => renderToStaticMarkup(e as ReactElement), (e: Error) => e.message);
       expect(r).toMatch(/Acesso negado|NEXT_REDIRECT/);
