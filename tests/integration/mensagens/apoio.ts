@@ -97,15 +97,40 @@ export async function criarPipeline(o: OpcoesPipeline = {}): Promise<Pipeline> {
   };
 }
 
+/** Itens da reserva por (inicio, id), lidos direto do banco (D-050). */
+export async function itensDa(reservaId: string) {
+  return obterPrisma().reservaItem.findMany({
+    where: { reservaId },
+    orderBy: [{ inicio: 'asc' }, { id: 'asc' }],
+    select: { id: true, inicio: true, fim: true, ocupadoAte: true, status: true, revisao: true, profissionalId: true, servicoId: true },
+  });
+}
+
 /** Limpa a fila FIFO de falhas forçadas do simulado (compartilhada pela base do arquivo). */
 export async function limparFalhasForcadas(): Promise<void> {
   await obterPrisma().$executeRaw`DELETE FROM sim_whatsapp_falha_forcada`;
 }
 
 /** Registra na transação (como faria a E3.x) e devolve o resultado, sem enfileirar. */
-export async function registrar(c: CenarioMensagem, tipo: TipoMensagem, agora: Date = new Date()): Promise<ResultadoRegistro> {
-  return emTransacao((r) => registrarMensagem(ctxDo(c), { reservaId: c.reservaId, tipo }, agora, r));
+export async function registrar(
+  c: CenarioMensagem,
+  tipo: TipoMensagem,
+  agora: Date = new Date(),
+  o: { reservaItemId?: string | null; substituir?: boolean } = {},
+): Promise<ResultadoRegistro> {
+  return emTransacao(async (r) => {
+    const res = await registrarMensagem(ctxDo(c), { reservaId: c.reservaId, tipo, reservaItemId: o.reservaItemId }, agora, r);
+    if (o.substituir) await r.mensagens.substituirNaoVigentes(ctxDo(c), c.reservaId, agora);
+    return res;
+  });
 }
+
+/**
+ * Como as operações da D-050 (T-6): registra e, na MESMA transação, substitui as pendentes que deixaram
+ * de ser vigentes (RN-31).
+ */
+export const registrarESubstituir = (c: CenarioMensagem, tipo: TipoMensagem, o: { reservaItemId?: string | null } = {}) =>
+  registrar(c, tipo, new Date(), { ...o, substituir: true });
 
 /** Registra e, depois do commit, enfileira pelo cliente do pipeline. */
 export async function registrarEEnfileirar(p: Pipeline, c: CenarioMensagem, tipo: TipoMensagem): Promise<ResultadoRegistro> {

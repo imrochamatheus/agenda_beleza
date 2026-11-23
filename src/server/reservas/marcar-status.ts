@@ -1,24 +1,22 @@
-// Marcar o resultado do atendimento (D-030 RN-8/RN-9): `concluido` e `nao_compareceu`.
-// `confirmado → concluido` registra o convite de avaliação (revisão 0, outbox); `concluido → nao_compareceu`
-// substitui só o convite ainda `pendente`; a volta a `concluido` não reenvia (chave única).
-//
-// GANCHO DA E4.5 (sem schema agora): o link de avaliação só vale com `reserva.status = 'concluido'`
-// (`conferirVigencia` já fecha o convite quando o status muda) e as listagens/médias de avaliações devem
-// filtrar por `reserva.status = 'concluido'`; ao voltar a `concluido` a avaliação reaparece.
+// Marcar o resultado do atendimento de UM item (D-030 RN-8/RN-9; D-050 RN-20/RN-33): `concluido` e
+// `nao_compareceu`. Não sobe a revisão nem gera mensagem do item. O convite de avaliação nasce quando o status
+// DERIVADO da reserva passa a `concluido` (último item `confirmado` resolvido com ao menos um concluído, ou
+// `nao_compareceu → concluido` sem outro concluído); quando ele deixa de ser `concluido`, o convite ainda
+// `pendente` é substituído (vigência). A volta a `concluido` não reenvia (chave única).
 import type { TenantContext } from '@/server/tenant/context';
 
-import { alterarStatus } from './alterar-status';
-import type { DependenciasAlteracao, EntradaMarcarStatus, ResultadoStatus } from './tipos-alteracao';
+import { alterarStatusDoItem } from './alterar-status';
+import type { DependenciasAlteracao, EntradaMarcarStatusItem, ResultadoStatusItem } from './tipos-alteracao';
 
-export function marcarStatusReserva(
+export function marcarStatusDoItem(
   ctx: TenantContext,
-  e: EntradaMarcarStatus,
+  e: EntradaMarcarStatusItem,
   agora: Date,
   deps: DependenciasAlteracao = {},
-): Promise<ResultadoStatus> {
-  return alterarStatus(
+): Promise<ResultadoStatusItem> {
+  return alterarStatusDoItem(
     ctx,
-    { reservaId: e.reservaId, destino: e.para, permitidos: ['concluido', 'nao_compareceu'], operacao: 'marcar_status' },
+    { reservaId: e.reservaId, itemId: e.itemId, destino: e.destino, permitidos: ['concluido', 'nao_compareceu'], operacao: 'marcar_status_item' },
     agora,
     deps,
   );

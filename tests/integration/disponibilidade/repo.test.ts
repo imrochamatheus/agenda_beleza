@@ -12,7 +12,7 @@ import { conectar } from '../../support/sql';
 import {
   MANAUS, UUID_INEXISTENTE, criarCenario, criarClienteComLog, ctxDoGestor, ctxPublico, definirFuncionamento,
   definirRegras, inserirBloqueio, inserirCliente, inserirJornada, inserirProfissional, inserirReserva,
-  marcarFuncionamentoNaoInformado, sp, DIA, vincular,
+  inserirReservaComItens, marcarFuncionamentoNaoInformado, sp, DIA, vincular,
 } from './apoio';
 import type { Cenario } from './apoio';
 
@@ -160,42 +160,44 @@ describe('servicosOfertaveis (A-3, R-4)', () => {
   });
 });
 
-describe('candidatos', () => {
-  it('sem profissional: só ativos, ordem nome/id, com a contagem de vínculos; 1 SQL', async () => {
+describe('candidatos (D-050: serviços por profissional)', () => {
+  it('sem lista: só ativos, ordem nome/id, com os serviços pedidos que cada um executa; 1 SQL', async () => {
     const { cliente, consultas, encerrar } = criarClienteComLog();
     try {
       const r = await criarRepos(cliente).disponibilidade.candidatos(ctxPublico(s1.s), [s1.A, s1.B], null);
       expect(consultas).toHaveLength(1);
       expect(r).toEqual([
-        { id: s1.ana, nome: 'Ana', ativo: true, vinculos: 2 },
-        { id: s1.bia, nome: 'Bia', ativo: true, vinculos: 1 },
+        { id: s1.ana, nome: 'Ana', ativo: true, servicos: [s1.A, s1.B].sort() },
+        { id: s1.bia, nome: 'Bia', ativo: true, servicos: [s1.A] },
       ]);
-      expect(chaves(r[0])).toEqual(['ativo', 'id', 'nome', 'vinculos']);
+      expect(chaves(r[0])).toEqual(['ativo', 'id', 'nome', 'servicos']);
     } finally {
       await encerrar();
     }
   });
 
-  it('com profissional: só ele, inclusive inativo; de outro salão → []; malformado → NaoEncontrado sem SQL', async () => {
+  it('com lista: só eles, inclusive inativo; de outro salão não volta; malformado → NaoEncontrado sem SQL; [] → [] sem SQL', async () => {
     const { cliente, consultas, encerrar } = criarClienteComLog();
     try {
       const d = criarRepos(cliente).disponibilidade;
-      expect(await d.candidatos(ctxPublico(s1.s), [s1.A], s1.bia)).toEqual([{ id: s1.bia, nome: 'Bia', ativo: true, vinculos: 1 }]);
-      expect(await d.candidatos(ctxPublico(s1.s), [s1.A], s1.s.profissionalInativoId)).toEqual([
-        { id: s1.s.profissionalInativoId, nome: expect.any(String), ativo: false, vinculos: 0 },
+      expect(await d.candidatos(ctxPublico(s1.s), [s1.A], [s1.bia])).toEqual([{ id: s1.bia, nome: 'Bia', ativo: true, servicos: [s1.A] }]);
+      expect(await d.candidatos(ctxPublico(s1.s), [s1.A], [s1.s.profissionalInativoId])).toEqual([
+        { id: s1.s.profissionalInativoId, nome: expect.any(String), ativo: false, servicos: [] },
       ]);
-      expect(await d.candidatos(ctxPublico(s1.s), [s1.A], s2.ana)).toEqual([]);
+      expect(await d.candidatos(ctxPublico(s1.s), [s1.A], [s2.ana])).toEqual([]);
+      expect((await d.candidatos(ctxPublico(s1.s), [s1.A, s1.B], [s1.bia, s2.ana, s1.ana])).map((p) => p.id)).toEqual([s1.ana, s1.bia]);
       const antes = consultas.length;
-      await expect(d.candidatos(ctxPublico(s1.s), [s1.A], 'nao-e-uuid')).rejects.toBeInstanceOf(NaoEncontrado);
+      await expect(d.candidatos(ctxPublico(s1.s), [s1.A], [s1.ana, 'nao-e-uuid'])).rejects.toBeInstanceOf(NaoEncontrado);
+      expect(await d.candidatos(ctxPublico(s1.s), [s1.A], [])).toEqual([]);
       expect(consultas).toHaveLength(antes);
     } finally {
       await encerrar();
     }
   });
 
-  it('ignora ids de serviço de outro salão na contagem de vínculos', async () => {
-    const r = await repos().disponibilidade.candidatos(ctxPublico(s1.s), [s2.A, s2.B], null);
-    expect(r.map((x) => x.vinculos)).toEqual([0, 0]);
+  it('ignora ids de serviço de outro salão e malformados', async () => {
+    const r = await repos().disponibilidade.candidatos(ctxPublico(s1.s), [s2.A, s2.B, 'lixo'], null);
+    expect(r.map((x) => x.servicos)).toEqual([[], []]);
   });
 
   it('profissional inativo não aparece na lista geral', async () => {
@@ -271,7 +273,7 @@ describe('bloqueios', () => {
   });
 });
 
-describe('ocupacoes (A-5)', () => {
+describe('ocupacoes (A-5; D-050: sobre reserva_item)', () => {
   it('só status ativos, [inicio, ocupado_ate) que intersecta o período, sem id/cliente/status; 1 SQL', async () => {
     const x = await criarCenario(c);
     const outro = await criarCenario(c);
@@ -313,6 +315,25 @@ describe('ocupacoes (A-5)', () => {
     } finally {
       await encerrar();
     }
+  });
+
+  it('D-050: uma linha por ITEM, com o profissional e o ocupado-até do item; item cancelado de reserva ativa não ocupa', async () => {
+    const x = await criarCenario(c);
+    const cli = await inserirCliente(c, x.s.salaoId);
+    await inserirReservaComItens(c, {
+      salaoId: x.s.salaoId,
+      clienteId: cli,
+      itens: [
+        { profissionalId: x.ana, inicio: sp(DIA, '09:00'), duracaoMin: 30, intervaloMin: 10, servicoId: x.A },
+        { profissionalId: x.bia, inicio: sp(DIA, '09:30'), duracaoMin: 45, servicoId: x.B },
+        { profissionalId: x.ana, inicio: sp(DIA, '11:00'), duracaoMin: 30, status: 'cancelado' },
+      ],
+    });
+    const r = await repos().disponibilidade.ocupacoes(ctxPublico(x.s), [x.ana, x.bia], PERIODO);
+    expect(r).toEqual([
+      { profissionalId: x.ana, inicio: sp(DIA, '09:00'), ocupadoAte: sp(DIA, '09:40') },
+      { profissionalId: x.bia, inicio: sp(DIA, '09:30'), ocupadoAte: sp(DIA, '10:15') },
+    ].sort((a, b) => (a.profissionalId < b.profissionalId ? -1 : 1)));
   });
 
   it('o filtro por salão vale mesmo com o profissional de outro salão na lista', async () => {

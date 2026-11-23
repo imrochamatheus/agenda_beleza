@@ -2,19 +2,21 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { anonimizarCliente } from '@/server/clientes/anonimizar';
 import { criarReserva } from '@/server/reservas/criar-reserva';
-import { cancelarReserva } from '@/server/reservas/cancelar';
-import { marcarStatusReserva } from '@/server/reservas/marcar-status';
-import { remarcarReserva } from '@/server/reservas/remarcar';
+import { cancelarItem } from '@/server/reservas/cancelar';
+import { cancelarTodos } from '@/server/reservas/cancelar-todos';
+import { marcarStatusDoItem } from '@/server/reservas/marcar-status';
+import { remarcarItem } from '@/server/reservas/remarcar';
 import { AcessoNegado } from '@/server/tenant/erros';
 
-import { contarLinhas, criarCenarioReserva, entradaReserva, inserirReservaDireta } from '../../support/reservas';
+import { conferirDerivados, contarLinhas, criarCenarioReserva, entradaReserva } from '../../support/reservas';
 import type { CenarioReserva } from '../../support/reservas';
 import { aplicarSituacao } from '../../support/politica';
 import type { SituacaoDeTeste } from '../../support/politica';
-import { AGORA, criarCenario, criarConfirmada, db, DIA, filaEspia, mensagensDe, reservaDe, sp } from '../reservas/alteracao/apoio';
+import { AGORA, criarCenario, criarComItens, db, DEPOIS, DIA, filaEspia, mensagensDe, reservaDe, sp } from '../reservas/alteracao/apoio';
 
 // D-038 CA-1, CA-2, CA-3, CA-6, CA-10 e isolamento: criar, remarcar, cancelar, marcar status e anonimizar com o
-// salão em cada situação, contra PostgreSQL real (sem mocks de banco).
+// salão em cada situação, contra PostgreSQL real (sem mocks de banco). D-050 (CA-14, CA-31): as operações são
+// por item; "cancelar todos" também é `cancelar` (o salão suspenso cancela e notifica).
 
 beforeEach(() => {
   vi.spyOn(console, 'info').mockImplementation(() => {});
@@ -36,7 +38,7 @@ describe.each([...SO_LEITURA, 'pendente'] as SituacaoDeTeste[])('criar reserva c
 
     expect(await criarReserva(c.ctxSistema, entradaReserva(c, { chaveRequisicao: chave }))).toEqual({ resultado: 'salao_indisponivel' });
     await expect(criarReserva(c.ctxEquipe, entradaReserva(c))).rejects.toBeInstanceOf(AcessoNegado);
-    await expect(criarReserva(c.ctxEquipe, entradaReserva(c, { modo: 'encaixe', inicio: sp(DIA, '07:00') }), { consentimentoOpcional: true })).rejects.toBeInstanceOf(AcessoNegado);
+    await expect(criarReserva(c.ctxEquipe, entradaReserva(c, { modo: 'encaixe', itens: [{ servicoId: c.A, profissionalId: c.ana, inicio: sp(DIA, '07:00') }] }), { consentimentoOpcional: true })).rejects.toBeInstanceOf(AcessoNegado);
 
     expect(await contarLinhas(c.s.salaoId)).toEqual(antes);
     expect(await db().reserva.count({ where: { salaoId: c.s.salaoId, chaveRequisicao: chave } })).toBe(0);
@@ -48,7 +50,7 @@ describe('criar reserva nas situações que permitem (CA-10)', () => {
     const c = await criarCenarioReserva();
     await aplicarSituacao(c.s.salaoId, situacao);
     expect((await criarReserva(c.ctxSistema, entradaReserva(c))).resultado).toBe('criada');
-    expect((await criarReserva(c.ctxEquipe, entradaReserva(c, { inicio: sp(DIA, '12:00') }))).resultado).toBe('criada');
+    expect((await criarReserva(c.ctxEquipe, entradaReserva(c, { itens: [{ servicoId: c.A, profissionalId: c.ana, inicio: sp(DIA, '12:00') }] }))).resultado).toBe('criada');
   });
 
   it('cancelada vencida (acessoAte no passado) conta como encerrada: recusa', async () => {
@@ -66,15 +68,15 @@ describe('criar reserva nas situações que permitem (CA-10)', () => {
   });
 });
 
-describe('remarcar com o salão somente leitura (CA-2)', () => {
+describe('remarcar item com o salão somente leitura (CA-2, CA-31)', () => {
   it.each([...SO_LEITURA, 'pendente'] as SituacaoDeTeste[])('%s: 403, reserva e mensagens intactas', async (situacao) => {
     const c = await criarCenario();
-    const id = await criarConfirmada(c);
+    const { id, itens: [x] } = await criarComItens(c, [{ hora: '10:00' }]);
     await aplicarSituacao(c.s.salaoId, situacao);
     const antes = { linha: await reservaDe(id), msgs: await mensagensDe(id) };
     const fila = filaEspia();
     await expect(
-      remarcarReserva(c.ctxEquipe, { reservaId: id, data: '2026-12-01', hora: '14:00', profissionalId: c.ana, servicoIds: [c.A] }, AGORA, { enfileirar: fila.enfileirar }),
+      remarcarItem(c.ctxEquipe, { reservaId: id, itemId: x, hora: '14:00' }, AGORA, { enfileirar: fila.enfileirar }),
     ).rejects.toMatchObject({ status: 403 });
     expect(await reservaDe(id)).toEqual(antes.linha);
     expect(await mensagensDe(id)).toEqual(antes.msgs);
@@ -82,38 +84,56 @@ describe('remarcar com o salão somente leitura (CA-2)', () => {
   });
 });
 
-describe('cancelar continua e notifica (CA-3)', () => {
-  it.each(SO_LEITURA)('%s: reserva futura cancelada, mensagem cancelamento no outbox e enfileirada depois do commit', async (situacao) => {
+describe('cancelar continua e notifica (CA-3, CA-31)', () => {
+  it.each(SO_LEITURA)('%s: item futuro cancelado, mensagem cancelamento no outbox e enfileirada depois do commit', async (situacao) => {
     const c = await criarCenario();
-    const id = await criarConfirmada(c);
+    const { id, itens: [x] } = await criarComItens(c, [{ hora: '10:00' }]);
     await aplicarSituacao(c.s.salaoId, situacao);
     const fila = filaEspia();
-    const r = await cancelarReserva(c.ctxEquipe, { reservaId: id }, AGORA, { enfileirar: fila.enfileirar });
-    expect(r).toMatchObject({ resultado: 'atualizada', status: 'cancelado' });
+    const r = await cancelarItem(c.ctxEquipe, { reservaId: id, itemId: x }, AGORA, { enfileirar: fila.enfileirar });
+    expect(r).toMatchObject({ resultado: 'atualizada', status: 'cancelado', statusReserva: 'cancelado', revisao: 1 });
     const linha = await reservaDe(id);
     expect(linha.status).toBe('cancelado');
     expect(await mensagensDe(id)).toEqual([
-      { tipo: 'confirmacao', revisao: 0, estado: 'substituida' },
-      { tipo: 'cancelamento', revisao: linha.revisao, estado: 'pendente' },
+      { tipo: 'confirmacao', revisao: 0, estado: 'substituida', reservaItemId: null },
+      { tipo: 'cancelamento', revisao: 1, estado: 'pendente', reservaItemId: x },
     ]);
-    expect(fila.chaves()).toEqual([`${id}:cancelamento:${linha.revisao}`]);
+    expect(fila.chaves()).toEqual([`${id}:cancelamento:1`]);
+    await conferirDerivados(id);
   });
 
-  it('marcar concluído e não compareceu de reserva passada é aceito em salão suspenso', async () => {
+  it.each(SO_LEITURA)('%s: cancelar todos também é permitido e gera UMA mensagem sem item', async (situacao) => {
     const c = await criarCenario();
-    const a = await inserirReservaDireta(c, { inicio: sp(DIA, '09:00'), fim: sp(DIA, '09:30') });
-    const b = await inserirReservaDireta(c, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30') });
+    const { id } = await criarComItens(c, [{ hora: '10:00' }, { servicoId: c.B, hora: '11:00' }]);
+    await aplicarSituacao(c.s.salaoId, situacao);
+    const fila = filaEspia();
+    expect(await cancelarTodos(c.ctxEquipe, { reservaId: id }, AGORA, { enfileirar: fila.enfileirar })).toMatchObject({
+      resultado: 'atualizada',
+      statusReserva: 'cancelado',
+    });
+    expect(fila.chaves()).toEqual([`${id}:cancelamento:1`]);
+  });
+
+  it('marcar concluído e não compareceu de itens passados é aceito em salão suspenso', async () => {
+    const c = await criarCenario();
+    const a = await criarComItens(c, [{ hora: '09:00' }]);
+    const b = await criarComItens(c, [{ hora: '10:00' }]);
     await aplicarSituacao(c.s.salaoId, 'suspensa');
-    const depois = sp(DIA, '12:00');
-    expect(await marcarStatusReserva(c.ctxEquipe, { reservaId: a, para: 'concluido' }, depois, { enfileirar: filaEspia().enfileirar })).toMatchObject({ resultado: 'atualizada', status: 'concluido' });
-    expect(await marcarStatusReserva(c.ctxEquipe, { reservaId: b, para: 'nao_compareceu' }, depois, { enfileirar: filaEspia().enfileirar })).toMatchObject({ resultado: 'atualizada', status: 'nao_compareceu' });
-    expect((await reservaDe(a)).status).toBe('concluido');
-    expect((await reservaDe(b)).status).toBe('nao_compareceu');
+    expect(await marcarStatusDoItem(c.ctxEquipe, { reservaId: a.id, itemId: a.itens[0], destino: 'concluido' }, DEPOIS, { enfileirar: filaEspia().enfileirar })).toMatchObject({
+      resultado: 'atualizada',
+      status: 'concluido',
+    });
+    expect(await marcarStatusDoItem(c.ctxEquipe, { reservaId: b.id, itemId: b.itens[0], destino: 'nao_compareceu' }, DEPOIS, { enfileirar: filaEspia().enfileirar })).toMatchObject({
+      resultado: 'atualizada',
+      status: 'nao_compareceu',
+    });
+    expect((await reservaDe(a.id)).status).toBe('concluido');
+    expect((await reservaDe(b.id)).status).toBe('nao_compareceu');
   });
 
   it('anonimizar cliente (lgpd) é aceito em salão suspenso', async () => {
     const c = await criarCenario();
-    const id = await criarConfirmada(c);
+    const { id } = await criarComItens(c, [{ hora: '10:00' }]);
     await aplicarSituacao(c.s.salaoId, 'suspensa');
     const { clienteId } = await reservaDe(id);
     const r = await anonimizarCliente(c.ctxEquipe, { clienteId }, AGORA);
@@ -131,7 +151,7 @@ describe('isolamento entre salões (A suspenso, B livre)', () => {
     expect((await criarReserva(b.ctxSistema, entradaReserva(b))).resultado).toBe('criada');
     // Contexto de A com o salão B suspenso: continua sendo A quem decide.
     await aplicarSituacao(b.s.salaoId, 'encerrada');
-    expect(await criarReserva(b.ctxSistema, entradaReserva(b, { inicio: sp(DIA, '12:00') }))).toEqual({ resultado: 'salao_indisponivel' });
+    expect(await criarReserva(b.ctxSistema, entradaReserva(b, { itens: [{ servicoId: b.A, profissionalId: b.ana, inicio: sp(DIA, '12:00') }] }))).toEqual({ resultado: 'salao_indisponivel' });
     expect(await contarLinhas(a.s.salaoId)).toMatchObject({ reserva: 0 });
     expect(await contarLinhas(b.s.salaoId)).toMatchObject({ reserva: 1 });
   });

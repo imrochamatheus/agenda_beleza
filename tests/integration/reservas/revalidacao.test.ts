@@ -1,13 +1,15 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { consultarDisponibilidade } from '@/server/disponibilidade/servico';
+import { consultarDisponibilidadePorServico } from '@/server/disponibilidade/servico';
 import { criarReserva } from '@/server/reservas/criar-reserva';
 import { obterPrisma } from '@/server/repos/db';
 
-import { AGORA, DIA, DIA_SEGUINTE, contarLinhas, criarCenarioReserva, entradaReserva, inserirReservaDireta, sp } from '../../support/reservas';
+import { AGORA, DIA, DIA_SEGUINTE, contarLinhas, criarCenarioReserva, entradaReserva, sp } from '../../support/reservas';
 import type { CenarioReserva } from '../../support/reservas';
 
-// D-025 T-6a: CA-3, CA-7, CA-8, CA-9, CA-10 (revalidação no servidor, sem segunda regra).
+import { item, jornadaDaBia, ocupar, revalidacao, um } from './apoio-itens';
+
+// D-025 T-6a: CA-3, CA-7, CA-8, CA-9, CA-10 (revalidação no servidor, sem segunda regra); D-050 T-5: por item.
 
 beforeEach(() => {
   vi.spyOn(console, 'info').mockImplementation(() => {});
@@ -18,9 +20,10 @@ afterAll(() => {
 
 const db = () => obterPrisma();
 const enfileirar = async () => ({ criado: true as const, id: 'job' });
-const tentar = (c: CenarioReserva, inicio: Date, sobre: Parameters<typeof entradaReserva>[1] = {}, publico = true) =>
-  criarReserva(publico ? c.ctxSistema : c.ctxEquipe, entradaReserva(c, { inicio, ...sobre }), { enfileirar });
-const REVAL = { resultado: 'horario_indisponivel', causa: 'revalidacao' } as const;
+/** Um item (serviço A e Ana, salvo `o`) no público. */
+const tentar = (c: CenarioReserva, inicio: Date, o: { servicoId?: string; profissionalId?: string } = {}) =>
+  criarReserva(c.ctxSistema, entradaReserva(c, um(c, inicio, o)), { enfileirar });
+const REVAL = revalidacao();
 
 async function semEfeito(c: CenarioReserva, fn: () => Promise<unknown>): Promise<void> {
   const antes = await contarLinhas(c.s.salaoId);
@@ -31,7 +34,7 @@ async function semEfeito(c: CenarioReserva, fn: () => Promise<unknown>): Promise
 describe('CA-3: um caso por causa, sem gravar nada', () => {
   it('ocupado por outra reserva', async () => {
     const c = await criarCenarioReserva();
-    await inserirReservaDireta(c, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30') });
+    await ocupar(c, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30') });
     await semEfeito(c, async () => expect(await tentar(c, sp(DIA, '10:00'))).toEqual(REVAL));
   });
 
@@ -50,12 +53,12 @@ describe('CA-3: um caso por causa, sem gravar nada', () => {
   it('profissional desativado', async () => {
     const c = await criarCenarioReserva();
     await db().profissional.update({ where: { id: c.ana }, data: { ativo: false } });
-    await semEfeito(c, async () => expect(await tentar(c, sp(DIA, '10:00'))).toEqual({ resultado: 'profissional_indisponivel' }));
+    await semEfeito(c, async () => expect(await tentar(c, sp(DIA, '10:00'))).toEqual({ resultado: 'profissional_indisponivel', itens: [0] }));
   });
 
   it('antecedência vencida (agora 09:30 local, mínimo de 2 h)', async () => {
     const c = await criarCenarioReserva();
-    const entrada = entradaReserva(c, { inicio: sp(DIA, '10:00'), agora: sp(DIA, '09:30') });
+    const entrada = entradaReserva(c, { ...um(c, sp(DIA, '10:00')), agora: sp(DIA, '09:30') });
     await semEfeito(c, async () => expect(await criarReserva(c.ctxSistema, entrada, { enfileirar })).toEqual(REVAL));
   });
 });
@@ -100,23 +103,24 @@ describe('CA-8: cada causa de recusa e a paridade com a consulta', () => {
 
   it.each(['confirmado', 'concluido', 'nao_compareceu'] as const)('sobreposto a reserva %s é recusado', async (status) => {
     const c = await criarCenarioReserva();
-    await inserirReservaDireta(c, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30'), status });
+    await ocupar(c, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30'), status });
     expect(await tentar(c, sp(DIA, '10:00'))).toEqual(REVAL);
   });
 
   it('sobreposto só a reserva cancelada é aceito', async () => {
     const c = await criarCenarioReserva();
-    await inserirReservaDireta(c, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30'), status: 'cancelado' });
+    await ocupar(c, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30'), status: 'cancelado' });
     expect((await tentar(c, sp(DIA, '10:00'))).resultado).toBe('criada');
   });
 
-  it('paridade: aceita exatamente o que consultarDisponibilidade oferece', async () => {
+  it('paridade: aceita exatamente o que consultarDisponibilidadePorServico oferece', async () => {
     const c = await criarCenarioReserva({ jornada: [['09:00', '12:00'], ['14:00', '19:00']] });
     await db().bloqueio.create({ data: { salaoId: c.s.salaoId, profissionalId: c.ana, inicio: sp(DIA, '16:00'), fim: sp(DIA, '16:40') } });
-    await inserirReservaDireta(c, { inicio: sp(DIA, '10:30'), fim: sp(DIA, '11:00') });
-    const consulta = await consultarDisponibilidade(c.ctxSistema, { servicoIds: [c.A], profissionalId: c.ana, de: DIA, ate: DIA, agora: AGORA });
+    await ocupar(c, { inicio: sp(DIA, '10:30'), fim: sp(DIA, '11:00') });
+    const consulta = await consultarDisponibilidadePorServico(c.ctxSistema, { servicoIds: [c.A], de: DIA, ate: DIA, agora: AGORA });
     if (consulta.resultado !== 'ok') throw new Error('consulta inesperada');
-    const oferecidos = new Set(consulta.profissionais[0].dias[0].horarios.map((h) => h.inicio.getTime()));
+    const daAna = consulta.servicos[0].profissionais.find((p) => p.profissionalId === c.ana);
+    const oferecidos = new Set(daAna!.dias[0].horarios.map((h) => h.inicio.getTime()));
     expect(oferecidos.size).toBeGreaterThan(10);
     let aceitos = 0;
     for (let m = 7 * 60; m <= 21 * 60; m += 15) {
@@ -125,7 +129,10 @@ describe('CA-8: cada causa de recusa e a paridade com a consulta', () => {
       if (oferecidos.has(inicio.getTime())) {
         expect(r.resultado, `esperava aceitar ${inicio.toISOString()}`).toBe('criada');
         aceitos += 1;
-        await db().reserva.updateMany({ where: { salaoId: c.s.salaoId, inicio }, data: { status: 'cancelado' } });
+        if (r.resultado !== 'criada') throw new Error('esperava criada');
+        // Cancela o item (e o derivado) para liberar o horário seguinte da grade.
+        await db().reservaItem.updateMany({ where: { reservaId: r.reserva.id }, data: { status: 'cancelado' } });
+        await db().reserva.update({ where: { id: r.reserva.id }, data: { status: 'cancelado', canceladaEm: new Date() } });
       } else {
         expect(r, `esperava recusar ${inicio.toISOString()}`).toEqual(REVAL);
       }
@@ -142,30 +149,42 @@ describe('CA-8: cada causa de recusa e a paridade com a consulta', () => {
 describe('CA-9: intervalo entre atendimentos', () => {
   it('reserva 10:00–11:00 com intervalo 15: 11:00 recusado, 11:15 aceito com ocupado_ate = fim + 15', async () => {
     const c = await criarCenarioReserva({ intervaloMin: 15 });
-    await inserirReservaDireta(c, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '11:00'), ocupadoAte: sp(DIA, '11:15') });
+    await ocupar(c, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '11:00'), ocupadoAte: sp(DIA, '11:15') });
     expect(await tentar(c, sp(DIA, '11:00'))).toEqual(REVAL);
     const r = await tentar(c, sp(DIA, '11:15'));
     expect(r.resultado).toBe('criada');
     if (r.resultado !== 'criada') return;
     expect(r.reserva.fim).toEqual(sp(DIA, '11:45'));
-    expect(r.reserva.ocupadoAte).toEqual(sp(DIA, '12:00'));
+    expect(r.reserva.itens[0].ocupadoAte).toEqual(sp(DIA, '12:00'));
   });
 });
 
 describe('CA-10: profissional e serviços indisponíveis', () => {
-  it('profissional sem vínculo com um dos serviços', async () => {
+  it('profissional sem vínculo com o serviço do item', async () => {
     const c = await criarCenarioReserva();
-    await db().jornada.createMany({ data: [0, 1, 2, 3, 4, 5, 6].map((diaSemana) => ({ salaoId: c.s.salaoId, profissionalId: c.bia, diaSemana, inicioMin: 540, fimMin: 1140 })) });
+    await jornadaDaBia(c);
     await semEfeito(c, async () =>
-      expect(await tentar(c, sp(DIA, '10:00'), { profissionalId: c.bia, servicoIds: [c.A, c.B] })).toEqual({ resultado: 'profissional_indisponivel' }),
+      expect(await tentar(c, sp(DIA, '10:00'), { profissionalId: c.bia, servicoId: c.B })).toEqual({ resultado: 'profissional_indisponivel', itens: [0] }),
     );
   });
 
   it('serviço inativo da fábrica e profissional inativo da fábrica', async () => {
     const c = await criarCenarioReserva();
     await semEfeito(c, async () => {
-      expect(await tentar(c, sp(DIA, '10:00'), { servicoIds: [c.s.servicos.inativoId] })).toEqual({ resultado: 'servico_indisponivel' });
-      expect(await tentar(c, sp(DIA, '10:00'), { profissionalId: c.s.profissionalInativoId })).toEqual({ resultado: 'profissional_indisponivel' });
+      expect(await tentar(c, sp(DIA, '10:00'), { servicoId: c.s.servicos.inativoId })).toEqual({ resultado: 'servico_indisponivel' });
+      expect(await tentar(c, sp(DIA, '10:00'), { profissionalId: c.s.profissionalInativoId })).toEqual({ resultado: 'profissional_indisponivel', itens: [0] });
     });
+  });
+});
+
+describe('RN-9/RN-12: os outros itens da MESMA reserva ocupam o profissional com o intervalo', () => {
+  it('B (Ana) às 10:30 com A (Ana) às 10:00 e intervalo 15 → entre_itens (antes da revalidação); às 10:45, aceito', async () => {
+    const c = await criarCenarioReserva({ intervaloMin: 15 });
+    const pedir = (hhmm: string) =>
+      criarReserva(c.ctxSistema, entradaReserva(c, { itens: [item(c, sp(DIA, '10:00')), item(c, sp(DIA, hhmm), { servicoId: c.B })] }), { enfileirar });
+    await semEfeito(c, async () =>
+      expect(await pedir('10:30')).toEqual({ resultado: 'horario_indisponivel', causa: 'entre_itens', itens: [1], conflitos: { 1: 0 } }),
+    );
+    expect((await pedir('10:45')).resultado).toBe('criada');
   });
 });

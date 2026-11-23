@@ -60,15 +60,21 @@ export interface RepoMensagemSistema {
 type LinhaContexto = {
   revisao: number;
   status: StatusReserva;
-  inicio: Date;
   salao_nome: string;
   fuso: string;
-  profissional_nome: string | null;
   anonimizada_em: Date | null;
   telefone_e164: string | null;
   consentimento_mensagens: boolean;
   consentimento_convite: boolean;
-  servicos: string[];
+  /** jsonb: instantes chegam como texto ISO e viram Date abaixo. */
+  itens: {
+    inicio: string;
+    fim: string;
+    status: StatusReserva;
+    revisao: number;
+    servico_nome: string;
+    profissional_nome: string;
+  }[];
 };
 
 export function criarRepoMensagemSistema(db?: PrismaClient): RepoMensagemSistema {
@@ -96,21 +102,25 @@ export function criarRepoMensagemSistema(db?: PrismaClient): RepoMensagemSistema
         }
         const m = reivindicadas[0];
 
-        // (2) Contexto num só comando, sem travas (A-5).
+        // (2) Contexto num só comando, sem travas (A-5). D-050: os itens (nomes atuais de serviço e
+        // profissional) por (inicio, id), para a vigência por item e os parâmetros montados no envio.
         const [l] = await tx.$queryRaw<LinhaContexto[]>`
-          SELECT r.revisao, r.status::text AS status, r.inicio, s.nome AS salao_nome, s.fuso,
-                 p.nome AS profissional_nome, c.anonimizada_em, c.telefone_e164,
+          SELECT r.revisao, r.status::text AS status, s.nome AS salao_nome, s.fuso,
+                 c.anonimizada_em, c.telefone_e164,
                  COALESCE(k.mensagens, false) AS consentimento_mensagens,
                  COALESCE(k.convite, false) AS consentimento_convite,
                  COALESCE((
-                   SELECT array_agg(sv.nome ORDER BY ri.ordem)
-                     FROM reserva_item ri
-                     JOIN servico sv ON sv.salao_id = ri.salao_id AND sv.id = ri.servico_id
-                    WHERE ri.salao_id = r.salao_id AND ri.reserva_id = r.id
-                 ), ARRAY[]::text[]) AS servicos
+                   SELECT jsonb_agg(jsonb_build_object(
+                            'inicio', i.inicio, 'fim', i.fim, 'status', i.status::text, 'revisao', i.revisao,
+                            'servico_nome', sv.nome, 'profissional_nome', p.nome)
+                          ORDER BY i.inicio, i.id)
+                     FROM reserva_item i
+                     JOIN servico sv ON sv.salao_id = i.salao_id AND sv.id = i.servico_id
+                     JOIN profissional p ON p.salao_id = i.salao_id AND p.id = i.profissional_id
+                    WHERE i.salao_id = r.salao_id AND i.reserva_id = r.id
+                 ), '[]'::jsonb) AS itens
             FROM reserva r
             JOIN salao s ON s.id = r.salao_id
-            JOIN profissional p ON p.salao_id = r.salao_id AND p.id = r.profissional_id
             JOIN cliente c ON c.salao_id = r.salao_id AND c.id = r.cliente_id
             LEFT JOIN LATERAL (
               SELECT bool_or(k.finalidade = 'mensagens_reserva') AS mensagens,
@@ -123,11 +133,17 @@ export function criarRepoMensagemSistema(db?: PrismaClient): RepoMensagemSistema
           tipo: m.tipo,
           mensagemRevisao: m.revisao,
           reservaId: m.reserva_id,
-          reserva: { revisao: l.revisao, status: l.status, inicio: l.inicio },
+          reserva: { revisao: l.revisao, status: l.status },
+          itens: l.itens.map((i) => ({
+            inicio: new Date(i.inicio),
+            fim: new Date(i.fim),
+            status: i.status,
+            revisao: i.revisao,
+            servicoNome: i.servico_nome,
+            profissionalNome: i.profissional_nome,
+          })),
           salaoNome: l.salao_nome,
           fuso: l.fuso,
-          profissionalNome: l.profissional_nome,
-          servicos: l.servicos,
           clienteAnonimizada: l.anonimizada_em !== null,
           telefone: l.telefone_e164,
           consentimentoMensagens: l.consentimento_mensagens,

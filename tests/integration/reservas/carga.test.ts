@@ -63,7 +63,7 @@ async function rajada(cen: CenarioReserva, profissionalId: string, inicio: Date,
   const r = await Promise.allSettled(
     Array.from({ length: n }, async () => {
       await largada();
-      return criarReserva(cen.ctxSistema, entradaReserva(cen, { profissionalId, inicio }), { enfileirar });
+      return criarReserva(cen.ctxSistema, entradaReserva(cen, { itens: [{ servicoId: cen.A, profissionalId, inicio }] }), { enfileirar });
     }),
   );
   return {
@@ -78,7 +78,7 @@ function conferir(coleta: Coleta, n: number): void {
     expect(rs, chave).toHaveLength(n);
     expect(rs.filter((r) => r.resultado === 'criada'), chave).toHaveLength(1);
     // Nenhum 40P01, 23505 ou erro: só a perdedora por revalidação (a trava serializa as criações).
-    expect(rs.filter((r) => r.resultado !== 'criada'), chave).toEqual(Array(n - 1).fill({ resultado: 'horario_indisponivel', causa: 'revalidacao' }));
+    expect(rs.filter((r) => r.resultado !== 'criada'), chave).toEqual(Array(n - 1).fill({ resultado: 'horario_indisponivel', causa: 'revalidacao', itens: [0] }));
   }
 }
 
@@ -126,9 +126,10 @@ describe('CA-29 (DEF-1): criações concorrentes no mesmo horário resistem à c
       criadas += onda16.porHorario.size;
 
       expect(criadas).toBe(2 * HORARIOS * DIAS.length + 5);
-      const reservas = await db.reserva.findMany({ where: { salaoId: cen.s.salaoId, status: 'confirmado' }, select: { profissionalId: true, inicio: true } });
-      expect(reservas).toHaveLength(criadas);
-      expect(new Set(reservas.map((r) => `${r.profissionalId}@${r.inicio.toISOString()}`)).size).toBe(criadas);
+      const itens = await db.reservaItem.findMany({ where: { salaoId: cen.s.salaoId, status: 'confirmado' }, select: { profissionalId: true, inicio: true } });
+      expect(itens).toHaveLength(criadas);
+      expect(new Set(itens.map((r) => `${r.profissionalId}@${r.inicio.toISOString()}`)).size).toBe(criadas);
+      expect(await db.reserva.count({ where: { salaoId: cen.s.salaoId, status: 'confirmado' } })).toBe(criadas);
       expect(await db.reservaItem.count({ where: { salaoId: cen.s.salaoId } })).toBe(criadas);
       expect(await db.consentimento.count({ where: { salaoId: cen.s.salaoId } })).toBe(criadas);
       expect(await db.mensagem.count({ where: { salaoId: cen.s.salaoId } })).toBe(criadas);

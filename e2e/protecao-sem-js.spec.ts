@@ -13,8 +13,6 @@ async function ateOsDados(page: Page) {
   expect(resposta?.status()).toBe(200);
   await page.getByRole('checkbox', { name: /Escova/ }).check();
   await continuar(page);
-  await page.getByRole('radio', { name: 'Ana' }).check();
-  await continuar(page);
   await page.getByRole('list').getByRole('link', { name: /\d{2}\/\d{2}\/\d{4}$/ }).first().click();
   await page.getByRole('radio').first().check();
   await continuar(page);

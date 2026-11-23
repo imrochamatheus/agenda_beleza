@@ -15,7 +15,7 @@ import { ipNovo } from '../../support/reserva-publica';
 import { conectar } from '../../support/sql';
 
 import {
-  AGORA, DIA_MS, SEGREDO_TESTE, conviteDe, criarAvaliavel, ctxPublico, emitirLink, enviar, fotografia, salaoNovo,
+  AGORA, DIA_MS, SEGREDO_TESTE, conviteDe, criarAvaliavel, ctxPublico, definirStatus, emitirLink, enviar, fotografia, salaoNovo,
 } from './apoio';
 
 // D-032 T-4: verificação e envio pelo link (CA-3, CA-4, CA-5, CA-6, CA-9, CA-12, CA-13, CA-14).
@@ -95,7 +95,7 @@ describe('CA-4 e CA-5: link recusado de forma uniforme, nada gravado', () => {
 
     const naoConcluida = await criarAvaliavel(c, s, { status: 'concluido' });
     const tNaoConcluida = (await emitirLink(s, naoConcluida.reservaId)).token;
-    await c.query("UPDATE reserva SET status = 'nao_compareceu' WHERE id = $1", [naoConcluida.reservaId]);
+    await definirStatus(c, naoConcluida.reservaId, 'nao_compareceu');
 
     const invalidada = await criarAvaliavel(c, s);
     const tInvalidada = (await emitirLink(s, invalidada.reservaId)).token;

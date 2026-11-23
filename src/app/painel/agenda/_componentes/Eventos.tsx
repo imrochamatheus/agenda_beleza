@@ -1,30 +1,48 @@
 import { formatarFaixaDeMinutos } from '@/lib/format';
-import { rotuloDoStatus } from '@/server/agenda/rotulos';
+import { rotuloDoStatusDoItem } from '@/server/agenda/rotulos';
 import { MENSAGENS_AGENDA } from '@/server/agenda/tipos';
-import type { BloqueioDaAgenda, FaixaDoDia, ReservaDaAgenda } from '@/server/agenda/tipos';
-import { formatarLista } from '@/lib/format';
+import type { BlocoDaAgenda, BloqueioDaAgenda, FaixaDoDia } from '@/server/agenda/tipos';
 import { TEXTO_CLIENTE_REMOVIDA } from '@/server/clientes/tipos';
 
 import estilos from './Agenda.module.css';
+import { idDoItem } from './roteiro';
 
 /** Nome da cliente na grade: anonimizada → "cliente removida" (importado, nunca copiado). Sem telefone (CA-17). */
-export const nomeDaCliente = (r: ReservaDaAgenda): string => r.clienteNome ?? TEXTO_CLIENTE_REMOVIDA;
+export const nomeDaCliente = (b: Pick<BlocoDaAgenda, 'clienteNome'>): string => b.clienteNome ?? TEXTO_CLIENTE_REMOVIDA;
+
+/** Link do bloco: o detalhe da reserva, aberto na parada do item (`#item-<id>`), com e sem JavaScript. */
+export const hrefDoBloco = (hrefReserva: (id: string) => string, b: Pick<BlocoDaAgenda, 'reservaId' | 'itemId'>): string =>
+  `${hrefReserva(b.reservaId)}#${idDoItem(b.itemId)}`;
 
 export const rotuloDoBloqueio = (b: BloqueioDaAgenda): string => {
   const base = b.profissionalId === null ? MENSAGENS_AGENDA.bloqueioDoSalao : MENSAGENS_AGENDA.bloqueio;
   return b.motivo === null || b.motivo === '' ? base : `${base}: ${b.motivo}`;
 };
 
-type PropsReserva = { reserva: ReservaDaAgenda; faixa: FaixaDoDia; href: string; estiloExtra?: React.CSSProperties };
+type PropsBloco = { bloco: BlocoDaAgenda; faixa: FaixaDoDia; href: string; estiloExtra?: React.CSSProperties };
 
-/** Conteúdo comum da reserva (grade e lista): horário, cliente, serviços, status textual e encaixe. */
-export function ConteudoDaReserva({ reserva, faixa }: { reserva: ReservaDaAgenda; faixa: FaixaDoDia }) {
+/**
+ * Conteúdo comum do bloco (grade e lista; D-050 web-design §5.9): horário DO ITEM, cliente, serviço do item,
+ * status do item (masculino), encaixe do item e, só para o gestor, "n de N" com texto completo para o leitor
+ * de tela ("serviço 1 de 3 do agendamento"). O profissional nunca recebe `posicao` (CA-33).
+ */
+export function ConteudoDoBloco({ bloco, faixa }: { bloco: BlocoDaAgenda; faixa: FaixaDoDia }) {
   return (
     <>
-      <strong>{formatarFaixaDeMinutos(faixa.inicioMin, faixa.fimMin)}</strong> {nomeDaCliente(reserva)}
-      {reserva.itens.length > 0 ? <> · {formatarLista(reserva.itens.map((i) => i.nome))}</> : null} ·{' '}
-      {rotuloDoStatus(reserva.status)}
-      {reserva.encaixe ? <> · {MENSAGENS_AGENDA.encaixe}</> : null}
+      <strong>{formatarFaixaDeMinutos(faixa.inicioMin, faixa.fimMin)}</strong> {nomeDaCliente(bloco)} · {bloco.servicoNome} ·{' '}
+      {rotuloDoStatusDoItem(bloco.status)}
+      {bloco.encaixe ? <> · {MENSAGENS_AGENDA.encaixe}</> : null}
+      {bloco.posicao !== null ? (
+        <>
+          {' · '}
+          <span aria-hidden="true">
+            {bloco.posicao.n} de {bloco.posicao.de}
+          </span>
+          <span className={estilos.somenteLeitor}>
+            serviço {bloco.posicao.n} de {bloco.posicao.de} do agendamento
+          </span>
+        </>
+      ) : null}
     </>
   );
 }
@@ -62,12 +80,13 @@ export function MarcaDeFalha({ variante }: { variante: 'grade' | 'lista' }) {
   );
 }
 
-export function EventoDeReserva({ reserva, faixa, href, estiloExtra }: PropsReserva) {
-  const classe = `${estilos.evento} ${estilos[reserva.status]}${reserva.temFalhaDeMensagem ? ` ${estilos.comFalha}` : ''}`;
+/** Bloco de um ITEM na grade do dia; cor e borda pelo status do item; a falha de mensagem é da reserva. */
+export function EventoDoBloco({ bloco, faixa, href, estiloExtra }: PropsBloco) {
+  const classe = `${estilos.evento} ${estilos[bloco.status]}${bloco.temFalhaDeMensagem ? ` ${estilos.comFalha}` : ''}`;
   return (
-    <a className={classe} href={href} style={estiloExtra}>
-      {reserva.temFalhaDeMensagem ? <MarcaDeFalha variante="grade" /> : null}
-      <ConteudoDaReserva reserva={reserva} faixa={faixa} />
+    <a className={classe} href={href} style={estiloExtra} data-item={bloco.itemId}>
+      {bloco.temFalhaDeMensagem ? <MarcaDeFalha variante="grade" /> : null}
+      <ConteudoDoBloco bloco={bloco} faixa={faixa} />
     </a>
   );
 }

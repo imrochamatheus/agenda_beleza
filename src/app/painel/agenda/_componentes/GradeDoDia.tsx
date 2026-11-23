@@ -1,10 +1,10 @@
 import { formatarFaixaDeMinutos, formatarMinutosDoDia } from '@/lib/format';
 import { distribuirLadoALado, recortarNoDia } from '@/server/agenda/faixas';
 import { MENSAGENS_AGENDA } from '@/server/agenda/tipos';
-import type { AgendaVista, BloqueioDaAgenda, ColunaDaAgenda, FaixaDoDia, ReservaDaAgenda } from '@/server/agenda/tipos';
+import type { AgendaVista, BlocoDaAgenda, BloqueioDaAgenda, ColunaDaAgenda, FaixaDoDia } from '@/server/agenda/tipos';
 
 import estilos from './Agenda.module.css';
-import { EventoDeReserva, rotuloDoBloqueio } from './Eventos';
+import { EventoDoBloco, hrefDoBloco, rotuloDoBloqueio } from './Eventos';
 
 type Props = { vista: AgendaVista; hrefReserva: (id: string) => string };
 
@@ -12,16 +12,16 @@ const REM_POR_MINUTO = 0.1;
 const rem = (min: number) => `${(min * REM_POR_MINUTO).toFixed(2)}rem`;
 
 type EventoNaGrade =
-  | (FaixaDoDia & { tipo: 'reserva'; reserva: ReservaDaAgenda })
+  | (FaixaDoDia & { tipo: 'item'; bloco: BlocoDaAgenda })
   | (FaixaDoDia & { tipo: 'bloqueio'; bloqueio: BloqueioDaAgenda });
 
-/** Uma trilha de 00:00 a 24:00 por profissional; reservas e bloqueios lado a lado quando se sobrepõem. */
+/** Uma trilha de 00:00 a 24:00 por profissional; itens (D-050: um bloco por item) e bloqueios lado a lado quando se sobrepõem. */
 function Trilha({ vista, coluna, hrefReserva }: { vista: AgendaVista; coluna: ColunaDaAgenda; hrefReserva: Props['hrefReserva'] }) {
   const dia = vista.dias[0];
   const eventos: EventoNaGrade[] = [];
-  for (const r of coluna.reservas) {
-    const f = recortarNoDia(r.inicio, r.fim, dia, vista.fuso);
-    if (f) eventos.push({ ...f, tipo: 'reserva', reserva: r });
+  for (const b of coluna.blocos) {
+    const f = recortarNoDia(b.inicio, b.fim, dia, vista.fuso);
+    if (f) eventos.push({ ...f, tipo: 'item', bloco: b });
   }
   for (const b of coluna.bloqueios) {
     const f = recortarNoDia(b.inicio, b.fim, dia, vista.fuso);
@@ -66,14 +66,8 @@ function Trilha({ vista, coluna, hrefReserva }: { vista: AgendaVista; coluna: Co
             left: `${(e.coluna / e.colunas) * 100}%`,
             width: `${100 / e.colunas}%`,
           };
-          return e.tipo === 'reserva' ? (
-            <EventoDeReserva
-              key={`r${e.reserva.id}`}
-              reserva={e.reserva}
-              faixa={e}
-              href={hrefReserva(e.reserva.id)}
-              estiloExtra={estilo}
-            />
+          return e.tipo === 'item' ? (
+            <EventoDoBloco key={`i${e.bloco.itemId}`} bloco={e.bloco} faixa={e} href={hrefDoBloco(hrefReserva, e.bloco)} estiloExtra={estilo} />
           ) : (
             <div key={`b${e.bloqueio.id}`} className={`${estilos.evento} ${estilos.bloqueio}`} style={estilo}>
               <strong>{formatarFaixaDeMinutos(e.inicioMin, e.fimMin)}</strong> {rotuloDoBloqueio(e.bloqueio)}

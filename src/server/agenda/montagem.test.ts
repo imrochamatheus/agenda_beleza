@@ -4,7 +4,7 @@ import { montarSemana } from '@/server/semana/montagem';
 
 import { montarVista } from './montagem';
 import type { EntradaDaVista } from './montagem';
-import type { ReservaDaAgenda } from './tipos';
+import type { BlocoDaAgenda } from './tipos';
 
 // D-028 T-1 (RN-8, RN-9, RN-12): quais colunas aparecem, bloqueios do salão replicados, faixas por dia.
 const SP = 'America/Sao_Paulo';
@@ -13,8 +13,9 @@ const ANA = { id: 'ana', nome: 'Ana', ativo: true };
 const BIA = { id: 'bia', nome: 'Bia', ativo: true };
 const CARLA = { id: 'carla', nome: 'Carla', ativo: false };
 const jornada = montarSemana([1, 2, 3, 4, 5, 6, 0].map((diaSemana) => ({ diaSemana, inicioMin: 540, fimMin: 1080 })));
-const reserva = (profissionalId: string): ReservaDaAgenda => ({
-  id: `r-${profissionalId}`,
+const bloco = (profissionalId: string, reservaId = `r-${profissionalId}`): BlocoDaAgenda => ({
+  itemId: `i-${profissionalId}`,
+  reservaId,
   profissionalId,
   inicio: new Date('2026-12-01T13:00:00Z'),
   fim: new Date('2026-12-01T14:00:00Z'),
@@ -22,8 +23,11 @@ const reserva = (profissionalId: string): ReservaDaAgenda => ({
   origem: 'equipe',
   encaixe: false,
   clienteNome: 'X',
+  servicoNome: 'Escova',
+  precoCentavos: 5000,
+  duracaoMin: 60,
   temFalhaDeMensagem: false,
-  itens: [],
+  posicao: null,
 });
 const base: EntradaDaVista = {
   data: HOJE,
@@ -34,7 +38,7 @@ const base: EntradaDaVista = {
   filtro: null,
   colunaSempre: false,
   comOpcoes: true,
-  reservas: [],
+  blocos: [],
   bloqueios: [],
   jornadas: new Map([[ANA.id, jornada]]),
   funcionamento: { definido: false },
@@ -45,7 +49,7 @@ describe('montarVista', () => {
   it('sem filtro: ativo com jornada, quem tem reserva ou bloqueio próprio; inativo vazio é omitido', () => {
     const v = montarVista({
       ...base,
-      reservas: [reserva(CARLA.id)],
+      blocos: [bloco(CARLA.id)],
       bloqueios: [{ id: 'b1', profissionalId: BIA.id, inicio: new Date('2026-12-01T13:00:00Z'), fim: new Date('2026-12-01T14:00:00Z'), motivo: 'm' }],
     });
     expect(v.colunas.map((c) => c.id)).toEqual(['ana', 'bia', 'carla']);
@@ -86,5 +90,17 @@ describe('montarVista', () => {
     expect(v.data).toBe('2026-12-01');
     expect([v.anterior, v.proximo, v.hoje]).toEqual(['2026-11-24', '2026-12-08', '2026-12-01']);
     expect(v.truncada).toBe(true);
+  });
+
+  it('D-050 RN-36: cada bloco vai para a coluna do profissional DO ITEM; itens da mesma reserva se repartem', () => {
+    const v = montarVista({
+      ...base,
+      blocos: [bloco(ANA.id, 'r1'), bloco(BIA.id, 'r1'), bloco(CARLA.id, 'r1')],
+    });
+    expect(v.colunas.map((c) => [c.id, c.blocos.map((b) => `${b.reservaId}/${b.itemId}`)])).toEqual([
+      ['ana', ['r1/i-ana']],
+      ['bia', ['r1/i-bia']],
+      ['carla', ['r1/i-carla']],
+    ]);
   });
 });

@@ -62,6 +62,8 @@ export type ResultadoReenvio =
 /** Situação de envio para a E7.3: nunca traz destinatário, parâmetros nem id do provedor (RN-23). */
 export type MensagemDaReservaDTO = {
   id: string;
+  /** D-050: item da mensagem (null = reserva inteira). */
+  reservaItemId: string | null;
   tipo: TipoMensagem;
   revisao: number;
   estado: EstadoMensagem;

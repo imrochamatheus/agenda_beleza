@@ -1,18 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// D-030 CA-13: remarcar, cancelar (dois passos) e marcar o resultado funcionam SEM JavaScript (POST de
-// <form action> antes da hidratação). Erros e avisos voltam na resposta (200); o sucesso é PRG (?resultado=).
-// Em /dev/reserva-acoes (sem banco).
+import { semRolagemHorizontal } from './suporte/vitrine';
+
+// D-030 CA-13 e D-050 CA-36 (sem JavaScript): remarcar, cancelar, "Cancelar todos" e marcar o resultado POR ITEM
+// funcionam sem JavaScript. Abrir é GET (`?remarcar=`, `?cancelar=`, `?cancelar=todos`); erros e avisos voltam na
+// resposta do POST (200); o sucesso é PRG (`?resultado=…#resultado`). Em /dev/reserva-acoes (sem banco).
 
 test.use({ javaScriptEnabled: false });
-
-function proximaTerca(): string {
-  for (let d = 14; d <= 20; d += 1) {
-    const iso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(Date.now() + d * 86_400_000));
-    if (new Date(`${iso}T12:00:00Z`).getUTCDay() === 2) return iso;
-  }
-  throw new Error('sem terça-feira na janela');
-}
 
 async function enviar(page: Page, botao: string) {
   const resposta = page.waitForResponse((r) => r.request().method() === 'POST');
@@ -20,49 +14,71 @@ async function enviar(page: Page, botao: string) {
   return resposta;
 }
 
-test.describe('CA-13: ações da reserva sem JavaScript', () => {
-  test('remarcar: aviso de encaixe na resposta, dados preservados e confirmação cria o resultado', async ({ page }) => {
-    const dia = proximaTerca();
+test.describe('CA-36: ações por item sem JavaScript', () => {
+  test('remarcar: aviso de encaixe na resposta, valores preservados, confirmação faz o PRG', async ({ page }) => {
     await page.goto('/dev/reserva-acoes');
-    await page.getByLabel('Nova data').fill(dia);
-    await page.getByLabel(/Nova hora/).fill('19:00');
-    expect((await enviar(page, 'Remarcar reserva')).status()).toBe(200);
+    await page.getByRole('link', { name: 'Remarcar Escova (09:00)' }).click();
+    await expect(page).toHaveURL(/remarcar=item-escova/);
+    await expect(page.getByRole('button', { name: 'Remarcar serviço' })).toHaveCount(1);
+    await semRolagemHorizontal(page, 'remarcar aberto sem JS');
+    await page.getByRole('combobox', { name: 'Profissional' }).selectOption({ label: 'Bia Demonstração' });
+    await page.getByRole('textbox', { name: /Hora/ }).fill('19:00');
+    expect((await enviar(page, 'Remarcar serviço')).status()).toBe(200);
     await expect(page.locator('#remarcar-aviso-encaixe')).toContainText('Fora da jornada do profissional.');
-    await expect(page.getByLabel('Nova data')).toHaveValue(dia);
-    await expect(page.getByLabel(/Nova hora/)).toHaveValue('19:00');
-    await expect(page.getByRole('checkbox', { name: /Corte feminino/ })).toBeChecked();
+    await expect(page.getByRole('textbox', { name: /Hora/ })).toHaveValue('19:00');
+    await expect(page.getByRole('combobox', { name: 'Profissional' }).locator('option:checked')).toHaveText('Bia Demonstração');
 
     await page.getByRole('checkbox', { name: 'Confirmo o encaixe' }).check();
-    await enviar(page, 'Remarcar reserva');
-    await expect(page).toHaveURL(/resultado=remarcada/);
-    await expect(page.getByRole('status')).toContainText('Reserva atualizada.');
+    await enviar(page, 'Remarcar serviço');
+    await expect(page).toHaveURL(/resultado=remarcado/);
+    await expect(page.locator('#resultado')).toContainText('foi remarcado');
   });
 
   test('remarcar: erro volta na resposta com os valores preservados', async ({ page }) => {
-    await page.goto('/dev/reserva-acoes');
-    await page.getByRole('checkbox', { name: /Corte feminino/ }).uncheck();
-    await page.getByLabel(/Nova hora/).fill('11:00');
-    expect((await enviar(page, 'Remarcar reserva')).status()).toBe(200);
-    await expect(page.locator('#remarcar-resumo-erros')).toContainText('Serviços');
-    await expect(page.getByLabel(/Nova hora/)).toHaveValue('11:00');
+    await page.goto('/dev/reserva-acoes?remarcar=item-escova');
+    await page.getByRole('textbox', { name: /Hora/ }).fill('9h');
+    expect((await enviar(page, 'Remarcar serviço')).status()).toBe(200);
+    await expect(page.locator('#remarcar-resumo-erros')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: /Hora/ })).toHaveValue('9h');
   });
 
-  test('cancelar em dois passos: o primeiro POST pede a confirmação; "Manter reserva" volta; confirmar cancela', async ({ page }) => {
+  test('cancelar um item: GET abre a confirmação, "Manter serviço" volta, POST cancela', async ({ page }) => {
     await page.goto('/dev/reserva-acoes');
-    expect((await enviar(page, 'Cancelar reserva')).status()).toBe(200);
-    await expect(page.locator('#cancelar-confirmacao')).toBeVisible();
-    await enviar(page, 'Manter reserva');
-    await expect(page.locator('#cancelar-confirmacao')).toHaveCount(0);
-    await enviar(page, 'Cancelar reserva');
-    await enviar(page, 'Confirmar cancelamento');
-    await expect(page).toHaveURL(/resultado=cancelada/);
-    await expect(page.getByRole('status')).toContainText('Reserva cancelada.');
+    await page.getByRole('link', { name: 'Cancelar Escova (09:00)' }).click();
+    await expect(page.getByRole('group', { name: /^Cancelar Escova \(09:00/ })).toBeVisible();
+    await page.getByRole('link', { name: 'Manter serviço' }).click();
+    await expect(page.getByRole('button', { name: 'Sim, cancelar este serviço' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Cancelar Escova (09:00)' }).click();
+    await enviar(page, 'Sim, cancelar este serviço');
+    await expect(page).toHaveURL(/resultado=cancelado/);
+    await expect(page.locator('#resultado')).toContainText('Escova (09:00) foi cancelado.');
   });
 
-  test('marcar como não compareceu, em reserva iniciada', async ({ page }) => {
+  test('"Cancelar todos": GET + POST, uma única mensagem', async ({ page }) => {
+    await page.goto('/dev/reserva-acoes');
+    await page.getByRole('link', { name: 'Cancelar todos os serviços' }).click();
+    await expect(page.getByRole('button', { name: 'Sim, cancelar todos' })).toBeVisible();
+    await page.getByRole('link', { name: 'Manter serviços' }).click();
+    await expect(page.getByRole('button', { name: 'Sim, cancelar todos' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Cancelar todos os serviços' }).click();
+    await enviar(page, 'Sim, cancelar todos');
+    await expect(page).toHaveURL(/resultado=todos_cancelados/);
+    await expect(page.locator('#resultado')).toContainText('2 serviços cancelados.');
+  });
+
+  test('marcar "Não compareceu" num item iniciado', async ({ page }) => {
     await page.goto('/dev/reserva-acoes?vista=iniciada');
-    await enviar(page, 'Marcar como não compareceu');
+    await enviar(page, 'Marcar Escova como não compareceu');
     await expect(page).toHaveURL(/resultado=nao_compareceu/);
-    await expect(page.getByRole('status')).toContainText('não compareceu');
+    await expect(page.locator('#resultado')).toContainText('Escova marcado como não compareceu.');
+  });
+
+  test('profissional sem JavaScript: só o próprio item, sem "Cancelar todos"', async ({ page }) => {
+    await page.goto('/dev/reserva-acoes?vista=profissional');
+    await expect(page.getByRole('list', { name: 'Serviços da reserva' }).locator(':scope > li')).toHaveCount(1);
+    await expect(page.getByRole('link', { name: 'Cancelar todos os serviços' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Remarcar Escova (09:00)' }).click();
+    await expect(page.getByRole('combobox', { name: 'Profissional' })).toHaveCount(0);
+    await semRolagemHorizontal(page, 'profissional remarcando sem JS');
   });
 });

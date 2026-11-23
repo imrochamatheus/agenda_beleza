@@ -24,6 +24,7 @@ const MODOS = ['gestor', 'profissional', 'edicao'] as const;
 function avisoDeExemplo(inicio: Date): AvisoReservas {
   const r = (id: string, desloc: number, profissionalNome: string, cliente: string) => ({
     id,
+    itemId: `${id}-item`,
     profissionalNome,
     inicioLocal: formatarDataHora(new Date(inicio.getTime() + desloc), FUSO),
     fimLocal: formatarDataHora(new Date(inicio.getTime() + desloc + HORA_MS), FUSO),

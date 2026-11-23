@@ -46,23 +46,31 @@ describe('CA-12: atomicidade com a transação do chamador', () => {
     expect(await linhasDe(c, clienteId)).toEqual([]);
   });
 
-  it('violação de reserva_sem_sobreposicao (23P01) depois do registro desfaz o consentimento', async () => {
+  it('violação de reserva_item_sem_sobreposicao (23P01) depois do registro desfaz o consentimento', async () => {
     const clienteId = await inserirCliente(c, s.salaoId, 'Sem Horario');
     const erro = await obterPrisma()
       .$transaction(async (tx) => {
         await registrarConsentimentoDaReserva(ctxPublico(s), { clienteId, aceites, origem: 'publico', agora: AGORA }, criarRepos(tx));
-        // Reserva no mesmo profissional e horário da reserva da fábrica.
+        // D-050: reserva + item no mesmo profissional e horário do primeiro item da reserva da fábrica.
         await tx.$executeRaw`
-          INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-          VALUES (${s.salaoId}::uuid, ${s.profissional.profissionalId}::uuid, ${clienteId}::uuid,
-                  ${s.reserva.inicio}, ${s.reserva.fim}, ${s.reserva.fim}, 'confirmado', 'publico')`;
+          WITH r AS (
+            INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem)
+            VALUES (${s.salaoId}::uuid, ${clienteId}::uuid, ${s.reserva.inicio}, ${s.reserva.fim}, 'confirmado', 'publico')
+            RETURNING id
+          )
+          INSERT INTO reserva_item (salao_id, reserva_id, servico_id, profissional_id, ordem, preco_centavos, duracao_min,
+                                    inicio, fim, ocupado_ate, status)
+          SELECT ${s.salaoId}::uuid, r.id, ${s.servicos.ativos[0]}::uuid, ${s.profissional.profissionalId}::uuid, 0, 1000, 30,
+                 ${s.reserva.inicio}, ${s.reserva.inicio}::timestamptz + interval '30 minutes',
+                 ${s.reserva.inicio}::timestamptz + interval '30 minutes', 'confirmado'
+            FROM r`;
       })
       .then(
         () => null,
         (e: unknown) => e as Error,
       );
     expect(erro).not.toBeNull();
-    expect(String((erro as Error).message)).toContain('reserva_sem_sobreposicao');
+    expect(String((erro as Error).message)).toContain('reserva_item_sem_sobreposicao');
     expect(await linhasDe(c, clienteId)).toEqual([]);
   });
 

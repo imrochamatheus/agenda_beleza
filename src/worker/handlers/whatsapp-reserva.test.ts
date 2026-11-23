@@ -23,8 +23,9 @@ function sistema(): { sistema: RepoMensagemSistema; fechamentos: unknown[] } {
   const inicio: ResultadoInicio = {
     resultado: 'enviar', tentativaId: 't', numero: 1, destinatarioE164: '+5511987654321', tipo: 'confirmacao', revisao: 0, reservaId: RESERVA,
     contexto: {
-      tipo: 'confirmacao', mensagemRevisao: 0, reservaId: RESERVA, reserva: { revisao: 0, status: 'confirmado', inicio: new Date('2026-11-25T13:00:00Z') },
-      salaoNome: 'S', fuso: 'America/Sao_Paulo', profissionalNome: 'P', servicos: ['A'], clienteAnonimizada: false, telefone: '+5511987654321',
+      tipo: 'confirmacao', mensagemRevisao: 0, reservaId: RESERVA, reserva: { revisao: 0, status: 'confirmado' },
+      itens: [{ inicio: new Date('2026-11-25T13:00:00Z'), fim: new Date('2026-11-25T13:30:00Z'), status: 'confirmado', revisao: 0, servicoNome: 'A', profissionalNome: 'P' }],
+      salaoNome: 'S', fuso: 'America/Sao_Paulo', clienteAnonimizada: false, telefone: '+5511987654321',
       consentimentoMensagens: true, consentimentoConvite: false,
     },
   };

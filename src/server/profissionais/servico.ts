@@ -127,6 +127,7 @@ export async function desativar(ctx: TenantContext, e: unknown, agora: Date): Pr
         resultado: 'recusado',
         reservas: bloqueantes.map((b) => ({
           id: b.id,
+          itemId: b.itemId,
           inicio: b.inicio.toISOString(),
           inicioLocal: formatarDataHora(b.inicio, trava.fusoSalao),
           servicos: b.servicos,

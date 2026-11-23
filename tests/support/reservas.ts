@@ -3,8 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type pg from 'pg';
 
-import { PrismaClient } from '@/generated/prisma/client';
-import type { EntradaCriarReserva } from '@/server/reservas/tipos';
+import { Prisma, PrismaClient } from '@/generated/prisma/client';
 import { configuracaoDoAdaptador, obterPrisma } from '@/server/repos/db';
 import { contextoDeSistema, criarTenantContext } from '@/server/tenant/context';
 import type { SistemaContext, TenantContext } from '@/server/tenant/context';
@@ -13,7 +12,7 @@ import { criarSalaoCompleto } from './factories';
 import type { SalaoCompleto, SobrescritasSalao } from './factories';
 import { telefoneNovo } from './sql';
 
-// Apoio dos testes de criarReserva (D-025 T-5). Tudo via Prisma e `pg` na base deste worker, sem mocks
+// Apoio dos testes de criarReserva (D-025 T-5; D-050 T-2: itens com profissional e horário próprios). Tudo via Prisma e `pg` na base deste worker, sem mocks
 // de banco. Não altera factories.ts nem mensagens.ts: parte de criarSalaoCompleto e limpa a agenda.
 // Relógio sempre injetado: AGORA fixo, antes de DIA (uma terça-feira, dentro da janela de 60 dias).
 
@@ -128,12 +127,24 @@ export async function definirFuncionamento(salaoId: string, porDia: Partial<Reco
   await db.salao.update({ where: { id: salaoId }, data: { funcionamentoDefinido: true } });
 }
 
-/** Entrada válida padrão (serviço A com a Ana, terça 10:00 local, telefone novo); sobrescreva o que o caso exige. */
-export function entradaReserva(c: CenarioReserva, sobre: Partial<EntradaCriarReserva> = {}): EntradaCriarReserva {
+/**
+ * Entrada de `criarReserva` no formato da D-050 (§3.5: `itens` com serviço, profissional e início
+ * próprios). Declarada aqui, e não importada de reservas/tipos.ts, para o suporte não depender da
+ * ordem das tarefas: é estruturalmente igual a `EntradaCriarReserva`.
+ */
+export type EntradaReservaDeTeste = {
+  itens: { servicoId: string; profissionalId: string; inicio: Date }[];
+  cliente: { nome: unknown; telefone: unknown };
+  aceites: unknown;
+  chaveRequisicao?: string | null;
+  modo?: 'normal' | 'encaixe';
+  agora: Date;
+};
+
+/** Entrada válida padrão (um item: serviço A com a Ana, terça 10:00 local, telefone novo); sobrescreva o que o caso exige. */
+export function entradaReserva(c: CenarioReserva, sobre: Partial<EntradaReservaDeTeste> = {}): EntradaReservaDeTeste {
   return {
-    servicoIds: [c.A],
-    profissionalId: c.ana,
-    inicio: sp(DIA, '10:00'),
+    itens: [{ servicoId: c.A, profissionalId: c.ana, inicio: sp(DIA, '10:00') }],
     cliente: { nome: 'Cliente de Teste', telefone: telefoneNovo() },
     aceites: { mensagensReserva: true },
     agora: AGORA,
@@ -238,7 +249,12 @@ export function instalarContadorDeComandos(): { contar(): number; reiniciar(): v
   };
 }
 
-/** Reserva direta (sem o serviço), com cliente própria: simula a agenda já ocupada. Devolve o id. */
+/**
+ * Reserva direta (sem o serviço), com cliente própria e UM item (D-050): simula a agenda já ocupada.
+ * O item usa o serviço A (ou `servicoId`), o profissional dado (padrão Ana), `[inicio, fim)` (inteiro de
+ * minutos), `ocupadoAte` (padrão `fim`), status e encaixe; a reserva recebe os derivados coerentes.
+ * Devolve o id da reserva.
+ */
 export async function inserirReservaDireta(
   c: CenarioReserva,
   r: {
@@ -247,9 +263,14 @@ export async function inserirReservaDireta(
     ocupadoAte?: Date;
     status?: 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
     profissionalId?: string;
+    servicoId?: string;
+    encaixe?: boolean;
   },
 ): Promise<string> {
   const db = obterPrisma();
+  const duracaoMin = (r.fim.getTime() - r.inicio.getTime()) / MIN_MS;
+  if (!Number.isInteger(duracaoMin)) throw new RangeError('inserirReservaDireta: fim - inicio deve ser inteiro em minutos');
+  const status = r.status ?? 'confirmado';
   const cliente = await db.cliente.create({
     data: { salaoId: c.s.salaoId, nome: 'Cliente da agenda', telefoneE164: telefoneNovo() },
     select: { id: true },
@@ -257,17 +278,87 @@ export async function inserirReservaDireta(
   const reserva = await db.reserva.create({
     data: {
       salaoId: c.s.salaoId,
-      profissionalId: r.profissionalId ?? c.ana,
       clienteId: cliente.id,
       inicio: r.inicio,
       fim: r.fim,
-      ocupadoAte: r.ocupadoAte ?? r.fim,
-      status: r.status ?? 'confirmado',
+      status,
       origem: 'equipe',
+      canceladaEm: status === 'cancelado' ? new Date() : null,
+      itens: {
+        create: {
+          // Sem `salaoId`: no create aninhado ele vem da relação com a reserva (Prisma recusa o campo).
+          servicoId: r.servicoId ?? c.A,
+          profissionalId: r.profissionalId ?? c.ana,
+          ordem: 0,
+          inicio: r.inicio,
+          fim: r.fim,
+          ocupadoAte: r.ocupadoAte ?? r.fim,
+          status,
+          encaixe: r.encaixe ?? false,
+          precoCentavos: 5000,
+          duracaoMin,
+        },
+      },
     },
     select: { id: true },
   });
   return reserva.id;
+}
+
+type LinhaDerivados = {
+  id: string;
+  status: string;
+  inicio: Date;
+  fim: Date;
+  cancelada_em: Date | null;
+  itens: number;
+  status_esperado: string | null;
+  inicio_esperado: Date | null;
+  fim_esperado: Date | null;
+};
+
+/**
+ * Verificador de consistência (D-050 R-2, dba.md Q1): confere, por SQL INDEPENDENTE de
+ * `derivarReserva`, que cada reserva alvo tem ≥ 1 item, `status` = prioridade dos itens
+ * (confirmado > concluido > nao_compareceu > cancelado), `inicio`/`fim` = envelope dos itens não
+ * cancelados (de todos, se todos cancelados) e `cancelada_em` preenchido se e só se `cancelado`.
+ * Alvo: uma reserva (`reservaId`) ou todas de um salão (`{ salaoId }`). Lança um Error com as
+ * divergências; devolve quantas reservas conferiu.
+ */
+export async function conferirDerivados(alvo: string | { salaoId: string }): Promise<number> {
+  const db = obterPrisma();
+  const filtro = typeof alvo === 'string' ? Prisma.sql`r.id = ${alvo}::uuid` : Prisma.sql`r.salao_id = ${alvo.salaoId}::uuid`;
+  const linhas = await db.$queryRaw<LinhaDerivados[]>`
+    SELECT r.id::text AS id, r.status::text AS status, r.inicio, r.fim, r.cancelada_em,
+           count(i.id)::int AS itens,
+           CASE WHEN bool_or(i.status = 'confirmado') THEN 'confirmado'
+                WHEN bool_or(i.status = 'concluido') THEN 'concluido'
+                WHEN bool_or(i.status = 'nao_compareceu') THEN 'nao_compareceu'
+                WHEN bool_or(i.status = 'cancelado') THEN 'cancelado' END AS status_esperado,
+           COALESCE(min(i.inicio) FILTER (WHERE i.status <> 'cancelado'), min(i.inicio)) AS inicio_esperado,
+           COALESCE(max(i.fim) FILTER (WHERE i.status <> 'cancelado'), max(i.fim)) AS fim_esperado
+      FROM reserva r
+      LEFT JOIN reserva_item i ON i.salao_id = r.salao_id AND i.reserva_id = r.id
+     WHERE ${filtro}
+     GROUP BY r.id`;
+  if (typeof alvo === 'string' && linhas.length === 0) throw new Error(`conferirDerivados: reserva ${alvo} não existe`);
+  const erros: string[] = [];
+  for (const l of linhas) {
+    if (l.itens === 0) {
+      erros.push(`${l.id}: sem itens`);
+      continue;
+    }
+    if (l.status !== l.status_esperado) erros.push(`${l.id}: status ${l.status} ≠ ${l.status_esperado}`);
+    if (l.inicio.getTime() !== l.inicio_esperado!.getTime()) {
+      erros.push(`${l.id}: inicio ${l.inicio.toISOString()} ≠ ${l.inicio_esperado!.toISOString()}`);
+    }
+    if (l.fim.getTime() !== l.fim_esperado!.getTime()) erros.push(`${l.id}: fim ${l.fim.toISOString()} ≠ ${l.fim_esperado!.toISOString()}`);
+    if ((l.status === 'cancelado') !== (l.cancelada_em !== null)) {
+      erros.push(`${l.id}: cancelada_em ${l.cancelada_em === null ? 'nulo' : 'preenchido'} com status ${l.status}`);
+    }
+  }
+  if (erros.length > 0) throw new Error(`conferirDerivados: ${erros.join('; ')}`);
+  return linhas.length;
 }
 
 /**

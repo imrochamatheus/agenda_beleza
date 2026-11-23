@@ -20,7 +20,8 @@ const CONFIG: ConfigWhatsAppReal = {
   idioma: 'pt_BR',
   modelos: { confirmacao: 'm_conf', remarcacao: 'm_rem', cancelamento: 'm_canc', convite_avaliacao: 'm_conv' },
 };
-const BASE = { salao: 'Studio Aurora', servicos: 'Corte e escova', profissional: 'Marina', data: '12/12/2026', horario: '14:30', link: 'https://x.com.br/a/b' };
+const ITENS = '09:00 Escova com Ana; 10:00 Hidratação com Bia';
+const BASE = { salao: 'Studio Aurora', servicos: 'Corte e escova', profissional: 'Marina', data: '12/12/2026', horario: '14:30', itens: ITENS, link: 'https://x.com.br/a/b' };
 const e = (modelo: (typeof MODELOS_WHATSAPP)[number], parametros: Record<string, string> = BASE) => ({
   destinatarioE164: '+5511987654321',
   modelo,
@@ -39,7 +40,7 @@ describe('montarCorpo (CA-1/CA-2)', () => {
   });
 
   it.each([
-    ['confirmacao', 'm_conf', ['Studio Aurora', 'Corte e escova', 'Marina', '12/12/2026', '14:30']],
+    ['confirmacao', 'm_conf', ['Studio Aurora', '12/12/2026', ITENS]],
     ['remarcacao', 'm_rem', ['Studio Aurora', 'Corte e escova', 'Marina', '12/12/2026', '14:30']],
     ['cancelamento', 'm_canc', ['Studio Aurora', 'Corte e escova', '12/12/2026', '14:30']],
     ['convite_avaliacao', 'm_conv', ['Studio Aurora', 'https://x.com.br/a/b']],
@@ -57,8 +58,17 @@ describe('montarCorpo (CA-1/CA-2)', () => {
     });
   });
 
+  it('D-050 CA-43: confirmação consolidada só com salao, data e itens, nessa ordem', () => {
+    expect(ORDEM_PARAMETROS.confirmacao).toEqual(['salao', 'data', 'itens']);
+    const c = montarCorpo(CONFIG, e('confirmacao', { salao: 'S', data: '01/12/2026', itens: 'linha\num; dois' }));
+    expect(c.template.components[0].parameters.map((p) => p.text)).toEqual(['S', '01/12/2026', 'linha um; dois']);
+    const longo = montarCorpo(CONFIG, e('confirmacao', { salao: 'S', data: 'd', itens: 'x'.repeat(2000) }));
+    expect(Array.from(longo.template.components[0].parameters[2].text)).toHaveLength(LIMITE_PARAMETRO);
+    expect(longo.template.components[0].parameters[2].text.endsWith('…')).toBe(true);
+  });
+
   it('ignora chaves extras; profissional vazio vai como "-"', () => {
-    const c = montarCorpo(CONFIG, e('confirmacao', { ...BASE, profissional: '', extra: 'x' }));
+    const c = montarCorpo(CONFIG, e('remarcacao', { ...BASE, profissional: '', extra: 'x' }));
     expect(c.template.components[0].parameters.map((p) => p.text)).toEqual([
       'Studio Aurora', 'Corte e escova', '-', '12/12/2026', '14:30',
     ]);
@@ -70,7 +80,7 @@ describe('montarCorpo (CA-1/CA-2)', () => {
     for (const p of [sem, { ...BASE, horario: undefined as unknown as string }, Object.create(BASE) as Record<string, string>]) {
       const r = (() => {
         try {
-          return montarCorpo(CONFIG, e('confirmacao', p));
+          return montarCorpo(CONFIG, e('remarcacao', p));
         } catch (x) {
           return x;
         }
@@ -78,6 +88,10 @@ describe('montarCorpo (CA-1/CA-2)', () => {
       expect(r).toBeInstanceOf(ErroEnvioPermanente);
       expect((r as ErroEnvioPermanente).codigo).toBe('parametro_ausente');
     }
+    // D-050: a confirmação sem `itens` também é recusada antes de qualquer rede.
+    const semItens: Record<string, string> = { ...BASE };
+    delete semItens.itens;
+    expect(() => montarCorpo(CONFIG, e('confirmacao', semItens))).toThrow(ErroEnvioPermanente);
   });
 
   it('caminho: /{versão}/{phone-number-id}/messages; somenteDigitos', () => {

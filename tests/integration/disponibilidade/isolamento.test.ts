@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { consultarDisponibilidade } from '@/server/disponibilidade/servico';
+import { consultarDisponibilidadePorServico } from '@/server/disponibilidade/servico';
 import { resolverSalaoPorSlug } from '@/server/repos/publico';
 import { criarAdminContext } from '@/server/tenant/context';
 import type { ContextoDeLeituraDeAgenda } from '@/server/tenant/context';
@@ -15,7 +15,7 @@ import {
 } from './apoio';
 import type { Cenario } from './apoio';
 
-// D-018 T-4 (CA-20, CA-40): isolamento entre salões na leitura de agenda.
+// D-018 T-4 (CA-20, CA-40), D-050 CA-50: isolamento entre salões na leitura de agenda (por serviço).
 
 let c: pg.Client;
 beforeAll(async () => {
@@ -26,7 +26,13 @@ afterAll(async () => {
 });
 
 const consultar = (x: Cenario, ids: string[] = [x.A], extra: { profissionalId?: string } = {}) =>
-  consultarDisponibilidade(ctxPublico(x.s), { servicoIds: ids, de: DIA, ate: DIA, agora: AGORA, ...extra });
+  consultarDisponibilidadePorServico(ctxPublico(x.s), {
+    servicoIds: ids,
+    de: DIA,
+    ate: DIA,
+    agora: AGORA,
+    ...(extra.profissionalId === undefined ? {} : { profissionalPorServico: Object.fromEntries(ids.map((id) => [id, extra.profissionalId!])) }),
+  });
 
 async function par(): Promise<{ s1: Cenario; s2: Cenario }> {
   const s1 = await criarCenario(c);
@@ -62,7 +68,7 @@ describe('CA-20: dados de S2 nunca entram no cálculo de S1', () => {
     const a = await consultar(s1);
     const b = await consultar(isolado);
     if (a.resultado !== 'ok' || b.resultado !== 'ok') throw new Error();
-    expect(a.profissionais.map((p) => p.dias)).toEqual(b.profissionais.map((p) => p.dias));
+    expect(a.servicos[0].profissionais.map((p) => p.dias)).toEqual(b.servicos[0].profissionais.map((p) => p.dias));
   });
 
   it('serviço de S2 → servico_indisponivel; profissional de S2 → NaoEncontrado', async () => {
@@ -70,6 +76,23 @@ describe('CA-20: dados de S2 nunca entram no cálculo de S1', () => {
     expect(await consultar(s1, [s2.A])).toEqual({ resultado: 'servico_indisponivel' });
     expect(await consultar(s1, [s1.A, s2.B])).toEqual({ resultado: 'servico_indisponivel' });
     await expect(consultar(s1, [s1.A], { profissionalId: s2.ana })).rejects.toBeInstanceOf(NaoEncontrado);
+  });
+
+  it('CA-50: itens de S2 nunca ocupam S1; escolhido com profissional de S2 não ocupa ninguém de S1, só a cliente', async () => {
+    const { s1, s2 } = await par();
+    const cli = await inserirCliente(c, s2.s.salaoId);
+    await inserirReserva(c, { salaoId: s2.s.salaoId, profissionalId: s2.ana, clienteId: cli, inicio: sp(DIA, '09:00'), fim: sp(DIA, '12:00'), servicoId: s2.A });
+    const r = await consultarDisponibilidadePorServico(ctxPublico(s1.s), {
+      servicoIds: [s1.A, s1.B],
+      calcular: [s1.A],
+      de: DIA,
+      ate: DIA,
+      agora: AGORA,
+      escolhidos: [{ servicoId: s1.B, profissionalId: s2.ana, inicio: sp(DIA, '11:00') }],
+    });
+    // B (45 min) às 11:00 ocupa a cliente [11:00, 11:45): A (30 min) não pode começar em (10:30, 11:45).
+    expect(rotulos(r, 0)).toEqual(['09:00', '09:15', '09:30', '09:45', '10:00', '10:15', '10:30']);
+    expect(rotulos(r, 1)).toEqual(rotulos(r, 0));
   });
 
   it('a resposta para ids de S2 não distingue "existe em outro salão" de "não existe"', async () => {
@@ -85,13 +108,13 @@ describe('CA-20: dados de S2 nunca entram no cálculo de S1', () => {
     const { s1 } = await par();
     const { contexto } = await resolverSalaoPorSlug(s1.s.slugAtual);
     const entrada = { servicoIds: [s1.A], de: DIA, ate: DIA, agora: AGORA };
-    expect(await consultarDisponibilidade(contexto, entrada)).toEqual(await consultarDisponibilidade(ctxDoGestor(s1.s), entrada));
+    expect(await consultarDisponibilidadePorServico(contexto, entrada)).toEqual(await consultarDisponibilidadePorServico(ctxDoGestor(s1.s), entrada));
   });
 
   it('o AdminContext é recusado (erro de programação)', async () => {
     const { s1 } = await par();
     const admin = criarAdminContext(s1.s.gestor.usuarioId) as unknown as ContextoDeLeituraDeAgenda;
-    await expect(consultarDisponibilidade(admin, { servicoIds: [s1.A], de: DIA, ate: DIA, agora: AGORA })).rejects.toThrow(/leitura de agenda exige/);
+    await expect(consultarDisponibilidadePorServico(admin, { servicoIds: [s1.A], de: DIA, ate: DIA, agora: AGORA })).rejects.toThrow(/leitura de agenda exige/);
   });
 });
 

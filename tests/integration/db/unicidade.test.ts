@@ -9,12 +9,27 @@ import {
   criarSalao,
   emailNovo,
   erroSql,
-  inserirReserva,
   slugNovo,
 } from '../../support/sql';
 
 // CA-11 (RN-9), CA-17 (RN-8) e CA-18 (RN-12).
 let c: pg.Client;
+
+/**
+ * D-050: só a linha de `reserva` (o profissional e a ocupação ficam no item; estes testes não precisam de
+ * item). Local de propósito: `tests/support/sql.ts` é da T-2.
+ */
+async function inserirReserva(
+  cli: pg.Client,
+  r: { salaoId: string; clienteId: string; inicio: string; fim: string; chaveRequisicao?: string | null },
+): Promise<string> {
+  const x = await cli.query<{ id: string }>(
+    `INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem, chave_requisicao)
+     VALUES ($1, $2, $3, $4, 'confirmado', 'publico', $5) RETURNING id`,
+    [r.salaoId, r.clienteId, r.inicio, r.fim, r.chaveRequisicao ?? null],
+  );
+  return x.rows[0].id;
+}
 
 beforeAll(async () => {
   c = await conectar();
@@ -158,7 +173,7 @@ describe('idempotência e vigência (CA-17)', () => {
     const s = await criarCenario(c);
     const chave = randomUUID();
     await inserirReserva(c, { ...s, inicio: '2026-12-01T10:00:00Z', fim: '2026-12-01T11:00:00Z', chaveRequisicao: chave });
-    // Horário diferente: a rejeição tem de vir da unicidade, não da exclusion.
+    // Horário diferente (herança da D-004; desde a D-050 a exclusion está no item).
     const erro = await erroSql(
       inserirReserva(c, { ...s, inicio: '2026-12-01T14:00:00Z', fim: '2026-12-01T15:00:00Z', chaveRequisicao: chave }),
     );

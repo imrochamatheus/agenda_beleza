@@ -12,6 +12,7 @@ export const OPERACOES = [
   'agenda.ver',
   'reserva.criar',
   'reserva.alterar',
+  'reserva.cancelar_todos',
   'bloqueio_profissional.gerir',
   'bloqueio_salao.gerir',
   'jornada.ver',
@@ -39,6 +40,8 @@ export const MATRIZ: Readonly<Record<Operacao, Linha>> = Object.freeze({
   'agenda.ver': linha('salao', 'proprio', 'negado'),
   'reserva.criar': linha('salao', 'proprio', 'negado'),
   'reserva.alterar': linha('salao', 'proprio', 'negado'),
+  // D-050 A-14/ND-3: "Cancelar todos" os serviços da reserva é só do gestor.
+  'reserva.cancelar_todos': linha('salao', 'negado', 'negado'),
   'bloqueio_profissional.gerir': linha('salao', 'proprio', 'negado'),
   'bloqueio_salao.gerir': linha('salao', 'negado', 'negado'),
   // D-015 D-8: o profissional só vê a própria jornada; editar é só do gestor (RN-1).

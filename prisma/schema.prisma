@@ -292,13 +292,13 @@ model Profissional {
   criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
   atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
 
-  salao     Salao                 @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  usuario   Usuario?              @relation(fields: [salaoId, usuarioId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
-  servicos  ServicoProfissional[]
-  jornadas  Jornada[]
-  bloqueios Bloqueio[]
-  reservas  Reserva[]
-  convites  Convite[]
+  salao          Salao                 @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  usuario        Usuario?              @relation(fields: [salaoId, usuarioId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  servicos       ServicoProfissional[]
+  jornadas       Jornada[]
+  bloqueios      Bloqueio[]
+  itensDeReserva ReservaItem[]
+  convites       Convite[]
 
   @@unique([salaoId, id])
   @@unique([salaoId, usuarioId])
@@ -466,25 +466,23 @@ model Consentimento {
 model Reserva {
   id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   salaoId         String        @map("salao_id") @db.Uuid
-  profissionalId  String        @map("profissional_id") @db.Uuid
   clienteId       String        @map("cliente_id") @db.Uuid
+  /// D-050: envelope DERIVADO dos itens não cancelados (de todos, se todos cancelados); gravado pela aplicação.
   inicio          DateTime      @db.Timestamptz(6)
   fim             DateTime      @db.Timestamptz(6)
-  ocupadoAte      DateTime      @map("ocupado_ate") @db.Timestamptz(6)
+  /// D-050: DERIVADO dos itens por prioridade (confirmado > concluido > nao_compareceu > cancelado).
   status          StatusReserva @default(confirmado)
   origem          OrigemReserva
-  /// Encaixe confirmado pela equipe (fora da jornada ou sobre bloqueio).
-  encaixe         Boolean       @default(false)
-  /// Incrementa a cada remarcação; compõe a chave de idempotência das mensagens.
+  /// Incrementa em remarcar item, cancelar item e cancelar todos; compõe a chave de idempotência das mensagens.
   revisao         Int           @default(0)
   /// Idempotência do duplo envio do formulário público (nula para a equipe).
   chaveRequisicao String?       @map("chave_requisicao")
+  /// Instante em que o último item não cancelado foi cancelado (nulo caso contrário).
   canceladaEm     DateTime?     @map("cancelada_em") @db.Timestamptz(6)
   criadoEm        DateTime      @default(now()) @map("criado_em") @db.Timestamptz(6)
   atualizadoEm    DateTime      @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
 
   salao             Salao              @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  profissional      Profissional       @relation(fields: [salaoId, profissionalId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
   cliente           Cliente            @relation(fields: [salaoId, clienteId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
   itens             ReservaItem[]
   mensagens         Mensagem[]
@@ -494,7 +492,6 @@ model Reserva {
   @@unique([salaoId, id])
   @@unique([salaoId, chaveRequisicao])
   @@index([salaoId, inicio])
-  @@index([salaoId, profissionalId, inicio])
   @@index([salaoId, clienteId, inicio])
   @@index([atualizadoEm])
   @@map("reserva")
@@ -502,22 +499,42 @@ model Reserva {
 
 /// Snapshot de preço (centavos) e duração (min) de cada serviço no momento da reserva.
 model ReservaItem {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  salaoId       String   @map("salao_id") @db.Uuid
-  reservaId     String   @map("reserva_id") @db.Uuid
-  servicoId     String   @map("servico_id") @db.Uuid
-  /// Posição do serviço na sequência (0, 1, ...).
-  ordem         Int      @db.SmallInt
-  precoCentavos Int      @map("preco_centavos")
-  duracaoMin    Int      @map("duracao_min")
-  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz(6)
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salaoId        String        @map("salao_id") @db.Uuid
+  reservaId      String        @map("reserva_id") @db.Uuid
+  servicoId      String        @map("servico_id") @db.Uuid
+  /// Posição do serviço na escolha (0, 1, ...). A exibição é por inicio (D-050 RN-6).
+  ordem          Int           @db.SmallInt
+  precoCentavos  Int           @map("preco_centavos")
+  duracaoMin     Int           @map("duracao_min")
+  criadoEm       DateTime      @default(now()) @map("criado_em") @db.Timestamptz(6)
+  /// D-050: profissional do item (FK composta do mesmo salão).
+  profissionalId String        @map("profissional_id") @db.Uuid
+  inicio         DateTime      @db.Timestamptz(6)
+  /// inicio + duracao_min (reserva_item_fim_chk).
+  fim            DateTime      @db.Timestamptz(6)
+  /// fim + intervalo do salão na gravação; reserva_item_sem_sobreposicao usa [inicio, ocupado_ate).
+  ocupadoAte     DateTime      @map("ocupado_ate") @db.Timestamptz(6)
+  /// Sem DEFAULT: a aplicação grava o literal.
+  status         StatusReserva
+  /// Encaixe confirmado pela equipe (fora da jornada, do funcionamento ou sobre bloqueio).
+  encaixe        Boolean       @default(false)
+  /// Revisão da reserva na última mudança do item que gerou mensagem (base da vigência).
+  revisao        Int           @default(0)
+  atualizadoEm   DateTime      @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
 
-  salao   Salao   @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  reserva Reserva @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
-  servico Servico @relation(fields: [salaoId, servicoId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  salao        Salao        @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reserva      Reserva      @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  servico      Servico      @relation(fields: [salaoId, servicoId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  profissional Profissional @relation(fields: [salaoId, profissionalId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  mensagens    Mensagem[]
 
   @@unique([salaoId, reservaId, ordem])
+  @@unique([salaoId, reservaId, id])
+  @@unique([salaoId, reservaId, servicoId])
   @@index([salaoId, servicoId])
+  @@index([salaoId, profissionalId, inicio])
+  @@index([salaoId, inicio])
   @@map("reserva_item")
 }
 
@@ -617,6 +634,8 @@ model Mensagem {
   id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   salaoId            String         @map("salao_id") @db.Uuid
   reservaId          String         @map("reserva_id") @db.Uuid
+  /// D-050: item da MESMA reserva (só remarcacao/cancelamento de um item); nulo = reserva inteira.
+  reservaItemId      String?        @map("reserva_item_id") @db.Uuid
   tipo               TipoMensagem
   revisao            Int
   estado             EstadoMensagem @default(pendente)
@@ -631,9 +650,10 @@ model Mensagem {
   criadoEm           DateTime       @default(now()) @map("criado_em") @db.Timestamptz(6)
   atualizadoEm       DateTime       @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(6)
 
-  salao      Salao               @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  reserva    Reserva             @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
-  tentativas MensagemTentativa[]
+  salao       Salao               @relation(fields: [salaoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reserva     Reserva             @relation(fields: [salaoId, reservaId], references: [salaoId, id], onDelete: Restrict, onUpdate: Restrict)
+  reservaItem ReservaItem?        @relation(fields: [salaoId, reservaId, reservaItemId], references: [salaoId, reservaId, id], onDelete: Restrict, onUpdate: Restrict)
+  tentativas  MensagemTentativa[]
 
   @@unique([reservaId, tipo, revisao])
   @@index([salaoId, criadoEm(sort: Desc)])

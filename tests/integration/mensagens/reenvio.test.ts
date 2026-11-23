@@ -78,10 +78,11 @@ describe('CA-6: o que nunca é reenviado', () => {
     expect((await lerMensagem(id)).estado).toBe(estado);
   });
 
-  it('revisão já superada → recusada/obsoleta e continua falhou', async () => {
-    const s = await criarCenarioMensagem({ revisao: 0 });
-    const id = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, estado: 'falhou' });
-    await mudarReserva(s.reservaId, { revisao: 1 });
+  it('mensagem que deixou de ser vigente → recusada/obsoleta e continua falhou', async () => {
+    // D-050 RN-30: a remarcação da revisão 1 fica obsoleta quando o item é remarcado de novo (revisão 2).
+    const s = await criarCenarioMensagem({ revisao: 1 });
+    const id = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 1, estado: 'falhou' });
+    await mudarReserva(s.reservaId, { revisao: 2 });
     expect(await reenviar(s, id)).toEqual({ resultado: 'recusada', motivo: 'obsoleta' });
     expect((await lerMensagem(id)).estado).toBe('falhou');
   });

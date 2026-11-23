@@ -5,78 +5,111 @@ import { Fragment, useActionState, useEffect, useRef } from 'react';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { ErroDoCampo, Field } from '@/components/ui/Field';
-import { Select } from '@/components/ui/Select';
+import { Field } from '@/components/ui/Field';
+import { RoteiroDoDia } from '@/components/ui/RoteiroDoDia';
 import { ROTAS } from '@/config/navegacao';
 import { CAMPOS_CONSENTIMENTO, TEXTOS_CONSENTIMENTO } from '@/config/termos';
-import { MENSAGENS_MOTIVO_ENCAIXE, MENSAGENS_RESERVA_EQUIPE } from '@/server/reservas/tipos';
+import { formatarDuracao, formatarHora } from '@/lib/format';
 
-import { idDoCampo, MENSAGENS_FORMULARIO_RESERVA } from './estado';
-import type { CampoReservaManual, EstadoReservaManual } from './estado';
+import { idDaLinha, idDoCampo, MAXIMO_LINHAS, MENSAGENS_FORMULARIO_RESERVA, textoDosMotivos } from './estado';
+import type { CampoDaLinha, CampoGeral, EstadoReservaManual } from './estado';
+import { LinhaDeItem } from './LinhaDeItem';
+import type { OpcaoDeServico } from './LinhaDeItem';
 import estilos from './NovaReserva.module.css';
 
-export type ServicoDoFormulario = { id: string; rotulo: string };
+export type { OpcaoDeServico };
 
 export type FormularioReservaManualProps = {
   /** Ação de servidor (a real ou a de demonstração) ou, nos testes, uma função equivalente. */
   acao: (anterior: EstadoReservaManual, formData: FormData) => Promise<EstadoReservaManual>;
   estadoInicial: EstadoReservaManual;
-  servicos: ServicoDoFormulario[];
+  servicos: OpcaoDeServico[];
   /** Gestor: opções do profissional; null = profissional (agenda própria, fixa). */
   profissionais: { valor: string; rotulo: string }[] | null;
-  /** Profissional: nome mostrado no lugar do seletor. */
-  profissionalFixo?: string;
+  /** Profissional logado: id e nome mostrados no lugar do seletor de cada linha. */
+  profissionalFixo?: { id: string; nome: string };
+  /** Fuso do salão (IANA), para as horas do roteiro da reserva registrada. */
+  fuso: string;
 };
 
-const ORDEM: readonly CampoReservaManual[] = ['servicos', 'profissional', 'data', 'hora', 'nome', 'telefone'];
-const ROTULOS: Record<CampoReservaManual, string> = {
-  servicos: 'Serviços',
-  profissional: 'Profissional',
+const ROTULOS_GERAIS: Record<CampoGeral, string> = {
   data: 'Data',
-  hora: 'Hora',
+  itens: 'Serviços',
   nome: 'Nome da cliente',
   telefone: 'Telefone (WhatsApp)',
 };
+const ROTULOS_DA_LINHA: Record<CampoDaLinha, string> = { servico: 'Serviço', profissional: 'Profissional', hora: 'Hora' };
+const CAMPOS_DA_LINHA: readonly CampoDaLinha[] = ['servico', 'profissional', 'hora'];
 const ID_RESUMO = 'reserva-resumo-erros';
 const ID_AVISO = 'reserva-aviso-encaixe';
 const ID_CRIADA = 'reserva-criada';
 
+type ItemDoResumo = { href: string; texto: string };
+
+/** Ordem da tela: Data, cada linha (Serviço, Profissional, Hora), Nome, Telefone. */
+function itensDoResumo(estado: EstadoReservaManual): ItemDoResumo[] {
+  const { erros, errosPorLinha, valores } = estado;
+  const gerais = (campos: readonly CampoGeral[]) =>
+    campos.filter((c) => erros[c]).map((c) => ({
+      href: c === 'itens' ? `#${idDaLinha(0, 'servico')}` : `#${idDoCampo(c)}`,
+      texto: `${ROTULOS_GERAIS[c]}: ${erros[c]}`,
+    }));
+  const linhas = valores.itens.flatMap((_, k) =>
+    CAMPOS_DA_LINHA.filter((c) => errosPorLinha[k]?.[c]).map((c) => ({
+      href: `#${idDaLinha(k, c)}`,
+      texto: `Serviço ${k + 1} — ${ROTULOS_DA_LINHA[c]}: ${errosPorLinha[k][c]}`,
+    })),
+  );
+  return [...gerais(['data', 'itens']), ...linhas, ...gerais(['nome', 'telefone'])];
+}
+
 /**
- * Formulário de reserva manual da equipe (D-029; RN-1..RN-11). Funciona sem JavaScript
- * (useActionState): o aviso de encaixe e os erros voltam na própria resposta, com todos os dados
- * preservados; a caixa "Confirmo o encaixe" só aparece quando há motivo. O foco vai ao resumo de erros,
- * ao aviso de encaixe ou ao resultado.
+ * Nova reserva da equipe (D-029; D-050 web-design §5.8): uma data para todos os serviços e N linhas
+ * "Serviço n" (serviço, profissional, hora). Funciona sem JavaScript (useActionState): "Adicionar outro
+ * serviço" e "Remover" são botões de envio que devolvem o formulário com uma linha a mais/a menos e tudo o
+ * que foi digitado; o aviso de encaixe lista os itens com motivo e UMA caixa confirma todos. O primeiro filho
+ * do formulário é um botão de envio oculto (C5): o Enter implícito num campo registra a reserva, nunca
+ * adiciona nem remove linha. Com JS, o foco vai ao resumo de erros, ao aviso, ao resultado ou à legenda da
+ * linha depois de adicionar/remover.
  */
-export function FormularioReservaManual({ acao, estadoInicial, servicos, profissionais, profissionalFixo }: FormularioReservaManualProps) {
+export function FormularioReservaManual({ acao, estadoInicial, servicos, profissionais, profissionalFixo, fuso }: FormularioReservaManualProps) {
   const [estado, enviar, pendente] = useActionState(acao, estadoInicial);
   const resumo = useRef<HTMLDivElement>(null);
   const aviso = useRef<HTMLDivElement>(null);
   const criada = useRef<HTMLDivElement>(null);
-  const { erros, valores, motivos } = estado;
-  const itens = ORDEM.filter((c) => erros[c]).map((c) => ({
-    href: `#${idDoCampo(c === 'servicos' ? 'servicos' : c)}`,
-    texto: `${ROTULOS[c]}: ${erros[c]}`,
-  }));
-  const temErros = itens.length > 0;
-  const pedeConfirmacao = motivos !== null && motivos.length > 0;
+  const { erros, errosPorLinha, valores, encaixe } = estado;
+  const itensResumo = itensDoResumo(estado);
+  const temErros = itensResumo.length > 0;
+  const pedeConfirmacao = encaixe !== null && encaixe.length > 0;
+  const total = valores.itens.length;
+
+  const nomeDoServico = (id: string) => servicos.find((s) => s.id === id)?.nome ?? 'Serviço';
+  const nomeDoProfissional = (id: string) =>
+    profissionais === null ? (profissionalFixo?.nome ?? '') : (profissionais.find((p) => p.valor === id)?.rotulo ?? '');
+  const encaixePorLinha = new Map((encaixe ?? []).map((m) => [m.indice, textoDosMotivos(m.motivos)]));
 
   useEffect(() => {
     if (temErros) resumo.current?.focus();
     else if (pedeConfirmacao) aviso.current?.focus();
     else if (estado.criada) criada.current?.focus();
+    else if (estado.foco !== null) document.getElementById(idDaLinha(estado.foco, 'legenda'))?.focus();
   }, [estado, temErros, pedeConfirmacao]);
 
   return (
     <form action={enviar} className={estilos.formulario} noValidate>
+      {/* C5: botão padrão do formulário (Enter implícito registra). `hidden` o tira da tabulação e da árvore de acessibilidade. */}
+      <button type="submit" hidden tabIndex={-1} />
       <input type="hidden" name="chave" value={estado.chave} />
-      {estado.mensagem && !pedeConfirmacao ? <Alert variante="erro">{estado.mensagem}</Alert> : null}
+      <input type="hidden" name="itens" value={total} />
+
+      {estado.mensagem ? <Alert variante="erro">{estado.mensagem}</Alert> : null}
       {temErros ? (
         <div ref={resumo} id={ID_RESUMO} tabIndex={-1} className={estilos.resumoErros} role="alert" aria-labelledby={`${ID_RESUMO}-titulo`}>
           <p id={`${ID_RESUMO}-titulo`} className={estilos.titulo}>
             {MENSAGENS_FORMULARIO_RESERVA.resumoErros}
           </p>
           <ul>
-            {itens.map((item) => (
+            {itensResumo.map((item) => (
               <li key={item.texto}>
                 <a href={item.href}>{item.texto}</a>
               </li>
@@ -87,13 +120,19 @@ export function FormularioReservaManual({ acao, estadoInicial, servicos, profiss
       {pedeConfirmacao ? (
         <div ref={aviso} id={ID_AVISO} tabIndex={-1} className={estilos.aviso} role="alert" aria-labelledby={`${ID_AVISO}-titulo`}>
           <p id={`${ID_AVISO}-titulo`} className={estilos.titulo}>
-            Atenção: encaixe
+            {MENSAGENS_FORMULARIO_RESERVA.encaixeTitulo}
           </p>
-          <p>{estado.mensagem}</p>
+          <p>{MENSAGENS_FORMULARIO_RESERVA.encaixeTexto}</p>
           <ul>
-            {motivos.map((m) => (
-              <li key={m}>{MENSAGENS_MOTIVO_ENCAIXE[m]}</li>
-            ))}
+            {encaixe.map((m) => {
+              const linha = valores.itens[m.indice];
+              return (
+                <li key={m.indice}>
+                  Serviço {m.indice + 1} — {nomeDoServico(linha?.servicoId ?? '')} com {nomeDoProfissional(linha?.profissionalId ?? '')} às{' '}
+                  {linha?.hora.trim() ?? ''}: {textoDosMotivos(m.motivos)}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}
@@ -102,76 +141,78 @@ export function FormularioReservaManual({ acao, estadoInicial, servicos, profiss
           <p id={`${ID_CRIADA}-titulo`} className={estilos.titulo}>
             {estado.criada.repetida
               ? MENSAGENS_FORMULARIO_RESERVA.repetida
-              : estado.criada.encaixe
-                ? MENSAGENS_FORMULARIO_RESERVA.criadaEncaixe
+              : estado.criada.encaixes > 0
+                ? MENSAGENS_FORMULARIO_RESERVA.criadaEncaixe(estado.criada.encaixes)
                 : MENSAGENS_FORMULARIO_RESERVA.criada}
           </p>
+          {estado.criada.itens.length > 0 ? (
+            <RoteiroDoDia
+              rotulo="Serviços da reserva"
+              paradas={estado.criada.itens.map((i, k) => ({
+                chave: `${k}-${i.servicoId}`,
+                hora: formatarHora(new Date(i.inicioIso), fuso),
+                fim: formatarHora(new Date(i.fimIso), fuso),
+                servico: nomeDoServico(i.servicoId),
+                profissional: nomeDoProfissional(i.profissionalId),
+                detalhe: formatarDuracao(i.duracaoMin),
+                estado: 'escolhida' as const,
+                etiquetas: i.encaixe ? [{ texto: 'Encaixe', variante: 'encaixe' as const }] : undefined,
+              }))}
+            />
+          ) : null}
           <a className={estilos.link} href={estado.criada.hrefAgenda}>
             Ver na agenda
           </a>
         </div>
       ) : null}
 
-      <fieldset className={estilos.grupo} id={idDoCampo('servicos')} aria-describedby={erros.servicos ? `${idDoCampo('servicos')}-erro` : undefined}>
-        <legend>{ROTULOS.servicos}</legend>
-        <p className={estilos.ajuda}>Escolha de um a dez serviços, atendidos em sequência pelo mesmo profissional.</p>
-        <div className={estilos.servicos} key={`s-${valores.servicoIds.join(',')}`}>
-          {servicos.map((s) => (
-            <Checkbox key={s.id} id={`reserva-servico-${s.id}`} name="s" value={s.id} rotulo={s.rotulo} defaultChecked={valores.servicoIds.includes(s.id)} />
-          ))}
-        </div>
-        {erros.servicos ? <ErroDoCampo id={`${idDoCampo('servicos')}-erro`} texto={erros.servicos} /> : null}
-      </fieldset>
+      {estado.statusLinha ? (
+        <p role="status" className={estilos.statusLinha}>
+          {estado.statusLinha}
+        </p>
+      ) : null}
 
-      {profissionais !== null ? (
-        <Select
-          id={idDoCampo('profissional')}
-          name="profissionalId"
-          rotulo={ROTULOS.profissional}
-          textoVazio="Escolha…"
-          opcoes={profissionais}
-          defaultValue={valores.profissionalId}
-          erro={erros.profissional}
-          key={`p-${valores.profissionalId}`}
+      <Field
+        id={idDoCampo('data')}
+        name="data"
+        tipo="date"
+        rotulo={ROTULOS_GERAIS.data}
+        ajuda={MENSAGENS_FORMULARIO_RESERVA.ajudaData}
+        defaultValue={valores.data}
+        erro={erros.data}
+        className={estilos.data}
+        key={`d-${valores.data}`}
+      />
+
+      <p className={estilos.ajuda}>{MENSAGENS_FORMULARIO_RESERVA.ajudaLinhas}</p>
+      {valores.itens.map((linha, k) => (
+        <LinhaDeItem
+          key={`linha-${k}`}
+          indice={k}
+          total={total}
+          valores={linha}
+          erros={errosPorLinha[k] ?? {}}
+          servicos={servicos}
+          profissionais={profissionais}
+          profissionalFixo={profissionalFixo}
+          encaixe={encaixePorLinha.get(k) ?? null}
         />
-      ) : (
-        <div>
-          <input type="hidden" name="profissionalId" value={valores.profissionalId} />
-          <p className={estilos.fixo} id={idDoCampo('profissional')}>
-            <strong>{ROTULOS.profissional}:</strong> {profissionalFixo}
+      ))}
+      {total < MAXIMO_LINHAS ? (
+        <div className={estilos.adicionar}>
+          <Button type="submit" variante="secundaria" name="linha" value="adicionar" aria-describedby="reserva-ajuda-adicionar">
+            Adicionar outro serviço
+          </Button>
+          <p id="reserva-ajuda-adicionar" className={estilos.ajuda}>
+            {MENSAGENS_FORMULARIO_RESERVA.ajudaAdicionar}
           </p>
-          {erros.profissional ? <ErroDoCampo id={`${idDoCampo('profissional')}-erro`} texto={erros.profissional} /> : null}
         </div>
-      )}
-
-      <div className={estilos.dataHora}>
-        <Field
-          id={idDoCampo('data')}
-          name="data"
-          tipo="date"
-          rotulo={ROTULOS.data}
-          defaultValue={valores.data}
-          erro={erros.data}
-          key={`d-${valores.data}`}
-        />
-        <Field
-          id={idDoCampo('hora')}
-          name="hora"
-          rotulo={`${ROTULOS.hora} (HH:MM)`}
-          autoComplete="off"
-          maxLength={5}
-          inputMode="numeric"
-          pattern="([01]?[0-9]|2[0-3]):[0-5][0-9]"
-          defaultValue={valores.hora}
-          erro={erros.hora}
-          key={`h-${valores.hora}`}
-        />
-      </div>
+      ) : null}
 
       <Field
         id={idDoCampo('nome')}
         name="nome"
-        rotulo={ROTULOS.nome}
+        rotulo={ROTULOS_GERAIS.nome}
         autoComplete="off"
         maxLength={100}
         defaultValue={valores.nome}
@@ -182,7 +223,7 @@ export function FormularioReservaManual({ acao, estadoInicial, servicos, profiss
         id={idDoCampo('telefone')}
         name="telefone"
         tipo="tel"
-        rotulo={ROTULOS.telefone}
+        rotulo={ROTULOS_GERAIS.telefone}
         autoComplete="off"
         maxLength={30}
         defaultValue={valores.telefone}
@@ -217,7 +258,7 @@ export function FormularioReservaManual({ acao, estadoInicial, servicos, profiss
         <Checkbox
           id="reserva-confirmar-encaixe"
           name="confirmarEncaixe"
-          rotulo={MENSAGENS_RESERVA_EQUIPE.confirmarEncaixe}
+          rotulo={MENSAGENS_FORMULARIO_RESERVA.confirmarEncaixe}
           defaultChecked={valores.confirmarEncaixe}
           key={`c-${valores.confirmarEncaixe}`}
         />

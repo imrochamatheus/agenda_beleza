@@ -10,6 +10,7 @@ import { DataList, type Coluna } from '@/components/ui/DataList';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Field } from '@/components/ui/Field';
+import { RoteiroDoDia, type ParadaDoRoteiro } from '@/components/ui/RoteiroDoDia';
 import { Select } from '@/components/ui/Select';
 import { SlotGrid } from '@/components/ui/SlotGrid';
 import { ROTAS } from '@/config/navegacao';
@@ -52,6 +53,49 @@ const HORARIOS_DIA = [
 // Fim do horário de verão de 2019: a hora 23 de 16/02/2019 se repetiu.
 const HORARIOS_REPETIDOS = ['2019-02-17T01:00:00Z', '2019-02-17T02:00:00Z'].map((iso) => new Date(iso));
 const SEM_HORARIOS: readonly Date[] = [];
+
+// Grade por serviço com dois profissionais no mesmo grupo de rádios (D-050 C1).
+const HORARIOS_PROFISSIONAL_2 = ['2026-03-10T17:00:00Z', '2026-03-10T17:30:00Z'].map((iso) => new Date(iso));
+
+// Roteiro do dia (D-050 §4.1) nos quatro estados de parada.
+const PARADAS_ROTEIRO: readonly ParadaDoRoteiro[] = [
+  {
+    chave: 'r1',
+    hora: '09:00',
+    fim: '10:00',
+    servico: 'Escova',
+    profissional: 'Profissional 1',
+    detalhe: `1 h · ${formatarMoeda(9000)}`,
+    estado: 'escolhida',
+    etiquetas: [{ texto: 'Confirmado', variante: 'confirmado' }],
+    acoes: (
+      <a href="#secao-roteiro" className={estilos.acao}>
+        Alterar <span className={estilos.somenteLeitor}>Escova às 09:00 com Profissional 1</span>
+      </a>
+    ),
+  },
+  {
+    chave: 'r2',
+    hora: '11:00',
+    fim: '11:40',
+    servico: 'Manicure',
+    profissional: 'Profissional 2',
+    detalhe: `40 min · ${formatarMoeda(4000)}`,
+    estado: 'destaque',
+    etiquetas: [{ texto: 'Encaixe', variante: 'encaixe' }],
+  },
+  {
+    chave: 'r3',
+    hora: '14:00',
+    fim: '14:45',
+    servico: 'Corte e escova',
+    profissional: 'Profissional 3',
+    detalhe: `45 min · ${formatarMoeda(8500)}`,
+    estado: 'cancelada',
+    etiquetas: [{ texto: 'Cancelado', variante: 'cancelado' }],
+  },
+  { chave: 'r4', hora: null, servico: 'Hidratação', detalhe: 'a escolher', estado: 'pendente' },
+];
 
 const OPCOES_PROFISSIONAL = [
   { valor: 'p1', rotulo: 'Profissional 1' },
@@ -191,6 +235,33 @@ export function Vitrine() {
         </p>
         <SlotGrid rotuloGrupo="Horários de sábado, 16/02/2019" fuso={FUSO} instantes={HORARIOS_REPETIDOS} />
         <SlotGrid rotuloGrupo="Horários de domingo, 15/03/2026" fuso={FUSO} instantes={SEM_HORARIOS} />
+        <h3>Escova</h3>
+        <SlotGrid
+          rotuloGrupo="Horários de Profissional 1"
+          nivelLegenda="discreta"
+          fuso={FUSO}
+          name="h_escova"
+          prefixoDoValor="p1_"
+          instantes={HORARIOS_DIA.slice(0, 2)}
+        />
+        <SlotGrid
+          rotuloGrupo="Horários de Profissional 2"
+          nivelLegenda="discreta"
+          fuso={FUSO}
+          name="h_escova"
+          prefixoDoValor="p2_"
+          instantes={HORARIOS_PROFISSIONAL_2}
+        />
+      </section>
+
+      <section aria-labelledby="secao-roteiro" className={estilos.secao}>
+        <h2 id="secao-roteiro">Roteiro do dia</h2>
+        <RoteiroDoDia
+          rotulo="Serviços do dia"
+          titulo="Terça-feira, 10/03/2026"
+          paradas={PARADAS_ROTEIRO}
+          rodape={<p className={estilos.total}>Total: {formatarMoeda(13000)}</p>}
+        />
       </section>
 
       <section aria-labelledby="secao-dialogos" className={estilos.secao}>

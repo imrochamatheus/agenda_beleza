@@ -23,6 +23,7 @@ import {
   credGestor,
   credProfissional,
   criarReservaEm,
+  itemDe,
   ctxDoGestor,
   ctxDoProfissional,
   definirAtivo,
@@ -249,7 +250,7 @@ describe('CA-4: aviso de reservas cobertas', () => {
     expect(d.aviso).toEqual({
       total: 1,
       reservas: [
-        { id: r.coberta, profissionalNome: s.profissional.nome, inicioLocal: '16/12/2026 15:00', fimLocal: '16/12/2026 16:00', cliente: s.clientes.nomeAtiva },
+        { id: r.coberta, itemId: await itemDe(c, r.coberta), profissionalNome: s.profissional.nome, inicioLocal: '16/12/2026 15:00', fimLocal: '16/12/2026 16:00', cliente: s.clientes.nomeAtiva },
       ],
     });
     expect(await fotografiaReservas(c, s.salaoId)).toEqual(antes);
@@ -261,20 +262,25 @@ describe('CA-4: aviso de reservas cobertas', () => {
     const mensagens = await contarMensagens(c);
     const d = salvo(await acoes.criarBloqueio.executar(gestor, diaInteiro('16/12/2026', '16/12/2026', { alvo: 'salao' }), exec));
     expect(d.aviso.total).toBe(3);
-    // Ordem por início e id: a que encosta no bloqueio de profissional fica dentro do dia inteiro.
-    expect(d.aviso.reservas.map((x) => x.id)).toEqual([r.encosta, ...[r.coberta, r.colega].sort()]);
+    // Ordem por início e id do ITEM (D-050): a que encosta no bloqueio de profissional fica dentro do dia inteiro.
+    const empate = await Promise.all([r.coberta, r.colega].map(async (id) => ({ id, item: await itemDe(c, id) })));
+    empate.sort((x, y) => (x.item < y.item ? -1 : 1));
+    expect(d.aviso.reservas.map((x) => x.id)).toEqual([r.encosta, ...empate.map((x) => x.id)]);
     expect(d.aviso.reservas.find((x) => x.id === r.colega)).toMatchObject({ cliente: 'cliente removida' });
     expect(d.aviso.reservas.map((x) => x.id)).not.toContain(r.cancelada);
     expect(await fotografiaReservas(c, s.salaoId)).toEqual(antes);
     expect(await contarMensagens(c)).toBe(mensagens);
   });
 
-  it('a reserva da fábrica (dois itens) fica idêntica sob um bloqueio que a cobre; status confirmado', async () => {
+  it('a reserva da fábrica (dois itens) fica idêntica sob um bloqueio que a cobre; uma linha por item (D-050); status confirmado', async () => {
     const t = await criarSalaoCompleto({ reserva: { inicio: new Date('2026-12-17T17:00:00Z') } });
     await anonimizarCliente(c, t.clientes.ativaId);
     const antes = await fotografiaReservas(c, t.salaoId);
     const d = salvo(await acoes.criarBloqueio.executar(await credGestor(t), diaInteiro('17/12/2026', '17/12/2026', { alvo: 'salao' }), exec));
-    expect(d.aviso.reservas).toEqual([expect.objectContaining({ id: t.reserva.id, cliente: 'cliente removida' })]);
+    expect(d.aviso.reservas).toEqual([
+      expect.objectContaining({ id: t.reserva.id, itemId: t.reserva.itemIds[0], cliente: 'cliente removida', inicioLocal: '17/12/2026 14:00' }),
+      expect.objectContaining({ id: t.reserva.id, itemId: t.reserva.itemIds[1], cliente: 'cliente removida', inicioLocal: '17/12/2026 15:00' }),
+    ]);
     expect(await fotografiaReservas(c, t.salaoId)).toEqual(antes);
     const { rows } = await c.query<{ status: string }>('SELECT status::text FROM reserva WHERE id = $1', [t.reserva.id]);
     expect(rows[0].status).toBe('confirmado');

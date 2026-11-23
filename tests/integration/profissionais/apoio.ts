@@ -6,6 +6,7 @@ import { criarTenantContext } from '@/server/tenant/context';
 import type { TenantContext } from '@/server/tenant/context';
 
 import type { SalaoCompleto } from '../../support/factories';
+import { inserirReservaComItens as inserirReservaComItensSql } from '../../support/sql';
 
 // Apoio local aos testes de tests/integration/profissionais (D-013). Não é arquivo de teste (o glob
 // do Vitest só pega *.test.ts). SQL direto pelo driver `pg` na base deste worker, sem mocks de banco.
@@ -26,9 +27,19 @@ export function ctxDoProfissional(s: SalaoCompleto): TenantContext {
   });
 }
 
-/** Cancela as reservas criadas pela fábrica (R-8): o profissional fica sem reserva futura confirmada. */
+/**
+ * Cancela as reservas criadas pela fábrica (R-8): o profissional fica sem item futuro confirmado. D-050:
+ * cancela os ITENS e grava os derivados coerentes na reserva (status `cancelado`, `cancelada_em`).
+ */
 export async function cancelarReservasDoSalao(c: pg.Client, salaoId: string): Promise<void> {
+  await c.query(`UPDATE reserva_item SET status = 'cancelado' WHERE salao_id = $1`, [salaoId]);
   await c.query(`UPDATE reserva SET status = 'cancelado', cancelada_em = now() WHERE salao_id = $1`, [salaoId]);
+}
+
+/** Cancela todos os itens das reservas dadas e a própria reserva (derivados coerentes, D-050). */
+export async function cancelarReservas(c: pg.Client, ids: string[]): Promise<void> {
+  await c.query(`UPDATE reserva_item SET status = 'cancelado' WHERE reserva_id = ANY($1::uuid[])`, [ids]);
+  await c.query(`UPDATE reserva SET status = 'cancelado', cancelada_em = now() WHERE id = ANY($1::uuid[])`, [ids]);
 }
 
 export type ReservaDeTeste = {
@@ -38,27 +49,27 @@ export type ReservaDeTeste = {
   inicio: Date;
   fim: Date;
   status?: 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
-  /** Serviços dos itens, na ordem (o primeiro item recebe toda a duração). */
+  /**
+   * Serviços dos itens, na ordem, todos com `profissionalId`, encadeados a partir de `inicio`: os itens
+   * depois do primeiro têm 1 min e o primeiro fica com o resto (no mínimo 1 min), de modo que o envelope
+   * continua [inicio, fim) sempre que `fim - inicio` ≥ número de itens.
+   */
   servicoIds: string[];
 };
 
-/** Reserva com itens (snapshot fictício de preço e duração). Devolve o id. */
+/** Reserva com itens (snapshot fictício de preço 1000), derivados coerentes (D-050). Devolve o id da reserva. */
 export async function inserirReservaComItens(c: pg.Client, r: ReservaDeTeste): Promise<string> {
-  const { rows } = await c.query<{ id: string }>(
-    `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-     VALUES ($1, $2, $3, $4, $5, $5, $6, 'equipe') RETURNING id::text AS id`,
-    [r.salaoId, r.profissionalId, r.clienteId, r.inicio, r.fim, r.status ?? 'confirmado'],
-  );
-  const id = rows[0].id;
-  const duracao = Math.max(1, Math.round((r.fim.getTime() - r.inicio.getTime()) / MIN_MS));
-  for (const [ordem, servicoId] of r.servicoIds.entries()) {
-    await c.query(
-      `INSERT INTO reserva_item (salao_id, reserva_id, servico_id, ordem, preco_centavos, duracao_min)
-       VALUES ($1, $2, $3, $4, 1000, $5)`,
-      [r.salaoId, id, servicoId, ordem, ordem === 0 ? duracao : 1],
-    );
-  }
-  return id;
+  const total = Math.round((r.fim.getTime() - r.inicio.getTime()) / MIN_MS);
+  const primeiro = Math.max(1, total - (r.servicoIds.length - 1));
+  let t = r.inicio.getTime();
+  const itens = r.servicoIds.map((servicoId, k) => {
+    const duracaoMin = k === 0 ? primeiro : 1;
+    const inicio = new Date(t);
+    t += duracaoMin * MIN_MS;
+    return { profissionalId: r.profissionalId, inicio, duracaoMin, servicoId, precoCentavos: 1000, status: r.status ?? 'confirmado' };
+  });
+  const { reservaId } = await inserirReservaComItensSql(c, { salaoId: r.salaoId, clienteId: r.clienteId, itens, origem: 'equipe' });
+  return reservaId;
 }
 
 export type EstadoConvite = 'pendente' | 'aceito' | 'invalidado';

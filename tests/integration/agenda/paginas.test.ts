@@ -108,13 +108,15 @@ describe('gestor', () => {
     expect(html).toContain('Terça-feira, 01/12/2026');
     expect(html).toContain('09:00–10:00');
     expect(html).toContain('Maria Souza');
-    expect(html).toContain('Confirmada');
-    expect(html).toContain('Cancelada');
+    // D-050: status do ITEM, no masculino.
+    expect(html).toContain('Confirmado');
+    expect(html).toContain('Cancelado');
     expect(html).toContain('Não compareceu');
     expect(html).toContain('cliente removida');
     expect(html).not.toContain('Fulana Sumida');
     expect(html).toContain('Bloqueio: Dentista');
-    expect(html).toContain(`href="${ROTAS.agendaReserva(rAna)}"`);
+    // D-050: o bloco abre o detalhe na parada do item.
+    expect(html).toContain(`href="${ROTAS.agendaReserva(rAna)}#item-`);
     expect(html).toContain('Todos os profissionais');
     expect(html).not.toMatch(/5511977770001|\(11\) 97777/);
     expect(html).not.toContain(rY);
@@ -125,7 +127,7 @@ describe('gestor', () => {
     const semana = await agenda({ data: DIA, visao: 'semana' });
     expect(semana).toContain('Semana de 29/11/2026 a 05/12/2026');
     const bia = await agenda({ data: DIA, profissional: x.bia });
-    expect(bia).toContain(`href="${ROTAS.agendaReserva(rBia)}"`);
+    expect(bia).toContain(`href="${ROTAS.agendaReserva(rBia)}#item-`);
     expect(bia).not.toContain(rAna);
     const repetido = await agenda({ data: [DIA, '2026-12-05'], visao: ['semana', 'dia'], profissional: [x.bia, x.ana] });
     expect(repetido).toContain(ROTAS.agenda);
@@ -146,12 +148,13 @@ describe('gestor', () => {
     }
   });
 
-  it('detalhe: telefone formatado, horário no fuso, itens, total e link de volta ao dia', async () => {
+  it('detalhe: telefone formatado, data e horário do item no fuso, itens, total e link de volta ao dia', async () => {
     await comoGestor(x);
     const html = await reserva(rAna);
     expect(html).toContain('<h1>Reserva</h1>');
     expect(html).toContain('(11) 97777-0001');
-    expect(html).toContain('01/12/2026 09:00');
+    expect(html).toContain('Terça-feira, 01/12/2026');
+    expect(html).toMatch(/09:00<span[^>]*><span[^>]*> até <\/span><span aria-hidden="true">–<\/span>10:00/);
     expect(html).toMatch(/R\$\s*50,00/);
     expect(html).toContain(`href="${ROTAS.agenda}?data=2026-12-01"`);
     const removida = await reserva(rAnonima);
@@ -172,7 +175,7 @@ describe('profissional', () => {
   it('só a própria agenda; a reserva de outra profissional é 404 (CA-1)', async () => {
     await comoProfissional(x);
     const html = await agenda({ data: DIA, profissional: x.bia });
-    expect(html).toContain(`href="${ROTAS.agendaReserva(rAna)}"`);
+    expect(html).toContain(`href="${ROTAS.agendaReserva(rAna)}#item-`);
     expect(html).not.toContain(rBia);
     expect(html).not.toContain('Todos os profissionais');
     expect(html).not.toContain('<select');

@@ -1,15 +1,16 @@
 /** @vitest-environment jsdom */
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import DemonstracaoReservaAcoes, { dynamic, generateMetadata } from './page';
 
-// D-030: /dev/reserva-acoes só com a vitrine ligada; as ações visíveis dependem da vista.
+// D-030/D-050: /dev/reserva-acoes só com a vitrine ligada; ações por item conforme a vista e a URL.
 afterEach(() => vi.unstubAllEnvs());
 
 async function renderizar(params: Record<string, string> = {}) {
   render(await DemonstracaoReservaAcoes({ searchParams: Promise.resolve(params) }));
 }
+const parada = (id: string) => within(document.getElementById(`item-${id}`)!);
 
 describe('página /dev/reserva-acoes', () => {
   it('force-dynamic; metadados noindex só com a vitrine ligada', () => {
@@ -27,33 +28,60 @@ describe('página /dev/reserva-acoes', () => {
     await expect(DemonstracaoReservaAcoes({ searchParams: Promise.resolve({}) })).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' });
   });
 
-  it('futura: remarcar e cancelar, sem marcar situação', async () => {
+  it('futura: remarcar/cancelar por item, item cancelado sem ações, total e "Cancelar todos"', async () => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
     await renderizar();
-    expect(screen.getByRole('button', { name: 'Remarcar reserva' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Cancelar reserva' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Marcar como/ })).toBeNull();
+    expect(parada('item-escova').getByRole('link', { name: /^Remarcar Escova/ }).getAttribute('href')).toBe('/dev/reserva-acoes?vista=futura&remarcar=item-escova#remarcar');
+    expect(parada('item-hidratacao').queryByRole('link')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Marcar/ })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Cancelar todos os serviços' })).toBeTruthy();
+    expect(screen.getByText('Itens cancelados não entram no total.')).toBeTruthy();
+    expect(Array.from(document.querySelectorAll('dl dt')).map((t) => t.textContent)).toEqual(['Cliente', 'Telefone', 'Data', 'Situação', 'Origem']);
   });
 
-  it('iniciada: também marcar situação; concluída: só não compareceu; cancelada e resultado: nenhuma ação', async () => {
+  it('?remarcar= abre um só formulário na parada; ?cancelar= e ?cancelar=todos abrem as confirmações', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ remarcar: 'item-escova' });
+    expect(parada('item-escova').getByRole('heading', { level: 3, name: 'Remarcar Escova' })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(1);
+    expect(document.getElementById('remarcar-data')!.textContent).toContain('a mesma dos outros serviços');
+  });
+
+  it('?cancelar=<item>', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ cancelar: 'item-manicure' });
+    expect(parada('item-manicure').getByRole('button', { name: 'Sim, cancelar este serviço' })).toBeTruthy();
+  });
+
+  it('?cancelar=todos', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ cancelar: 'todos' });
+    expect(document.getElementById('cancelar-todos')!.textContent).toContain('Cancelar os 2 serviços que ainda podem ser cancelados');
+  });
+
+  it('iniciada: botões de situação na parada que já começou', async () => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
     await renderizar({ vista: 'iniciada' });
-    expect(screen.getByRole('button', { name: 'Marcar como concluída' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Marcar como não compareceu' })).toBeTruthy();
+    expect(parada('item-escova').getByRole('button', { name: 'Marcar Escova como concluído' })).toBeTruthy();
+    expect(parada('item-escova').getByRole('button', { name: 'Marcar Escova como não compareceu' })).toBeTruthy();
   });
 
-  it('concluída oferece só "não compareceu"', async () => {
+  it('profissional: só o próprio serviço, frase e total dos seus serviços, sem "Cancelar todos"', async () => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
-    await renderizar({ vista: 'concluida' });
-    expect(screen.queryByRole('button', { name: 'Marcar como concluída' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Marcar como não compareceu' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Remarcar reserva' })).toBeNull();
+    await renderizar({ vista: 'profissional' });
+    expect(screen.getByText('Você vê apenas os seus serviços nesta reserva.')).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Serviços da reserva' }).querySelectorAll('li')).toHaveLength(1);
+    expect(screen.getByText(/Total dos seus serviços/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Cancelar todos os serviços' })).toBeNull();
   });
 
-  it('cancelada e resultado de sucesso: sem ações; o resultado aparece', async () => {
+  it('cancelada: sem ações; resultado do PRG aparece com o texto do item', async () => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
-    await renderizar({ vista: 'cancelada', resultado: 'cancelada' });
-    expect(screen.queryByRole('button', { name: /Remarcar|Cancelar|Marcar/ })).toBeNull();
-    expect(screen.getByRole('status').textContent).toBe('Reserva cancelada.');
+    await renderizar({ vista: 'cancelada', resultado: 'cancelado', item: 'item-escova' });
+    const servicos = within(screen.getByRole('region', { name: 'Serviços' }));
+    expect(servicos.queryByRole('button')).toBeNull();
+    expect(servicos.queryByRole('link')).toBeNull();
+    expect(screen.getByRole('status').textContent).toMatch(/^Escova \(\d{2}:\d{2}\) foi cancelado\. A cliente será avisada/);
+    expect(screen.getByText(/Total \(cancelada\)/)).toBeTruthy();
   });
 });

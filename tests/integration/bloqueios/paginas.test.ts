@@ -14,7 +14,7 @@ import { criarDoisSaloes, criarSalaoCompleto } from '../../support/factories';
 import type { SalaoCompleto } from '../../support/factories';
 import { conectar } from '../../support/sql';
 
-import { MANAUS, UUID_INEXISTENTE, apagarBloqueios, criarReservaEm, definirFuso, inserirBloqueio, linhaBloqueio, linhasBloqueio } from './apoio';
+import { MANAUS, UUID_INEXISTENTE, apagarBloqueios, criarReservaEm, definirFuso, inserirBloqueio, itemDe, linhaBloqueio, linhasBloqueio } from './apoio';
 
 // D-016 T-8: páginas e casca de /painel/bloqueios com sessões reais no PostgreSQL. next/headers
 // (cookies), next/navigation (redirect, notFound) e next/cache (revalidatePath) são substituídos (não é
@@ -161,7 +161,7 @@ describe('página /painel/bloqueios: gestor', () => {
     );
     expect(r.salvo?.periodo).toBe(`25/12/${ANO} 22:00 a 26/12/${ANO} 02:00`);
     expect(r.salvo?.aviso.reservas).toEqual([
-      { id: reserva, profissionalNome: s.profissional.nome, inicioLocal: `25/12/${ANO} 23:00`, fimLocal: `26/12/${ANO} 00:00`, cliente: s.clientes.nomeAtiva },
+      { id: reserva, itemId: await itemDe(c, reserva), profissionalNome: s.profissional.nome, inicioLocal: `25/12/${ANO} 23:00`, fimLocal: `26/12/${ANO} 00:00`, cliente: s.clientes.nomeAtiva },
     ]);
     expect(await lista()).toContain(`25/12/${ANO} 22:00 a 26/12/${ANO} 02:00`);
   });

@@ -7,7 +7,7 @@ import { repos } from '@/server/repos';
 import { obterPrisma } from '@/server/repos/db';
 import { emTransacao } from '@/server/repos/transacao';
 
-import { criarCenarioMensagem, criarMensagem, lerMensagem, mensagensDaReservaDireto } from '../../support/mensagens';
+import { criarCenarioMensagem, criarMensagem, lerMensagem, mensagensDaReservaDireto, mudarReserva } from '../../support/mensagens';
 import { telefoneNovo } from '../../support/sql';
 
 import { criarPipeline, ctxDo, esperarMensagem, registrar } from './apoio';
@@ -41,12 +41,14 @@ async function enviandoSemTentativaAberta(salaoId: string): Promise<number> {
 }
 
 describe('CA-25: registros concorrentes', () => {
-  it('registros de revisões distintas em paralelo sobre as mesmas pendentes: sem impasse nem 23505, uma linha por chave', async () => {
+  it('registros de revisões distintas + substituirNaoVigentes em paralelo: sem impasse nem 23505, uma linha por chave', async () => {
     const s = await criarCenarioMensagem({ revisao: 1 });
+    // D-050: os itens estão na revisão 106, logo só a remarcação 106 é vigente (RN-30).
+    await mudarReserva(s.reservaId, { revisao: 106 });
     for (let rev = 0; rev < 3; rev++) {
       await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 100 + rev });
     }
-    await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'confirmacao', revisao: 0 });
+    const conf = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'confirmacao', revisao: 0 });
     const resultados = await Promise.allSettled(
       Array.from({ length: 12 }, (_, i) => {
         const revisao = 101 + (i % 6); // repete revisões: há chaves iguais e distintas ao mesmo tempo
@@ -56,9 +58,7 @@ describe('CA-25: registros concorrentes', () => {
             { reservaId: s.reservaId, tipo: 'remarcacao', revisao, estado: 'pendente', erroCodigo: null, destinatarioE164: s.telefone },
             new Date(),
           );
-          if (criada) {
-            await r.mensagens.substituirPendentes(ctxDo(s), { reservaId: s.reservaId, tipos: ['confirmacao', 'remarcacao'], revisaoMenorQue: revisao }, new Date());
-          }
+          await r.mensagens.substituirNaoVigentes(ctxDo(s), s.reservaId, new Date());
           return criada;
         });
       }),
@@ -67,14 +67,12 @@ describe('CA-25: registros concorrentes', () => {
     const linhas = await mensagensDaReservaDireto(s.reservaId);
     const chaves = linhas.map((m) => `${m.tipo}:${m.revisao}`);
     expect(new Set(chaves).size).toBe(chaves.length);
-    // A maior revisão registrada fica pendente; as pendentes de antes do paralelismo foram todas substituídas.
-    // (Uma revisão intermediária registrada DEPOIS de a maior já ter substituído pode ficar pendente: o
-    // envio a trata como obsoleta, RN-16/R-10.)
-    const pendentes = linhas.filter((m) => m.estado === 'pendente').map((m) => m.revisao);
-    expect(pendentes).toContain(106);
-    for (const antiga of linhas.filter((m) => m.revisao <= 102 || (m.tipo === 'confirmacao' && m.revisao === 0))) {
-      expect(antiga.estado).toBe('substituida');
-    }
+    // A vigente (106) nunca é substituída; a confirmação continua vigente (RN-31); as pendentes anteriores
+    // ao paralelismo foram substituídas. (Uma revisão não vigente inserida DEPOIS do último UPDATE pode
+    // ficar pendente: o envio a trata como obsoleta, RN-30.)
+    expect(linhas.find((m) => m.tipo === 'remarcacao' && m.revisao === 106)?.estado).toBe('pendente');
+    expect((await lerMensagem(conf)).estado).toBe('pendente');
+    expect(linhas.find((m) => m.tipo === 'remarcacao' && m.revisao === 100)?.estado).toBe('substituida');
   });
 
   it('registrar × edição de telefone × upsert da mesma cliente × reenviar × reconciliação, todos juntos', async () => {

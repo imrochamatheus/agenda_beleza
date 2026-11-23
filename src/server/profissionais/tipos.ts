@@ -29,7 +29,10 @@ export type ResultadoSalvar =
   | { resultado: 'invalido'; erros: ErrosProfissional };
 
 export type ReservaBloqueante = {
+  /** Id da reserva. */
   id: string;
+  /** Id do item (D-050 RN-38: uma linha por item; chave única da lista). */
+  itemId: string;
   /** ISO UTC (serializável). */
   inicio: string;
   /** Data e hora de início no fuso do salão (src/lib/format.ts). */

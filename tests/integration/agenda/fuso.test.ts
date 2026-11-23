@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { DetalheDaReserva } from '@/app/painel/agenda/_componentes/DetalheDaReserva';
 import { VistaDaAgenda } from '@/app/painel/agenda/_componentes/VistaDaAgenda';
 import { consultarAgenda, lerReservaDaAgenda } from '@/server/agenda/consultar';
 
@@ -34,10 +33,11 @@ describe('CA-3: 12:00Z em America/Sao_Paulo é 09:00', () => {
       expect(marcado).toContain('09:00–10:00');
       expect(marcado).not.toContain('12:00–13:00');
     }
-    const d = await lerReservaDaAgenda(ce.ctxEquipe, id);
-    const detalhe = renderToStaticMarkup(createElement(DetalheDaReserva, { reserva: d, hrefVoltar: '/x', mensagens: [] }));
-    expect(detalhe).toContain('01/12/2026 09:00');
-    expect(detalhe).toContain('01/12/2026 10:00');
+    // D-050: o detalhe leva a data local do agendamento e os instantes de cada item; o HTML do detalhe
+    // (horário por parada) é coberto pelos testes de UI da T-13 (d050-ui-*).
+    const d = await lerReservaDaAgenda(ce.ctxEquipe, id, AGORA);
+    expect(d.data).toEqual({ ano: 2026, mes: 12, dia: 1 });
+    expect(d.itens.map((i) => [i.inicio, i.fim])).toEqual([[new Date('2026-12-01T12:00:00Z'), new Date('2026-12-01T13:00:00Z')]]);
   });
 
   it('fuso do salão diferente do de São Paulo (Manaus, UTC−4): 12:00Z é 08:00', async () => {
@@ -76,7 +76,7 @@ describe('CA-13: virada de dia e horário de verão', () => {
     await reservar(c, ce, { profissionalId: ce.ana, inicio: new Date('2026-11-01T14:00:00Z'), fim: new Date('2026-11-01T15:00:00Z'), status: 'cancelado' });
     const v = await consultarAgenda(ce.ctxEquipe, { data: '2026-11-01' }, new Date('2026-10-25T12:00:00Z'));
     expect((v.dias[0].fim.getTime() - v.dias[0].inicio.getTime()) / 3_600_000).toBe(25);
-    expect(v.colunas[0].reservas).toHaveLength(2);
+    expect(v.colunas[0].blocos).toHaveLength(2);
     const marcado = html(v);
     // Hora repetida: 01:30 EDT → 01:30 EST (1 h real) mostra a duração real: 01:30–02:30.
     expect(marcado).toContain('01:30–02:30');

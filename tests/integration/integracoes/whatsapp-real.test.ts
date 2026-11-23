@@ -76,6 +76,24 @@ describe('CA-12: enviarMensagem com o adaptador real', () => {
     expect((recebidas[0] as { to: string }).to).toBe(s.telefone.replace(/\D/g, ''));
   });
 
+  it('D-050 CA-43: a confirmação consolidada vai à Meta na ordem salao, data, itens', async () => {
+    // 2031-03-10T12:00Z = 09:00 em São Paulo; dois itens encadeados de 30 min do mesmo profissional.
+    const s = await criarCenarioMensagem({ inicio: new Date('2031-03-10T12:00:00Z'), servicos: ['Escova', 'Manicure'] });
+    const { mensagemId } = await registrar(s, 'confirmacao');
+    respostas.push({ status: 200, corpo: { messages: [{ id: 'wamid.REAL.CONF' }] } });
+
+    expect(await enviar(mensagemId)).toBe('concluida');
+
+    expect((await lerMensagem(mensagemId)).estado).toBe('enviada');
+    const corpo = recebidas[0] as { template: { name: string; components: { parameters: { type: string; text: string }[] }[] } };
+    expect(corpo.template.name).toBe('m_conf');
+    expect(corpo.template.components[0].parameters).toEqual([
+      { type: 'text', text: s.salaoNome },
+      { type: 'text', text: '10/03/2031' },
+      { type: 'text', text: `09:00 Escova com ${s.profissionalNome}; 09:30 Manicure com ${s.profissionalNome}` },
+    ]);
+  });
+
   it('5xx: a mensagem volta a pendente, a tentativa registra o código e o job é reagendado', async () => {
     const s = await criarCenarioMensagem();
     const { mensagemId } = await registrar(s, 'confirmacao');

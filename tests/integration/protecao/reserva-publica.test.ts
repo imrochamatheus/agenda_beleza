@@ -14,7 +14,8 @@ import { telefoneNovo } from '../../support/sql';
 import { contadorDoIp, contadorDoNumero } from './apoio';
 
 // D-027: CA-1..CA-5, CA-9, CA-10, CA-16, CA-17 e a idempotência, contra o PostgreSQL real e com os
-// limites padrão (IP reserva 10, número 5, futuras 3, janela de 15 min).
+// limites padrão (IP reserva 10, número 5, futuras 3, janela de 15 min). D-050 (CA-15/CA-16): pelo fluxo
+// público com itens; o caso de 3 itens por reserva está em `futuras.test.ts`.
 
 beforeEach(() => {
   vi.spyOn(console, 'info').mockImplementation(() => {});
@@ -27,6 +28,12 @@ const db = () => obterPrisma();
 const reservar = (e: EntradaReservaPublica, agora: Date = AGORA) => reservarPelaPagina(e, agora, { enfileirar });
 const hora = (h: number) => sp(DIA, `${String(h).padStart(2, '0')}:00`).toISOString();
 const E164 = (t: string) => normalizarTelefoneBr(t)!;
+
+/** Muda o status da reserva E dos seus itens (derivados coerentes, D-050 RN-21). */
+async function mudarStatus(reservaId: string, status: 'cancelado' | 'concluido' | 'nao_compareceu') {
+  await db().reservaItem.updateMany({ where: { reservaId }, data: { status } });
+  await db().reserva.update({ where: { id: reservaId }, data: { status, ...(status === 'cancelado' && { canceladaEm: AGORA }) } });
+}
 
 /** Janela de 15 min k posições à frente de AGORA: contadores de IP e de número reiniciam. */
 const em = (k: number) => new Date(AGORA.getTime() + k * 15 * 60_000);
@@ -62,14 +69,14 @@ describe('limite de futuras (CA-1, CA-2, CA-16)', () => {
     expect((await reservar(entradaPublica(outro, { telefone, inicio: hora(10) }))).resultado).toBe('confirmada');
 
     const reservas = await db().reserva.findMany({ where: { salaoId: c.s.salaoId }, orderBy: { inicio: 'asc' } });
-    await db().reserva.update({ where: { id: reservas[0].id }, data: { status: 'cancelado' } });
+    await mudarStatus(reservas[0].id, 'cancelado');
     // 2 futuras: a 4ª passa a caber.
     expect((await reservar(entradaPublica(c, { telefone, inicio: hora(13) }), em(1))).resultado).toBe('confirmada');
     // De novo 3 (11, 12, 13): recusa; marcar uma como concluída / não compareceu libera.
     expect((await reservar(entradaPublica(c, { telefone, inicio: hora(14) }), em(2))).resultado).toBe('recusado');
-    await db().reserva.update({ where: { id: reservas[1].id }, data: { status: 'concluido' } });
+    await mudarStatus(reservas[1].id, 'concluido');
     expect((await reservar(entradaPublica(c, { telefone, inicio: hora(14) }), em(3))).resultado).toBe('confirmada');
-    await db().reserva.update({ where: { id: reservas[2].id }, data: { status: 'nao_compareceu' } });
+    await mudarStatus(reservas[2].id, 'nao_compareceu');
     expect((await reservar(entradaPublica(c, { telefone, inicio: hora(15) }), em(4))).resultado).toBe('confirmada');
   });
 

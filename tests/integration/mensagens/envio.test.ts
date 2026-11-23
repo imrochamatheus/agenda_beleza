@@ -16,7 +16,15 @@ import {
 } from '../../support/mensagens';
 import type { CenarioMensagem } from '../../support/mensagens';
 
-import { criarPipeline, esperarJob, esperarMensagem, limparFalhasForcadas, registrar, registrarEEnfileirar } from './apoio';
+import {
+  criarPipeline,
+  esperarJob,
+  esperarMensagem,
+  limparFalhasForcadas,
+  registrar,
+  registrarEEnfileirar,
+  registrarESubstituir,
+} from './apoio';
 import type { Pipeline } from './apoio';
 
 // D-024 T-7: o envio ponta a ponta com o worker pg-boss real e o WhatsApp simulado.
@@ -54,12 +62,12 @@ describe('CA-1: confirmação enviada com os parâmetros no fuso do salão', () 
     const chamadas = await chamadasDaChave(`${s.reservaId}:confirmacao:0`);
     expect(chamadas).toHaveLength(1);
     expect(chamadas[0]).toMatchObject({ destinatario: s.telefone, modelo: 'confirmacao', resultado: 'sucesso' });
+    // D-050 RN-27/CA-37: confirmação consolidada, itens por início, numa linha.
+    const n = s.profissionalNome;
     expect(chamadas[0].parametros).toEqual({
       salao: s.salaoNome,
-      servicos: 'Corte, Barba e Hidratação',
-      profissional: s.profissionalNome,
       data: '21/11/2026',
-      horario: '23:30',
+      itens: `23:30 Corte com ${n}; 00:00 Barba com ${n}; 00:30 Hidratação com ${n}`,
     });
   });
 
@@ -69,11 +77,11 @@ describe('CA-1: confirmação enviada com os parâmetros no fuso do salão', () 
     const r = await registrarEEnfileirar(p, s, 'confirmacao');
     await esperarMensagem(r.mensagemId, 'enviada');
     const [c] = await chamadasDaChave(r.chave);
-    expect(c.parametros).toMatchObject({ data: '21/11/2026', horario: '22:30' });
+    expect(c.parametros).toMatchObject({ data: '21/11/2026', itens: expect.stringMatching(/^22:30 Corte com /) });
   });
 
   it('cancelamento leva salao, servicos, data e horario (sem profissional)', async () => {
-    const s = await criarCenarioMensagem({ status: 'cancelado', revisao: 0 });
+    const s = await criarCenarioMensagem({ status: 'cancelado', revisao: 1 });
     guardar(s);
     const r = await registrarEEnfileirar(p, s, 'cancelamento');
     await esperarMensagem(r.mensagemId, 'enviada');
@@ -145,7 +153,7 @@ describe('CA-13: cliente anonimizada entre o registro e o envio', () => {
   it.each([
     ['confirmacao', { revisao: 0, status: 'confirmado' as const }],
     ['remarcacao', { revisao: 1, status: 'confirmado' as const }],
-    ['cancelamento', { revisao: 0, status: 'cancelado' as const }],
+    ['cancelamento', { revisao: 1, status: 'cancelado' as const }],
     ['convite_avaliacao', { revisao: 0, status: 'concluido' as const, consentimentoConvite: true }],
   ] as const)('%s pendente → cancelada_anonimizacao, sem chamada e sem tentativa de sucesso', async (tipo, opcoes) => {
     const s = await criarCenarioMensagem(opcoes);
@@ -176,7 +184,7 @@ describe('CA-14: consentimento que deixa de existir antes do envio', () => {
 });
 
 describe('CA-15 e CA-7: mensagem obsoleta termina sem enviar', () => {
-  it('confirmacao rev 0 com a reserva remarcada; remarcacao com a reserva cancelada; convite com a reserva ainda confirmada', async () => {
+  it('confirmacao com a reserva toda cancelada; remarcacao com o item cancelado; convite com a reserva ainda confirmada', async () => {
     const a = await criarCenarioMensagem();
     const b = await criarCenarioMensagem({ revisao: 1 });
     const c = await criarCenarioMensagem({ consentimentoConvite: true });
@@ -186,7 +194,8 @@ describe('CA-15 e CA-7: mensagem obsoleta termina sem enviar', () => {
     const ra = await registrar(a, 'confirmacao');
     const rb = await registrar(b, 'remarcacao');
     const rc = await registrar(c, 'convite_avaliacao');
-    await mudarReserva(a.reservaId, { revisao: 1 });
+    // D-050 RN-30: remarcar não torna a confirmação obsoleta; só a reserva deixar de estar confirmada.
+    await mudarReserva(a.reservaId, { status: 'cancelado', revisao: 1 });
     await mudarReserva(b.reservaId, { status: 'cancelado' });
     await enfileirarMensagens([ra, rb, rc], { enfileirar: p.enfileirar });
     for (const r of [ra, rb, rc]) {
@@ -205,7 +214,7 @@ describe('CA-15 e CA-7: mensagem obsoleta termina sem enviar', () => {
     await enfileirarMensagens([r1], { enfileirar: p.enfileirar });
     const jobDaRev1 = p.jobs.at(-1)!;
     await mudarReserva(s.reservaId, { revisao: 2 });
-    const r2 = await registrar(s, 'remarcacao');
+    const r2 = await registrarESubstituir(s, 'remarcacao');
     expect((await lerMensagem(r1.mensagemId)).estado).toBe('substituida');
     await enfileirarMensagens([r2], { enfileirar: p.enfileirar });
     await p.iniciar();
@@ -219,7 +228,7 @@ describe('CA-15 e CA-7: mensagem obsoleta termina sem enviar', () => {
 
 describe('CA-20: salão suspenso', () => {
   it('o cancelamento da equipe é enviado normalmente', async () => {
-    const s = await criarCenarioMensagem({ status: 'cancelado' });
+    const s = await criarCenarioMensagem({ status: 'cancelado', revisao: 1 });
     guardar(s);
     await obterPrisma().salao.update({ where: { id: s.salaoId }, data: { suspensoManualEm: new Date() } });
     const r = await registrarEEnfileirar(p, s, 'cancelamento');
@@ -237,9 +246,10 @@ describe('CA-27: o pipeline só escreve em mensagem e mensagem_tentativa', () =>
     const antesS = await checksumDeTabelas(TABELAS_INTOCAVEIS, s.salaoId);
     const antesF = await checksumDeTabelas(TABELAS_INTOCAVEIS, f.salaoId);
     const ok = await registrarEEnfileirar(p, s, 'remarcacao');
-    const obsoleta = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'confirmacao', revisao: 0, destinatarioE164: s.telefone });
+    // Convite com a reserva ainda confirmada: obsoleto no envio (D-050 RN-30).
+    const obsoleta = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'convite_avaliacao', revisao: 0, destinatarioE164: s.telefone });
     await enfileirarMensagens(
-      [{ criada: true, mensagemId: obsoleta, tipo: 'confirmacao', revisao: 0, estado: 'pendente', chave: `${s.reservaId}:confirmacao:0`, precisaEnfileirar: true }],
+      [{ criada: true, mensagemId: obsoleta, tipo: 'convite_avaliacao', revisao: 0, estado: 'pendente', chave: `${s.reservaId}:convite_avaliacao:0`, precisaEnfileirar: true }],
       { enfileirar: p.enfileirar },
     );
     await p.simulado.forcarFalhas(1, 'permanente');

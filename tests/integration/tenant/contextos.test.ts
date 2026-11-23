@@ -72,16 +72,30 @@ describe('CA-13: repositórios de tenant recusam AdminContext e PublicoContext',
     // @ts-expect-error AdminContext não é aceito em listagens de tenant.
     const p2 = r.clientes.listar(admin);
     // @ts-expect-error AdminContext não é aceito em mutações de tenant.
-    const p3 = r.reservas.atualizarStatus(admin, a.reserva.id, { de: 'confirmado', para: 'cancelado' });
+    const p3 = r.reservas.criarItens(admin, a.reserva.id, [
+      {
+        servicoId: a.servicos.inativoId,
+        profissionalId: a.profissional.profissionalId,
+        ordem: 9,
+        inicio: a.reserva.fim,
+        fim: new Date(a.reserva.fim.getTime() + 30 * 60_000),
+        ocupadoAte: new Date(a.reserva.fim.getTime() + 30 * 60_000),
+        precoCentavos: 1,
+        duracaoMin: 30,
+        encaixe: false,
+      },
+    ]);
     for (const p of [p1, p2, p3]) {
       const e = await p.catch((x: unknown) => x);
       expect(e).toBeInstanceOf(Error);
       expect(e).not.toBeInstanceOf(NaoEncontrado);
       expect((e as Error).message).toBe('operação de tenant exige TenantContext ou SistemaContext');
     }
-    // A reserva não mudou.
+    // A reserva não mudou (nenhum item novo).
     const ctxA = await resolverTenant(await credencialDoGestor(a));
-    expect((await r.reservas.buscarPorId(ctxA, a.reserva.id)).status).toBe('confirmado');
+    const reserva = await r.reservas.buscarPorId(ctxA, a.reserva.id);
+    expect(reserva.status).toBe('confirmado');
+    expect(reserva.itens.map((i) => i.id)).toEqual(a.reserva.itemIds);
   });
 
   it('CA-13: PublicoContext real passado a um repositório de tenant → erro de tipo e Error em execução', async () => {

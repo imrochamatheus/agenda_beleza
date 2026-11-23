@@ -6,11 +6,11 @@ import { diaInteiroFechado, foraDaJornada, foraDoFuncionamento } from './faixas'
 import { montarPeriodo } from './periodo';
 import type {
   AgendaVista,
+  BlocoDaAgenda,
   BloqueioDaAgenda,
   ColunaDaAgenda,
   DiaDaAgenda,
   OpcaoDeProfissional,
-  ReservaDaAgenda,
   Visao,
 } from './tipos';
 import { isoDaData } from './validacao';
@@ -31,7 +31,8 @@ export type EntradaDaVista = {
   colunaSempre: boolean;
   /** Mostra as opções do filtro (só o gestor). */
   comOpcoes: boolean;
-  reservas: readonly ReservaDaAgenda[];
+  /** D-050: um bloco por item; vai para a coluna do profissional DO ITEM. */
+  blocos: readonly BlocoDaAgenda[];
   bloqueios: readonly BloqueioDaAgenda[];
   jornadas: ReadonlyMap<string, SemanaHoraria>;
   funcionamento: Funcionamento;
@@ -51,11 +52,11 @@ export function montarVista(e: EntradaDaVista): AgendaVista {
   const colunas: ColunaDaAgenda[] = [];
   for (const p of e.profissionais) {
     if (e.filtro !== null && p.id !== e.filtro) continue;
-    const reservas = e.reservas.filter((r) => r.profissionalId === p.id);
+    const blocos = e.blocos.filter((b) => b.profissionalId === p.id);
     const proprios = e.bloqueios.filter((b) => b.profissionalId === p.id);
     const jornada = e.jornadas.get(p.id);
     const aparece =
-      e.colunaSempre || reservas.length > 0 || proprios.length > 0 || (p.ativo && temJornada(jornada));
+      e.colunaSempre || blocos.length > 0 || proprios.length > 0 || (p.ativo && temJornada(jornada));
     if (!aparece) continue;
     const fora: Record<string, ReturnType<typeof foraDaJornada>> = {};
     for (const d of dias) {
@@ -65,7 +66,7 @@ export function montarVista(e: EntradaDaVista): AgendaVista {
       id: p.id,
       nome: p.nome,
       ativo: p.ativo,
-      reservas,
+      blocos,
       bloqueios: [...doSalao, ...proprios].sort((a, b) => a.inicio.getTime() - b.inicio.getTime() || a.id.localeCompare(b.id)),
       foraDaJornada: fora,
     });

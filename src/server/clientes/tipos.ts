@@ -63,15 +63,29 @@ export const ROTULO_STATUS: Readonly<Record<StatusReserva, string>> = Object.fre
 
 export type StatusRotulo = (typeof ROTULO_STATUS)[StatusReserva];
 
+/** Um serviço (item) de uma reserva do histórico (D-050 RN-35/RN-38): cancelados aparecem, com o preço. */
+export type ServicoHistorico = {
+  servico: string;
+  profissional: string;
+  /** Hora de início do item no fuso do salão (`formatarHora`). */
+  horaLocal: string;
+  status: StatusRotulo;
+  cancelado: boolean;
+  preco: string;
+};
+
 export type ItemHistorico = {
   id: string;
-  /** Data e hora no fuso do salão (`formatarDataHora`). */
+  /** Data e hora do início da reserva (envelope derivado) no fuso do salão (`formatarDataHora`). */
   inicioLocal: string;
+  /** Status DERIVADO da reserva (D-050 A-1). */
   status: StatusRotulo;
-  profissional: string;
-  servicos: string[];
-  duracaoTotal: string;
+  /** Itens por (inicio, id). */
+  servicos: ServicoHistorico[];
+  /** RN-35: soma dos itens não cancelados; reserva toda cancelada → soma de todos. */
   precoTotal: string;
+  /** true quando todos os itens estão cancelados (o total é o "da cancelada"). */
+  totalDaCancelada: boolean;
 };
 
 export type ListaClientes = { itens: ClienteVisao[]; total: number; pagina: number; porPagina: number; q: string };

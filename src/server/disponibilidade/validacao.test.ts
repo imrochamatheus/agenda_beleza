@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { validarEntradaEstrutural, validarPeriodo, validarServicos } from './validacao';
+import { validarCalculo, validarEntradaEstrutural, validarEscolhidos, validarPeriodo, validarServicos } from './validacao';
 
 const D = (ano: number, mes: number, dia: number) => ({ ano, mes, dia });
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `s${i}`);
@@ -38,5 +38,45 @@ describe('validarEntradaEstrutural', () => {
     expect(validarEntradaEstrutural({ servicoIds: [], de: D(2026, 2, 31), ate: D(2026, 2, 31) })).toBe('servicos_vazio');
     expect(validarEntradaEstrutural({ servicoIds: ['a'], de: D(2026, 2, 31), ate: D(2026, 2, 31) })).toBe('data_invalida');
     expect(validarEntradaEstrutural({ servicoIds: ['a'], de: D(2026, 12, 1), ate: D(2026, 12, 1) })).toBeNull();
+  });
+});
+
+describe('validarEscolhidos (D-050)', () => {
+  const t = new Date('2026-12-01T12:00:00Z');
+  it('ausente, vazio ou um por serviço pedido → null', () => {
+    expect(validarEscolhidos(['a', 'b'], undefined)).toBeNull();
+    expect(validarEscolhidos(['a', 'b'], [])).toBeNull();
+    expect(validarEscolhidos(['a', 'b'], [{ servicoId: 'a', profissionalId: 'p', inicio: t }, { servicoId: 'b', profissionalId: 'x', inicio: t }])).toBeNull();
+  });
+  it('serviço fora da lista, repetido, início inválido, profissional não texto ou item não objeto', () => {
+    const inv = 'escolhidos_invalidos';
+    expect(validarEscolhidos(['a'], [{ servicoId: 'z', profissionalId: 'p', inicio: t }])).toBe(inv);
+    expect(validarEscolhidos(['a', 'b'], [{ servicoId: 'a', profissionalId: 'p', inicio: t }, { servicoId: 'a', profissionalId: 'q', inicio: t }])).toBe(inv);
+    expect(validarEscolhidos(['a'], [{ servicoId: 'a', profissionalId: 'p', inicio: new Date(NaN) }])).toBe(inv);
+    expect(validarEscolhidos(['a'], [{ servicoId: 'a', profissionalId: 'p', inicio: '2026-12-01' as unknown as Date }])).toBe(inv);
+    expect(validarEscolhidos(['a'], [{ servicoId: 'a', profissionalId: 1 as unknown as string, inicio: t }])).toBe(inv);
+    expect(validarEscolhidos(['a'], [null as unknown as { servicoId: string; profissionalId: string; inicio: Date }])).toBe(inv);
+    expect(validarEscolhidos(['a'], 'x' as unknown as [])).toBe(inv);
+  });
+});
+
+describe('validarCalculo (D-050)', () => {
+  it('padrões e subconjuntos válidos', () => {
+    expect(validarCalculo(['a', 'b'], undefined, undefined)).toBeNull();
+    expect(validarCalculo(['a', 'b'], ['b'], undefined)).toBeNull();
+    expect(validarCalculo(['a', 'b'], undefined, {})).toBeNull();
+    expect(validarCalculo(['a', 'b'], undefined, { a: 'p', b: 'q' })).toBeNull();
+    expect(validarCalculo(['a', 'b'], ['a'], { a: 'p' })).toBeNull();
+  });
+  it('calcular vazio ou fora da lista; restrição com chave estranha, valor não texto ou sem cobrir o cálculo', () => {
+    const inv = 'calculo_invalido';
+    expect(validarCalculo(['a'], [], undefined)).toBe(inv);
+    expect(validarCalculo(['a'], ['z'], undefined)).toBe(inv);
+    expect(validarCalculo(['a'], 'a' as unknown as string[], undefined)).toBe(inv);
+    expect(validarCalculo(['a', 'b'], undefined, { a: 'p' })).toBe(inv);
+    expect(validarCalculo(['a', 'b'], ['a'], { b: 'p' })).toBe(inv);
+    expect(validarCalculo(['a'], undefined, { a: 'p', z: 'q' })).toBe(inv);
+    expect(validarCalculo(['a'], undefined, { a: 1 as unknown as string })).toBe(inv);
+    expect(validarCalculo(['a'], undefined, null as unknown as Record<string, string>)).toBe(inv);
   });
 });

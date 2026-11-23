@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { estadoInicialReserva } from '@/app/(publico)/[slug]/estado';
 
+import { valorDoItem } from '@/server/reserva-publica/passos';
+
 import { EQUIPE_DEMO, SERVICOS_DEMO } from './dados';
 import { demonstrarReservaAcao } from './acoes';
 
@@ -14,8 +16,8 @@ function fd(sobre: Record<string, string> = {}): FormData {
   const f = new FormData();
   const campos: Record<string, string> = {
     slug: 'demonstracao',
-    profissionalId: EQUIPE_DEMO[0].id,
-    inicio: '2026-12-02T13:00:00.000Z',
+    data: '2026-12-02',
+    h0: valorDoItem(EQUIPE_DEMO[0].id, '2026-12-02T13:00:00.000Z'),
     chave: CHAVE,
     nome: 'Maria',
     telefone: '(11) 98765-4321',
@@ -24,7 +26,7 @@ function fd(sobre: Record<string, string> = {}): FormData {
     ...sobre,
   };
   for (const [k, v] of Object.entries(campos)) f.append(k, v);
-  f.append('s', SERVICOS_DEMO[1].id);
+  f.append('s', SERVICOS_DEMO[0].id);
   return f;
 }
 
@@ -40,7 +42,7 @@ describe('demonstrarReservaAcao', () => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
     const anterior = estadoInicialReserva(CHAVE);
     const ok = await demonstrarReservaAcao(anterior, fd());
-    expect(ok).toMatchObject({ status: 'confirmada', chave: CHAVE, resumo: { profissionalNome: 'Ana', totalCentavos: 5500 } });
+    expect(ok).toMatchObject({ status: 'confirmada', chave: CHAVE, resumo: { data: '2026-12-02', totalCentavos: 9000, itens: [{ servicoNome: 'Escova', profissionalNome: 'Ana' }] } });
     const erro = await demonstrarReservaAcao(anterior, fd({ nome: 'M', telefone: '1', consentimento_mensagens: '' }));
     expect(erro.status).toBe('editando');
     expect(Object.keys(erro.erros).sort()).toEqual(['mensagensReserva', 'nome', 'telefone']);

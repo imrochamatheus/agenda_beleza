@@ -26,6 +26,7 @@ const PARAMETROS = {
   profissional: 'Marina',
   data: '12/12/2026',
   horario: '14:30',
+  itens: '09:00 Escova com Ana; 10:00 Hidratação com Bia; 15:00 Manicure com Carla',
   link: LINK,
 };
 const envio = (modelo: EnvioModelo['modelo'], extra: Partial<EnvioModelo> = {}): EnvioModelo => ({
@@ -97,7 +98,7 @@ const falha = async (p: Promise<unknown>) => (await p.then(() => null, (e: unkno
 
 describe('CA-1/CA-2/CA-3: requisição e sucesso', () => {
   it.each([
-    ['confirmacao', 'm_conf', ['Studio Aurora', 'Corte e escova', 'Marina', '12/12/2026', '14:30']],
+    ['confirmacao', 'm_conf', ['Studio Aurora', '12/12/2026', '09:00 Escova com Ana; 10:00 Hidratação com Bia; 15:00 Manicure com Carla']],
     ['remarcacao', 'm_rem', ['Studio Aurora', 'Corte e escova', 'Marina', '12/12/2026', '14:30']],
     ['cancelamento', 'm_canc', ['Studio Aurora', 'Corte e escova', '12/12/2026', '14:30']],
     ['convite_avaliacao', 'm_conv', ['Studio Aurora', LINK]],
@@ -132,7 +133,7 @@ describe('CA-1/CA-2/CA-3: requisição e sucesso', () => {
 
   it('profissional vazio vai como "-"', async () => {
     fila.push(OK);
-    await porta().enviarModelo(envio('confirmacao', { parametros: { ...PARAMETROS, profissional: '' } }));
+    await porta().enviarModelo(envio('remarcacao', { parametros: { ...PARAMETROS, profissional: '' } }));
     const corpo = recebidas[0].corpo as { template: { components: { parameters: { text: string }[] }[] } };
     expect(corpo.template.components[0].parameters[2].text).toBe('-');
   });

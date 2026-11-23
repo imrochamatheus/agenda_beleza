@@ -27,14 +27,13 @@ const SALAO = '11111111-1111-4111-8111-111111111111';
 const USUARIO = '22222222-2222-4222-8222-222222222222';
 const PROF = '33333333-3333-4333-8333-333333333333';
 const S1 = '44444444-4444-4444-8444-444444444441';
+const S2 = '44444444-4444-4444-8444-444444444442';
 const equipe = criarTenantContext({ usuarioId: USUARIO, papel: 'gestor', salaoId: SALAO, profissionalId: null });
 const sistema = contextoDeSistema(SALAO, 'teste');
 
 function entrada(sobre: Partial<EntradaCriarReserva> = {}): EntradaCriarReserva {
   return {
-    servicoIds: [S1],
-    profissionalId: PROF,
-    inicio: new Date('2026-12-01T13:00:00.000Z'),
+    itens: [{ servicoId: S1, profissionalId: PROF, inicio: new Date('2026-12-01T13:00:00.000Z') }],
     cliente: { nome: 'Ana Souza', telefone: '(11) 91234-5678' },
     aceites: { mensagensReserva: true },
     agora: new Date('2026-11-21T12:00:00.000Z'),
@@ -57,8 +56,8 @@ function semBanco() {
 
 describe('criarReserva: fase pura, sem banco', () => {
   it('campos inválidos → invalido com o campo; vence o consentimento ausente (A-14)', async () => {
-    const r = await criarReserva(sistema, entrada({ servicoIds: [], aceites: {} }));
-    expect(r).toEqual({ resultado: 'invalido', erros: { servicos: MENSAGENS_RESERVA.servicos } });
+    const r = await criarReserva(sistema, entrada({ itens: [], aceites: {} }));
+    expect(r).toEqual({ resultado: 'invalido', erros: { itens: MENSAGENS_RESERVA.servicos } });
     semBanco();
   });
 
@@ -92,9 +91,16 @@ describe('criarReserva: fase pura, sem banco', () => {
     semBanco();
   });
 
-  it('ids malformados: indisponível sem banco', async () => {
-    expect(await criarReserva(sistema, entrada({ profissionalId: 'xyz' }), { politica: liberada })).toEqual({ resultado: 'profissional_indisponivel' });
-    expect(await criarReserva(sistema, entrada({ servicoIds: ['nao-uuid'] }), { politica: liberada })).toEqual({ resultado: 'servico_indisponivel' });
+  it('ids malformados: indisponível sem banco, com os índices dos profissionais malformados', async () => {
+    const t = new Date('2026-12-01T13:00:00.000Z');
+    const doisItens = [
+      { servicoId: S1, profissionalId: PROF, inicio: t },
+      { servicoId: S2, profissionalId: 'xyz', inicio: new Date(t.getTime() + 3_600_000) },
+    ];
+    expect(await criarReserva(sistema, entrada({ itens: doisItens }), { politica: liberada })).toEqual({ resultado: 'profissional_indisponivel', itens: [1] });
+    expect(await criarReserva(sistema, entrada({ itens: [{ servicoId: 'nao-uuid', profissionalId: PROF, inicio: t }] }), { politica: liberada })).toEqual({
+      resultado: 'servico_indisponivel',
+    });
     semBanco();
   });
 
@@ -108,7 +114,7 @@ describe('criarReserva: fase pura, sem banco', () => {
 
   it('o log de um desfecho não traz nome, telefone nem chave', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});
-    await criarReserva(sistema, entrada({ servicoIds: [], chaveRequisicao: S1 }));
+    await criarReserva(sistema, entrada({ itens: [], chaveRequisicao: S1 }));
     const linhas = info.mock.calls.map((c) => String(c[0])).join('\n');
     expect(linhas).toContain('reserva.criar');
     expect(linhas).not.toMatch(/Ana Souza|91234|\+55|mensagensReserva/);

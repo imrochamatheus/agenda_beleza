@@ -61,6 +61,8 @@ async function cenario(): Promise<{ clienteId: string; tel: string; reservaId: s
     inicio: instanteFuturo((dia += 1), 13),
     status: 'confirmado',
     itens: [{ servicoId: s.servicos.ativos[0], precoCentavos: 9000, duracaoMin: 60 }],
+    // D-050: `cancelamento` exige revisão ≥ 1 (cancelar incrementa a revisão antes de registrar).
+    revisao: 1,
   });
   return { clienteId, tel, reservaId };
 }

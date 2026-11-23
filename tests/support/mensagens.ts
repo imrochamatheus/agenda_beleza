@@ -114,6 +114,11 @@ async function registrarConsentimento(salaoId: string, clienteId: string, finali
   });
 }
 
+/**
+ * Reserva com um item de 30 min por serviço, encadeados, todos com o profissional do cenário, no
+ * `status` dado (D-050: reserva e itens coerentes) e com a `revisao` dada na reserva E nos itens
+ * (a vigência de remarcação/cancelamento olha a revisão do item, dba.md M-4).
+ */
 async function criarReserva(
   c: { salaoId: string; profissionalId: string; clienteId: string; servicoIds: string[] },
   inicio: Date,
@@ -125,20 +130,34 @@ async function criarReserva(
   const reserva = await db.reserva.create({
     data: {
       salaoId: c.salaoId,
-      profissionalId: c.profissionalId,
       clienteId: c.clienteId,
       inicio,
       fim,
-      ocupadoAte: fim,
       status,
       origem: 'equipe',
       revisao,
+      canceladaEm: status === 'cancelado' ? new Date() : null,
     },
     select: { id: true },
   });
   for (const [ordem, servicoId] of c.servicoIds.entries()) {
+    const inicioItem = new Date(inicio.getTime() + ordem * 30 * 60_000);
+    const fimItem = new Date(inicioItem.getTime() + 30 * 60_000);
     await db.reservaItem.create({
-      data: { salaoId: c.salaoId, reservaId: reserva.id, servicoId, ordem, precoCentavos: 5000, duracaoMin: 30 },
+      data: {
+        salaoId: c.salaoId,
+        reservaId: reserva.id,
+        servicoId,
+        profissionalId: c.profissionalId,
+        ordem,
+        inicio: inicioItem,
+        fim: fimItem,
+        ocupadoAte: fimItem,
+        status,
+        revisao,
+        precoCentavos: 5000,
+        duracaoMin: 30,
+      },
     });
   }
   return reserva.id;
@@ -153,12 +172,25 @@ export async function criarOutraReserva(
   return criarReserva(c, inicio, o.status ?? 'confirmado', o.revisao ?? 0);
 }
 
-/** Atualiza status/revisão da reserva (simula remarcação, cancelamento ou conclusão feitos por outra demanda). */
+/**
+ * Atualiza status/revisão da reserva E de todos os itens (simula remarcação, cancelamento ou conclusão
+ * de todos os itens feitos por outra demanda; D-050: derivados coerentes, revisão do item = da reserva).
+ */
 export async function mudarReserva(
   reservaId: string,
   m: { status?: NonNullable<OpcoesCenario['status']>; revisao?: number },
 ): Promise<void> {
-  await obterPrisma().reserva.update({ where: { id: reservaId }, data: m });
+  const db = obterPrisma();
+  await db.$transaction([
+    db.reserva.update({
+      where: { id: reservaId },
+      data: {
+        ...m,
+        ...(m.status !== undefined && { canceladaEm: m.status === 'cancelado' ? new Date() : null }),
+      },
+    }),
+    db.reservaItem.updateMany({ where: { reservaId }, data: m }),
+  ]);
 }
 
 /** Anonimiza a cliente (nome e telefone nulos), como a E5.2 fará. */

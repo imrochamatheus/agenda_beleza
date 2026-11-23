@@ -18,7 +18,7 @@ export function AvisoReservasCobertas({ aviso }: { aviso: AvisoReservas }) {
       <p className={estilos.avisoTitulo}>{MENSAGENS_BLOQUEIO.comReservas}</p>
       <ul className={estilos.avisoLista}>
         {aviso.reservas.map((r) => (
-          <li key={r.id}>
+          <li key={r.itemId}>
             {r.inicioLocal} a {r.fimLocal} — {r.profissionalNome} — {r.cliente}
           </li>
         ))}

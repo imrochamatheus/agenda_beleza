@@ -36,7 +36,7 @@ export type SalaoCompleto = {
   jornadaIds: string[];
   bloqueioId: string;
   clientes: { ativaId: string; anonimizadaId: string; nomeAtiva: string; telefoneAtiva: string };
-  /** `confirmado`, relógio + 7 dias (UTC), dois itens com snapshot de preço e duração. */
+  /** `confirmado`, relógio + 7 dias (UTC), dois itens encadeados com o profissional, snapshot de preço e duração. */
   reserva: { id: string; itemIds: string[]; inicio: Date; fim: Date };
 };
 
@@ -224,37 +224,38 @@ export async function criarSalaoCompleto(s: SobrescritasSalao = {}): Promise<Sal
     select: { id: true },
   });
 
-  // Reserva confirmada com os dois serviços ativos em sequência (snapshot de preço e duração).
+  // Reserva confirmada com os dois serviços ativos em sequência, os dois itens com o profissional
+  // (D-050: cada item tem profissional, horário e status próprios; snapshot de preço e duração).
+  // Derivados da reserva coerentes com os itens (derivarReserva: confirmado, envelope [inicio, fim)).
   const inicio = s.reserva?.inicio ?? instanteFuturo(7, 13);
   const duracaoTotal = dadosServicos[0].duracaoMin + dadosServicos[1].duracaoMin;
   const fim = new Date(inicio.getTime() + duracaoTotal * 60_000);
   const reserva = await db.reserva.create({
-    data: {
-      salaoId,
-      profissionalId: profissional.id,
-      clienteId: ativa.id,
-      inicio,
-      fim,
-      ocupadoAte: fim,
-      status: 'confirmado',
-      origem: 'equipe',
-    },
+    data: { salaoId, clienteId: ativa.id, inicio, fim, status: 'confirmado', origem: 'equipe' },
     select: { id: true },
   });
   const itemIds: string[] = [];
+  let inicioItem = inicio;
   for (const [ordem, servicoId] of [servico1, servico2].entries()) {
+    const fimItem = new Date(inicioItem.getTime() + dadosServicos[ordem].duracaoMin * 60_000);
     const item = await db.reservaItem.create({
       data: {
         salaoId,
         reservaId: reserva.id,
         servicoId,
+        profissionalId: profissional.id,
         ordem,
+        inicio: inicioItem,
+        fim: fimItem,
+        ocupadoAte: fimItem,
+        status: 'confirmado',
         precoCentavos: dadosServicos[ordem].precoCentavos,
         duracaoMin: dadosServicos[ordem].duracaoMin,
       },
       select: { id: true },
     });
     itemIds.push(item.id);
+    inicioItem = fimItem;
   }
 
   return {

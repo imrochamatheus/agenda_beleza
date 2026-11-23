@@ -69,13 +69,12 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.consentimentos.registrar(ctx, { clienteId: id, finalidade: 'mensagens_reserva', origem: 'equipe', versaoTermos: 'v', criadoEm: new Date() }),
         r.consentimentos.vigente(ctx, id, 'mensagens_reserva'),
         r.reservas.buscarPorId(ctx, id),
-        r.reservas.atualizarStatus(ctx, id, { de: 'confirmado', para: 'cancelado' }),
         r.reservasAlteracao.travarParaAlterar(ctx, id),
         r.reservasAlteracao.travarCliente(ctx, id),
-        r.reservasAlteracao.atualizarPosicao(ctx, id, { profissionalId: ID, inicio: new Date(), fim: new Date(), ocupadoAte: new Date(), encaixe: false, agora: new Date() }),
-        r.reservasAlteracao.atualizarStatus(ctx, id, { de: 'confirmado', para: 'cancelado', agora: new Date() }),
         r.reservasAlteracao.lerItens(ctx, id),
-        r.reservasAlteracao.substituirItens(ctx, id, { remover: [], reordenar: [], adicionar: [] }),
+        r.reservasAlteracao.atualizarItem(ctx, id, id, { servicoId: ID, profissionalId: ID, inicio: new Date(), fim: new Date(), ocupadoAte: new Date(), precoCentavos: 0, duracaoMin: 5, encaixe: false, revisao: 1, agora: new Date() }),
+        r.reservasAlteracao.atualizarStatusDosItens(ctx, id, { itemIds: [ID], de: ['confirmado'], para: 'cancelado', revisao: null, agora: new Date() }),
+        r.reservasAlteracao.gravarDerivados(ctx, id, { status: 'confirmado', inicio: new Date(), fim: new Date(), canceladaEm: null, revisao: 0, agora: new Date() }),
         r.jornadas.listarDoProfissional(ctx, id),
         r.jornadas.travarProfissional(ctx, id),
         r.jornadas.buscarProfissional(ctx, id),
@@ -147,13 +146,21 @@ describe('repositórios de tenant sem consultar o banco', () => {
         r.consentimentos.vigente(c, ID, 'mensagens_reserva'),
         r.reservas.buscarPorId(c, ID),
         r.reservas.listarPorPeriodo(c, { de: new Date(0), ate: new Date() }),
-        r.reservas.atualizarStatus(c, ID, { de: 'confirmado', para: 'cancelado' }),
+        r.reservas.criar(c, { clienteId: ID, origem: 'equipe', chaveRequisicao: null, inicio: new Date(0), fim: new Date() }),
+        r.reservas.criarItens(c, ID, []),
+        r.reservas.contarFuturasDaCliente(c, { clienteId: ID, agora: new Date(), ignorarChave: null }),
+        r.reservas.buscarPorChave(c, ID),
+        r.servicos.travarParaItens(c, [ID], []),
+        r.servicos.travarParaItens(c, [], []),
+        r.profissionais.travarParaReserva(c, ID),
+        r.profissionais.travarVariosParaReserva(c, [ID]),
+        r.profissionais.travarVariosParaReserva(c, []),
         r.reservasAlteracao.travarParaAlterar(c, ID),
         r.reservasAlteracao.travarCliente(c, ID),
-        r.reservasAlteracao.atualizarPosicao(c, ID, { profissionalId: ID, inicio: new Date(), fim: new Date(), ocupadoAte: new Date(), encaixe: false, agora: new Date() }),
-        r.reservasAlteracao.atualizarStatus(c, ID, { de: 'confirmado', para: 'cancelado', agora: new Date() }),
         r.reservasAlteracao.lerItens(c, ID),
-        r.reservasAlteracao.substituirItens(c, ID, { remover: [], reordenar: [], adicionar: [] }),
+        r.reservasAlteracao.atualizarItem(c, ID, ID, { servicoId: ID, profissionalId: ID, inicio: new Date(), fim: new Date(), ocupadoAte: new Date(), precoCentavos: 0, duracaoMin: 5, encaixe: false, revisao: 1, agora: new Date() }),
+        r.reservasAlteracao.atualizarStatusDosItens(c, ID, { itemIds: [ID], de: ['confirmado'], para: 'cancelado', revisao: null, agora: new Date() }),
+        r.reservasAlteracao.gravarDerivados(c, ID, { status: 'confirmado', inicio: new Date(), fim: new Date(), canceladaEm: null, revisao: 0, agora: new Date() }),
         r.jornadas.listarDoProfissional(c, ID),
         r.jornadas.travarProfissional(c, ID),
         r.jornadas.buscarProfissional(c, ID),
@@ -216,6 +223,31 @@ describe('repositórios de tenant sem consultar o banco', () => {
   it('D-020: funcionamento.aplicarDiferenca com listas vazias (ou só ids malformados) não consulta', async () => {
     expect(await repos().funcionamento.aplicarDiferenca(ctx, { remover: [], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
     expect(await repos().funcionamento.aplicarDiferenca(ctx, { remover: ['abc'], inserir: [] })).toEqual({ removidos: 0, inseridos: 0 });
+  });
+
+  it('D-050: travarParaItens sem serviço UUID válido → [] e vinculados vazio, sem consulta', async () => {
+    const r = repos();
+    for (const ids of [[], ['abc', '', "1' OR '1'='1"]]) {
+      const t = await r.servicos.travarParaItens(ctx, ids, [{ servicoId: 'abc', profissionalId: ID }]);
+      expect([...t]).toEqual([]);
+      expect(t.vinculados.size).toBe(0);
+    }
+  });
+
+  it('D-050: travarVariosParaReserva com lista vazia ou só ids malformados → sem consulta (null por id)', async () => {
+    const r = repos();
+    expect((await r.profissionais.travarVariosParaReserva(ctx, [])).size).toBe(0);
+    const t = await r.profissionais.travarVariosParaReserva(ctx, ['XYZ', 'abc', 'abc']);
+    expect([...t.entries()]).toEqual([
+      ['abc', null],
+      ['xyz', null],
+    ]);
+  });
+
+  it('D-050: criarItens com lista vazia → RangeError sem consulta; contarFuturas com cliente malformada → 0', async () => {
+    await expect(repos().reservas.criarItens(ctx, ID, [])).rejects.toThrow(RangeError);
+    expect(await repos().reservas.contarFuturasDaCliente(ctx, { clienteId: 'x', agora: new Date(), ignorarChave: null })).toBe(0);
+    expect(await repos().reservas.buscarPorChave(ctx, 'nao-uuid')).toBeNull();
   });
 
   it('D-016: listarConfirmadasQueCruzam com limite inválido → RangeError sem consulta', async () => {

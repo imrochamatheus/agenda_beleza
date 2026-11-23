@@ -2,10 +2,11 @@ import type pg from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { anonimizarCliente } from '@/server/clientes/anonimizar';
-import { marcarStatusReserva } from '@/server/reservas/marcar-status';
+import { marcarStatusDoItem } from '@/server/reservas/marcar-status';
 import { lerAvaliacoesPublicas } from '@/server/avaliacoes/leitura';
 
 import type { SalaoCompleto } from '../../support/factories';
+import { conferirDerivados } from '../../support/reservas';
 import { conectar } from '../../support/sql';
 import { ctxDoGestor } from '../clientes/apoio';
 
@@ -99,14 +100,17 @@ describe('R-1: envio × anonimização × mudança de status', () => {
     for (let i = 0; i < VEZES; i += 1) {
       const k = await criarAvaliavel(c, s);
       const { token } = await emitirLink(s, k.reservaId);
+      // D-050: a reserva de `criarAvaliavel` tem UM item; o status muda por item e o derivado acompanha.
+      const itemId = (await c.query<{ id: string }>('SELECT id::text AS id FROM reserva_item WHERE reserva_id = $1', [k.reservaId])).rows[0].id;
       const rs = await Promise.allSettled([
         enviar(s, token),
         enviar(s, token),
         anonimizarCliente(ctxDoGestor(s), { clienteId: k.clienteId }, AGORA),
-        marcarStatusReserva(ctxDoGestor(s), { reservaId: k.reservaId, para: 'nao_compareceu' }, DEPOIS_DO_ATENDIMENTO, { enfileirar }),
+        marcarStatusDoItem(ctxDoGestor(s), { reservaId: k.reservaId, itemId, destino: 'nao_compareceu' }, DEPOIS_DO_ATENDIMENTO, { enfileirar }),
       ]);
       const status = rs[3] as PromiseFulfilledResult<{ resultado: string }>;
       expect(['atualizada', 'recusado']).toContain(status.value.resultado);
+      await conferirDerivados(k.reservaId);
       const falhas = rs.filter((r) => r.status === 'rejected');
       expect(falhas.map((f) => String((f as PromiseRejectedResult).reason))).toEqual([]);
       const { rows } = await c.query(
@@ -149,13 +153,16 @@ describe('R-1: envio × anonimização × mudança de status', () => {
     const noPonto = new Promise<void>((r) => (chegou = r));
     const envio = enviar(t, token, {}, AGORA, { aposTravar: async () => { chegou(); await parado; } });
     await noPonto;
-    // Com o envio segurando reserva e cliente (FOR SHARE), a edição direta da reserva espera.
+    // Com o envio segurando reserva e cliente (FOR SHARE), a edição direta da reserva espera. D-050: o
+    // item muda antes (não é travado pelo envio) e o derivado da reserva é o que espera.
+    await trava.query("UPDATE reserva_item SET status = 'nao_compareceu' WHERE reserva_id = $1", [k.reservaId]);
     const mudanca = trava.query("UPDATE reserva SET status = 'nao_compareceu' WHERE id = $1 /* mudanca */", [k.reservaId]);
     await aguardarEsperando('/* mudanca */');
     soltar();
     expect(await envio).toEqual({ resultado: 'enviada' });
     await mudanca;
     expect((await lerAvaliacoesPublicas(ctxPublico(t), 100)).total).toBe(0);
+    await c.query("UPDATE reserva_item SET status = 'concluido' WHERE reserva_id = $1", [k.reservaId]);
     await c.query("UPDATE reserva SET status = 'concluido' WHERE id = $1", [k.reservaId]);
     expect((await lerAvaliacoesPublicas(ctxPublico(t), 100)).total).toBe(1);
   }, TIMEOUT);

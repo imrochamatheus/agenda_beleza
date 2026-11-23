@@ -17,10 +17,10 @@ describe('rotuloDaMensagem (CA-4, tabela do design §0)', () => {
     nao_enviada: ['Confirmação não enviada', 'Remarcação 1 não enviada', 'Cancelamento não enviado', 'Convite de avaliação não enviado'],
     cancelada_anonimizacao: ['Confirmação não enviada', 'Remarcação 1 não enviada', 'Cancelamento não enviado', 'Convite de avaliação não enviado'],
     substituida: [
-      'Confirmação substituída por remarcação posterior',
-      'Remarcação 1 substituída por remarcação posterior',
-      'Cancelamento substituído por remarcação posterior',
-      'Convite de avaliação substituído por remarcação posterior',
+      'Confirmação substituída por alteração posterior',
+      'Remarcação 1 substituída por alteração posterior',
+      'Cancelamento substituído por alteração posterior',
+      'Convite de avaliação substituído por alteração posterior',
     ],
     falhou: [
       'Falha ao enviar confirmação por WhatsApp',

@@ -38,10 +38,10 @@ Cada salão possui uma URL pública identificada por um slug, gerado a partir do
 - O gestor define a jornada semanal de cada profissional, com pausas.
 - O horário de funcionamento do salão limita a disponibilidade pública **em conjunto** com a jornada: o atendimento inteiro precisa caber nos dois. Salão sem funcionamento cadastrado não tem esse limite. Fechamentos de data (feriado) usam o bloqueio de salão.
 - Bloqueios existem em dois níveis: por profissional e para o salão inteiro (feriado, reforma).
-- Fluxo público, nesta ordem: a cliente escolhe **um ou mais serviços**; depois escolhe **um profissional**, entre os que executam todos os serviços escolhidos; depois escolhe o horário; por fim informa nome, WhatsApp e consentimento. O sistema soma as durações e preços e apresenta apenas horários em que todo o atendimento, executado em sequência, cabe na disponibilidade.
+- Fluxo público, nesta ordem: a cliente escolhe **um ou mais serviços**; depois escolhe o dia; depois, **para cada serviço**, escolhe o profissional e o horário, entre os profissionais ativos que executam **aquele** serviço; por fim informa nome, WhatsApp e consentimento. Todos os serviços da reserva ficam na **mesma data** (no fuso do salão), cada um com seu profissional e horário, e os serviços da mesma reserva nunca se sobrepõem entre si. Só são oferecidos horários em que o serviço cabe na disponibilidade do profissional escolhido, já descontados os serviços escolhidos antes. O total soma os preços de cada serviço. (Revisado pela D-050, issue #111, por decisão do usuário: substitui a regra anterior de um único profissional que executasse todos os serviços em sequência.)
 - Regras de horário configuráveis por salão, com estes valores iniciais: grade de 15 minutos, antecedência mínima de 2 horas, janela máxima de 60 dias e intervalo de 0 minuto entre atendimentos.
 - A reserva feita pela página pública entra **confirmada** imediatamente, ocupa o horário e dispara a confirmação por WhatsApp.
-- Um agendamento registra o preço e a duração vigentes de cada serviço no momento da reserva, preservando o histórico quando o cadastro do serviço mudar.
+- Um agendamento registra o preço e a duração vigentes de cada serviço no momento da reserva, preservando o histórico quando o cadastro do serviço mudar. Cada serviço da reserva tem também profissional, horário e status próprios: a equipe remarca, cancela ou marca o status de um serviço sem mexer nos outros, e o gestor pode cancelar todos de uma vez.
 - Status do agendamento: `confirmado`, `cancelado`, `concluído` e `não compareceu`. A equipe marca concluído ou não compareceu após o horário.
 - A equipe pode criar reservas manualmente, remarcar e cancelar. A equipe pode fazer **encaixe** fora da jornada, fora do funcionamento do salão ou em horário bloqueado, desde que confirme um aviso explícito. Clientes solicitam mudanças diretamente ao salão; não há portal de cliente nesta versão.
 - Nenhuma reserva ativa pode se sobrepor a outra do mesmo profissional, inclusive em encaixes e em tentativas concorrentes. A proteção final fica no banco de dados: constraint de exclusão do PostgreSQL (`btree_gist`, intervalo `tstzrange` por profissional, apenas para status ativos), criada por migração SQL. A interface também valida.
@@ -89,9 +89,9 @@ Reativar o acesso quando o pagamento for regularizado. Permitir ao gestor consul
 
 Enviar mensagens automáticas pelo **número central da plataforma**, usando a [WhatsApp Business Platform oficial](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview) e quatro modelos de mensagem aprovados:
 
-1. **Confirmação:** após salvar a reserva, identificando salão, serviços, profissional, data e horário.
-2. **Remarcação:** quando a equipe altera data, horário, profissional ou serviços.
-3. **Cancelamento:** quando a equipe cancela a reserva.
+1. **Confirmação:** após salvar a reserva, uma única mensagem identificando salão, data e, para cada serviço, horário, serviço e profissional.
+2. **Remarcação:** quando a equipe altera data, horário, profissional ou serviço de um serviço da reserva.
+3. **Cancelamento:** quando a equipe cancela um serviço da reserva ou todos de uma vez.
 4. **Convite de avaliação:** após a reserva ser marcada como concluída, com o link individual de avaliação, somente com o consentimento específico da cliente.
 
 Solicitar consentimento para as mensagens no formulário público, com caixa separada e opcional para o convite de avaliação.
@@ -150,7 +150,7 @@ Caixa, estoque, comissões, relatórios financeiros, fidelidade, pagamento dos s
 ## Critérios de aceite
 
 1. Dois salões conseguem se cadastrar e configurar serviços e profissionais sem acessar dados um do outro.
-2. Uma cliente consegue reservar vários serviços consecutivos com um profissional, sem conta, pelo celular; só aparecem profissionais que executam todos os serviços escolhidos.
+2. Uma cliente consegue reservar vários serviços na mesma data, sem conta, pelo celular, escolhendo profissional e horário para cada serviço; para cada serviço só aparecem profissionais que o executam, e os serviços da mesma reserva não se sobrepõem (revisado pela D-050).
 3. Horários fora da jornada, fora do funcionamento do salão, bloqueados ou ocupados não são oferecidos na página pública; duas tentativas simultâneas não geram conflito, e encaixes da equipe também não geram sobreposição.
 4. Gestor e profissional veem apenas as agendas permitidas e conseguem alterar, cancelar e marcar status dos atendimentos autorizados.
 5. O fluxo de 30 dias grátis, cobrança mensal, falha, carência, suspensão, regularização e cancelamento funciona com o adaptador local; webhooks repetidos não duplicam efeitos.

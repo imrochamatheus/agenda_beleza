@@ -1,131 +1,160 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ReservaDTO } from '@/server/repos/tipos';
+import type { ItemDeReservaDTO, ReservaDTO } from '@/server/repos/tipos';
 
-import { conferirCompativel, montarItens, paraReservaCriada } from './montar-itens';
+import { conferirCompativel, itensCriados, montarItens, paraReservaCriada } from './montar-itens';
 
-// CA-17 (D-025): montagem pura dos itens e do intervalo.
+// D-025 CA-17 / D-050 §3.5 passo 5 (RN-4, RN-5): montagem pura dos itens, cada um com profissional e
+// início próprios, sem encadeamento.
 
 const ID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const INICIO = new Date('2026-12-01T13:00:00.000Z');
 const MIN = 60_000;
+const em = (min: number) => new Date(INICIO.getTime() + min * MIN);
+const SERVICOS = new Map([
+  [ID(1), { precoCentavos: 5000, duracaoMin: 30 }],
+  [ID(2), { precoCentavos: 7000, duracaoMin: 45 }],
+]);
 
 describe('montarItens', () => {
-  it('um serviço: um item, fim = início + duração, ocupadoAte = fim + intervalo', () => {
-    const r = montarItens(INICIO, [{ servicoId: ID(1), precoCentavos: 5000, duracaoMin: 30 }], 10);
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.itens).toEqual([
-      { servicoId: ID(1), ordem: 0, precoCentavos: 5000, duracaoMin: 30, inicio: INICIO, fim: new Date(INICIO.getTime() + 30 * MIN) },
+  it('cada item: fim = início + duração do serviço, ocupadoAte = fim + intervalo, ordem = posição, encaixe false', () => {
+    const itens = montarItens(
+      [
+        { servicoId: ID(2), profissionalId: ID(51), inicio: em(120) },
+        { servicoId: ID(1).toUpperCase(), profissionalId: ID(50).toUpperCase(), inicio: INICIO },
+      ],
+      SERVICOS,
+      10,
+    );
+    expect(itens).toEqual([
+      { servicoId: ID(2), profissionalId: ID(51), ordem: 0, inicio: em(120), fim: em(165), ocupadoAte: em(175), precoCentavos: 7000, duracaoMin: 45, encaixe: false },
+      { servicoId: ID(1), profissionalId: ID(50), ordem: 1, inicio: INICIO, fim: em(30), ocupadoAte: em(40), precoCentavos: 5000, duracaoMin: 30, encaixe: false },
     ]);
-    expect(r.fim.getTime()).toBe(INICIO.getTime() + 30 * MIN);
-    expect(r.ocupadoAte.getTime()).toBe(INICIO.getTime() + 40 * MIN);
   });
 
-  it('dois serviços: consecutivos, snapshots copiados, o intervalo só depois do último', () => {
-    const r = montarItens(
-      INICIO,
+  it('intervalo 0: ocupadoAte = fim; sem encadeamento entre itens do mesmo profissional', () => {
+    const itens = montarItens(
       [
-        { servicoId: ID(1), precoCentavos: 5000, duracaoMin: 30 },
-        { servicoId: ID(2), precoCentavos: 7000, duracaoMin: 45 },
+        { servicoId: ID(1), profissionalId: ID(50), inicio: INICIO },
+        { servicoId: ID(2), profissionalId: ID(50), inicio: INICIO },
       ],
+      SERVICOS,
       0,
     );
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.itens.map((i) => [i.ordem, i.precoCentavos, i.duracaoMin])).toEqual([
-      [0, 5000, 30],
-      [1, 7000, 45],
+    expect(itens.map((i) => [i.inicio, i.fim, i.ocupadoAte])).toEqual([
+      [INICIO, em(30), em(30)],
+      [INICIO, em(45), em(45)],
     ]);
-    expect(r.itens[0].fim.getTime()).toBe(r.itens[1].inicio.getTime());
-    expect(r.itens[1].fim.getTime()).toBe(r.fim.getTime());
-    expect(r.fim.getTime() - INICIO.getTime()).toBe(75 * MIN);
-    expect(r.ocupadoAte.getTime()).toBe(r.fim.getTime());
   });
 
-  it('dez serviços: ordens 0..9, soma das durações = fim - início, preço zero permitido', () => {
-    const servicos = Array.from({ length: 10 }, (_, i) => ({ servicoId: ID(i + 1), precoCentavos: i === 3 ? 0 : 1000 * i, duracaoMin: 5 + 5 * i }));
-    const r = montarItens(INICIO, servicos, 15);
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.itens.map((i) => i.ordem)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    const soma = servicos.reduce((t, s) => t + s.duracaoMin, 0);
-    expect(r.fim.getTime() - INICIO.getTime()).toBe(soma * MIN);
-    expect(r.ocupadoAte.getTime() - r.fim.getTime()).toBe(15 * MIN);
-    expect(r.itens[3].precoCentavos).toBe(0);
-    for (let i = 1; i < 10; i++) expect(r.itens[i].inicio.getTime()).toBe(r.itens[i - 1].fim.getTime());
-  });
-
-  it('virada de dia e de horário de verão em UTC: só milissegundos, sem Intl', () => {
-    const virada = new Date('2026-12-31T23:30:00.000Z');
-    const r = montarItens(virada, [{ servicoId: ID(1), precoCentavos: 1, duracaoMin: 90 }], 0);
-    expect(r.ok && r.fim.toISOString()).toBe('2027-01-01T01:00:00.000Z');
-    const verao = new Date('2026-11-01T04:30:00.000Z');
-    const v = montarItens(verao, [{ servicoId: ID(1), precoCentavos: 1, duracaoMin: 120 }], 0);
-    expect(v.ok && v.fim.toISOString()).toBe('2026-11-01T06:30:00.000Z');
-  });
-
-  it('entradas inválidas são recusadas sem lançar', () => {
-    const um = { servicoId: ID(1), precoCentavos: 1, duracaoMin: 30 };
-    expect(montarItens(INICIO, [], 0)).toEqual({ ok: false, motivo: 'servicos_vazio' });
-    expect(montarItens(INICIO, [um, um], 0)).toEqual({ ok: false, motivo: 'servicos_repetidos' });
-    const onze = Array.from({ length: 11 }, (_, i) => ({ ...um, servicoId: ID(i + 1) }));
-    expect(montarItens(INICIO, onze, 0)).toEqual({ ok: false, motivo: 'servicos_demais' });
-    expect(montarItens(INICIO, [{ ...um, duracaoMin: 0 }], 0)).toEqual({ ok: false, motivo: 'duracao_invalida' });
-    expect(montarItens(INICIO, [{ ...um, duracaoMin: -5 }], 0)).toEqual({ ok: false, motivo: 'duracao_invalida' });
-    expect(montarItens(INICIO, [{ ...um, duracaoMin: 1.5 }], 0)).toEqual({ ok: false, motivo: 'duracao_invalida' });
-    expect(montarItens(INICIO, [um], -1)).toEqual({ ok: false, motivo: 'duracao_invalida' });
-    expect(montarItens(new Date(Number.NaN), [um], 0)).toEqual({ ok: false, motivo: 'duracao_invalida' });
+  it('erros de programação: intervalo inválido, serviço sem snapshot, duração inválida e início inválido', () => {
+    const p = [{ servicoId: ID(1), profissionalId: ID(50), inicio: INICIO }];
+    expect(() => montarItens(p, SERVICOS, -1)).toThrow(RangeError);
+    expect(() => montarItens(p, SERVICOS, 1.5)).toThrow(RangeError);
+    expect(() => montarItens([{ ...p[0], servicoId: ID(3) }], SERVICOS, 0)).toThrow(RangeError);
+    expect(() => montarItens(p, new Map([[ID(1), { precoCentavos: 1, duracaoMin: 0 }]]), 0)).toThrow(RangeError);
+    expect(() => montarItens(p, new Map([[ID(1), { precoCentavos: 1, duracaoMin: 2.5 }]]), 0)).toThrow(RangeError);
+    expect(() => montarItens([{ ...p[0], inicio: new Date(Number.NaN) }], SERVICOS, 0)).toThrow(RangeError);
+    expect(montarItens([], SERVICOS, 0)).toEqual([]);
   });
 });
+
+describe('itensCriados', () => {
+  it('casa os ids por ordem, marca confirmado e ordena por (inicio, id)', () => {
+    const itens = montarItens(
+      [
+        { servicoId: ID(2), profissionalId: ID(51), inicio: em(60) },
+        { servicoId: ID(1), profissionalId: ID(50), inicio: INICIO },
+      ],
+      SERVICOS,
+      0,
+    );
+    const criados = itensCriados(itens, [
+      { id: ID(91), ordem: 1 },
+      { id: ID(90), ordem: 0 },
+    ]);
+    expect(criados.map((i) => [i.id, i.ordem, i.servicoId, i.status])).toEqual([
+      [ID(91), 1, ID(1), 'confirmado'],
+      [ID(90), 0, ID(2), 'confirmado'],
+    ]);
+  });
+
+  it('id faltando é erro', () => {
+    const itens = montarItens([{ servicoId: ID(1), profissionalId: ID(50), inicio: INICIO }], SERVICOS, 0);
+    expect(() => itensCriados(itens, [])).toThrow(Error);
+  });
+});
+
+function item(sobre: Partial<ItemDeReservaDTO>): ItemDeReservaDTO {
+  return {
+    id: ID(80),
+    servicoId: ID(1),
+    profissionalId: ID(50),
+    ordem: 0,
+    inicio: INICIO,
+    fim: em(30),
+    ocupadoAte: em(30),
+    status: 'confirmado',
+    encaixe: false,
+    revisao: 0,
+    precoCentavos: 5000,
+    duracaoMin: 30,
+    ...sobre,
+  };
+}
 
 function dto(sobre: Partial<ReservaDTO> = {}): ReservaDTO {
   return {
     id: ID(99),
-    profissionalId: ID(50),
     clienteId: ID(60),
     inicio: INICIO,
-    fim: new Date(INICIO.getTime() + 75 * MIN),
-    ocupadoAte: new Date(INICIO.getTime() + 85 * MIN),
+    fim: em(105),
     status: 'confirmado',
     origem: 'publico',
-    encaixe: false,
     revisao: 0,
+    canceladaEm: null,
     itens: [
-      { servicoId: ID(2), ordem: 1, precoCentavos: 7000, duracaoMin: 45 },
-      { servicoId: ID(1), ordem: 0, precoCentavos: 5000, duracaoMin: 30 },
+      item({ id: ID(82), servicoId: ID(2), profissionalId: ID(51), ordem: 0, inicio: em(60), fim: em(105), ocupadoAte: em(115), encaixe: true, duracaoMin: 45, precoCentavos: 7000 }),
+      item({ id: ID(81), ordem: 1 }),
     ],
     ...sobre,
   };
 }
 
 describe('paraReservaCriada', () => {
-  it('ordena os itens e recalcula início e fim por soma consecutiva', () => {
+  it('copia os itens com profissional, horários e flags, por (inicio, id), sem dado da cliente', () => {
     const c = paraReservaCriada(dto());
-    expect(c.itens.map((i) => [i.servicoId, i.ordem])).toEqual([
-      [ID(1), 0],
-      [ID(2), 1],
+    expect(c.itens.map((i) => [i.id, i.ordem, i.profissionalId, i.inicio, i.fim, i.ocupadoAte, i.encaixe, i.status])).toEqual([
+      [ID(81), 1, ID(50), INICIO, em(30), em(30), false, 'confirmado'],
+      [ID(82), 0, ID(51), em(60), em(105), em(115), true, 'confirmado'],
     ]);
-    expect(c.itens[0].inicio).toEqual(INICIO);
-    expect(c.itens[0].fim.getTime()).toBe(INICIO.getTime() + 30 * MIN);
-    expect(c.itens[1].inicio.getTime()).toBe(INICIO.getTime() + 30 * MIN);
-    expect(c.itens[1].fim.getTime()).toBe(INICIO.getTime() + 75 * MIN);
-    expect(c).toMatchObject({ id: ID(99), status: 'confirmado', origem: 'publico', encaixe: false, revisao: 0, clienteId: ID(60) });
-    expect(Object.keys(c)).not.toContain('nome');
+    expect(c).toMatchObject({ id: ID(99), status: 'confirmado', origem: 'publico', revisao: 0, clienteId: ID(60), inicio: INICIO, fim: em(105) });
+    expect(Object.keys(c).sort()).toEqual(['clienteId', 'fim', 'id', 'inicio', 'itens', 'origem', 'revisao', 'status']);
+  });
+
+  it('desempate por id quando o início é igual', () => {
+    const c = paraReservaCriada(dto({ itens: [item({ id: ID(84) }), item({ id: ID(83), servicoId: ID(2), profissionalId: ID(51) })] }));
+    expect(c.itens.map((i) => i.id)).toEqual([ID(83), ID(84)]);
   });
 });
 
-describe('conferirCompativel', () => {
-  const pedido = { profissionalId: ID(50), inicio: INICIO, servicoIds: [ID(1), ID(2)] };
-  it('mesmo profissional, início e serviços na ordem', () => {
+describe('conferirCompativel (RN-14: conjunto de {serviço, profissional, início})', () => {
+  const pedido = [
+    { servicoId: ID(1), profissionalId: ID(50), inicio: INICIO },
+    { servicoId: ID(2), profissionalId: ID(51), inicio: em(60) },
+  ];
+
+  it('mesmo conjunto, em qualquer ordem e sem caixa', () => {
     expect(conferirCompativel(dto(), pedido)).toBe(true);
-    expect(conferirCompativel(dto(), { ...pedido, profissionalId: ID(50).toUpperCase() })).toBe(true);
+    expect(conferirCompativel(dto(), [...pedido].reverse())).toBe(true);
+    expect(conferirCompativel(dto(), pedido.map((p) => ({ ...p, profissionalId: p.profissionalId.toUpperCase(), servicoId: p.servicoId.toUpperCase() })))).toBe(true);
   });
-  it('outro profissional, início, ordem ou conjunto de serviços', () => {
-    expect(conferirCompativel(dto(), { ...pedido, profissionalId: ID(51) })).toBe(false);
-    expect(conferirCompativel(dto(), { ...pedido, inicio: new Date(INICIO.getTime() + MIN) })).toBe(false);
-    expect(conferirCompativel(dto(), { ...pedido, servicoIds: [ID(2), ID(1)] })).toBe(false);
-    expect(conferirCompativel(dto(), { ...pedido, servicoIds: [ID(1)] })).toBe(false);
-    expect(conferirCompativel(dto(), { ...pedido, servicoIds: [ID(1), ID(3)] })).toBe(false);
+
+  it('outro profissional, outro início, item a mais ou a menos, outro serviço', () => {
+    expect(conferirCompativel(dto(), [pedido[0], { ...pedido[1], profissionalId: ID(50) }])).toBe(false);
+    expect(conferirCompativel(dto(), [pedido[0], { ...pedido[1], inicio: em(61) }])).toBe(false);
+    expect(conferirCompativel(dto(), [pedido[0]])).toBe(false);
+    expect(conferirCompativel(dto(), [...pedido, { servicoId: ID(3), profissionalId: ID(50), inicio: em(200) }])).toBe(false);
+    expect(conferirCompativel(dto(), [pedido[0], { ...pedido[1], servicoId: ID(3) }])).toBe(false);
   });
 });

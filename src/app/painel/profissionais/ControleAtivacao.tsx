@@ -59,7 +59,7 @@ export function ControleAtivacao({ id, nome, ativo, desativar, reativar }: Contr
           <p>{MENSAGENS_PROFISSIONAL.recusaDesativacao}</p>
           <ul className={estilos.reservas}>
             {estado.reservas.map((r) => (
-              <li key={r.id}>
+              <li key={r.itemId}>
                 {r.inicioLocal} — {r.servicos.join(', ')} — {r.cliente}
               </li>
             ))}

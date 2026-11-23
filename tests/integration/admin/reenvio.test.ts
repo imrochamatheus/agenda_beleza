@@ -151,9 +151,11 @@ describe('CA-3: o que nunca é reenviado', () => {
   });
 
   it('revisão superada → recusada/obsoleta: continua falhou e NÃO audita', async () => {
-    const s = await criarCenarioMensagem({ revisao: 0 });
-    const id = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, estado: 'falhou' });
-    await mudarReserva(s.reservaId, { revisao: 1 });
+    // D-050 RN-30: a confirmação não compara revisão (é montada no envio com o estado atual); a revisão
+    // superada é a da remarcação: a da revisão 1 fica obsoleta quando o item é remarcado de novo (revisão 2).
+    const s = await criarCenarioMensagem({ revisao: 1 });
+    const id = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 1, estado: 'falhou' });
+    await mudarReserva(s.reservaId, { revisao: 2 });
     expect(await reenviar(id)).toEqual({ resultado: 'recusada', motivo: 'obsoleta' });
     expect((await lerMensagem(id)).estado).toBe('falhou');
     expect(await auditoriaDe(id)).toHaveLength(0);

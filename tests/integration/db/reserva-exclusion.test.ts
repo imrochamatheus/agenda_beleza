@@ -1,9 +1,11 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { conectar, criarCenario, criarProfissional, erroSql, inserirReserva } from '../../support/sql';
+import { conectar, criarCenario, erroSql } from '../../support/sql';
 
-// CA-2..CA-8 (RN-7): reserva_sem_sobreposicao e reserva_ordem_chk, com PostgreSQL real.
+// D-004 CA-2..CA-8 mudaram de tabela na D-050: a anti-sobreposição está em reserva_item
+// (reserva-item-exclusion.test.ts). Aqui fica o que sobra de `reserva`: envelope DERIVADO
+// (inicio/fim/status gravados pela aplicação), sem profissional, sem ocupação e sem exclusion.
 let c: pg.Client;
 
 beforeAll(async () => {
@@ -14,142 +16,69 @@ afterAll(async () => {
   await c.end();
 });
 
-async function reservasDoProfissional(profissionalId: string): Promise<number> {
-  const r = await c.query<{ n: number }>('SELECT count(*)::int AS n FROM reserva WHERE profissional_id = $1', [
-    profissionalId,
-  ]);
-  return r.rows[0].n;
+function inserirReserva(
+  s: { salaoId: string; clienteId: string },
+  inicio: string,
+  fim: string,
+  status = 'confirmado',
+) {
+  return c.query<{ id: string }>(
+    `INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem)
+     VALUES ($1, $2, $3, $4, $5::status_reserva, 'publico') RETURNING id`,
+    [s.salaoId, s.clienteId, inicio, fim, status],
+  );
 }
 
-describe('reserva_sem_sobreposicao', () => {
-  it('CA-2: rejeita reserva ativa sobreposta do mesmo profissional com 23P01 e nada é gravado', async () => {
-    const s = await criarCenario(c);
-    await inserirReserva(c, { ...s, inicio: '2026-12-01T10:00:00Z', fim: '2026-12-01T11:00:00Z' });
-    const erro = await erroSql(
-      inserirReserva(c, { ...s, inicio: '2026-12-01T10:30:00Z', fim: '2026-12-01T11:30:00Z' }),
+describe('reserva depois da D-050', () => {
+  it('reserva_sem_sobreposicao, profissional_id, ocupado_ate e encaixe não existem mais em reserva', async () => {
+    const r = await c.query(
+      `SELECT conname FROM pg_constraint WHERE conname IN ('reserva_sem_sobreposicao', 'reserva_salao_id_profissional_id_fkey')`,
     );
-    expect(erro).toEqual({ code: '23P01', constraint: 'reserva_sem_sobreposicao' });
-    expect(await reservasDoProfissional(s.profissionalId)).toBe(1);
-  });
-
-  it('CA-3: aceita a sobreposição quando a primeira reserva está cancelada', async () => {
-    const s = await criarCenario(c);
-    await inserirReserva(c, {
-      ...s,
-      inicio: '2026-12-01T10:00:00Z',
-      fim: '2026-12-01T11:00:00Z',
-      status: 'cancelado',
-    });
-    await inserirReserva(c, { ...s, inicio: '2026-12-01T10:30:00Z', fim: '2026-12-01T11:30:00Z' });
-    expect(await reservasDoProfissional(s.profissionalId)).toBe(2);
-  });
-
-  it.each(['concluido', 'nao_compareceu'] as const)(
-    'CA-3 (predicado, R-5): reserva %s também ocupa o horário',
-    async (status) => {
-      const s = await criarCenario(c);
-      await inserirReserva(c, { ...s, inicio: '2026-12-01T10:00:00Z', fim: '2026-12-01T11:00:00Z', status });
-      const erro = await erroSql(
-        inserirReserva(c, { ...s, inicio: '2026-12-01T10:30:00Z', fim: '2026-12-01T11:30:00Z' }),
-      );
-      expect(erro).toEqual({ code: '23P01', constraint: 'reserva_sem_sobreposicao' });
-    },
-  );
-
-  it('CA-4: com intervalo 0, reservas adjacentes ([) ) do mesmo profissional são aceitas', async () => {
-    const s = await criarCenario(c);
-    await inserirReserva(c, { ...s, inicio: '2026-12-01T10:00:00Z', fim: '2026-12-01T11:00:00Z' });
-    await inserirReserva(c, { ...s, inicio: '2026-12-01T11:00:00Z', fim: '2026-12-01T12:00:00Z' });
-    expect(await reservasDoProfissional(s.profissionalId)).toBe(2);
-  });
-
-  it('CA-4 (limite): 1 segundo de sobreposição é rejeitado', async () => {
-    const s = await criarCenario(c);
-    await inserirReserva(c, { ...s, inicio: '2026-12-01T10:00:00Z', fim: '2026-12-01T11:00:00Z' });
-    const erro = await erroSql(
-      inserirReserva(c, { ...s, inicio: '2026-12-01T10:59:59Z', fim: '2026-12-01T12:00:00Z' }),
+    expect(r.rows).toEqual([]);
+    const col = await c.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'reserva' ORDER BY column_name`,
     );
-    expect(erro).toEqual({ code: '23P01', constraint: 'reserva_sem_sobreposicao' });
+    expect(col.rows.map((x) => x.column_name)).toEqual([
+      'atualizado_em',
+      'cancelada_em',
+      'chave_requisicao',
+      'cliente_id',
+      'criado_em',
+      'fim',
+      'id',
+      'inicio',
+      'origem',
+      'revisao',
+      'salao_id',
+      'status',
+    ]);
+    const idx = await c.query(`SELECT 1 FROM pg_class WHERE relname = 'reserva_salao_id_profissional_id_inicio_idx'`);
+    expect(idx.rows).toEqual([]);
   });
 
-  it('CA-5: profissionais distintos do mesmo salão podem ter reservas sobrepostas', async () => {
+  it('a reserva não impede envelopes sobrepostos (a garantia é dos itens)', async () => {
     const s = await criarCenario(c);
-    const outro = await criarProfissional(c, s.salaoId);
-    await inserirReserva(c, { ...s, inicio: '2026-12-01T10:00:00Z', fim: '2026-12-01T11:00:00Z' });
-    await inserirReserva(c, {
-      ...s,
-      profissionalId: outro,
-      inicio: '2026-12-01T10:30:00Z',
-      fim: '2026-12-01T11:30:00Z',
-    });
-    expect(await reservasDoProfissional(s.profissionalId)).toBe(1);
-    expect(await reservasDoProfissional(outro)).toBe(1);
+    await inserirReserva(s, '2026-12-01T10:00:00Z', '2026-12-01T11:00:00Z');
+    await inserirReserva(s, '2026-12-01T10:30:00Z', '2026-12-01T11:30:00Z');
+    const r = await c.query<{ n: number }>('SELECT count(*)::int AS n FROM reserva WHERE cliente_id = $1', [s.clienteId]);
+    expect(r.rows[0].n).toBe(2);
   });
 
-  it('CA-6: o intervalo gravado em ocupado_ate bloqueia a reserva seguinte', async () => {
-    const s = await criarCenario(c);
-    await inserirReserva(c, {
-      ...s,
-      inicio: '2026-12-01T10:00:00Z',
-      fim: '2026-12-01T10:30:00Z',
-      ocupadoAte: '2026-12-01T10:45:00Z',
-    });
-    const erro = await erroSql(
-      inserirReserva(c, { ...s, inicio: '2026-12-01T10:30:00Z', fim: '2026-12-01T11:00:00Z' }),
-    );
-    expect(erro).toEqual({ code: '23P01', constraint: 'reserva_sem_sobreposicao' });
-    expect(await reservasDoProfissional(s.profissionalId)).toBe(1);
+  it('reserva_ordem_chk mantém só fim > inicio', async () => {
+    const [def] = (
+      await c.query<{ def: string }>(
+        "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'reserva_ordem_chk'",
+      )
+    ).rows;
+    expect(def.def).toBe('CHECK ((fim > inicio))');
   });
 
-  it('CA-7: reativar uma reserva cancelada sobre outra ativa é rejeitado e ela continua cancelada', async () => {
-    const s = await criarCenario(c);
-    const cancelada = await inserirReserva(c, {
-      ...s,
-      inicio: '2026-12-01T10:00:00Z',
-      fim: '2026-12-01T11:00:00Z',
-      status: 'cancelado',
-    });
-    await inserirReserva(c, { ...s, inicio: '2026-12-01T10:30:00Z', fim: '2026-12-01T11:30:00Z' });
-    const erro = await erroSql(c.query("UPDATE reserva SET status = 'confirmado' WHERE id = $1", [cancelada]));
-    expect(erro).toEqual({ code: '23P01', constraint: 'reserva_sem_sobreposicao' });
-    const r = await c.query<{ status: string }>('SELECT status FROM reserva WHERE id = $1', [cancelada]);
-    expect(r.rows[0].status).toBe('cancelado');
-  });
-
-  it('virada de dia: o resultado não depende do TimeZone da sessão (America/Sao_Paulo)', async () => {
-    const s = await criarCenario(c);
-    const local = await conectar();
-    try {
-      await local.query("SET TIME ZONE 'America/Sao_Paulo'");
-      await inserirReserva(local, { ...s, inicio: '2026-12-01T23:30:00Z', fim: '2026-12-02T00:30:00Z' });
-      const erro = await erroSql(
-        inserirReserva(local, { ...s, inicio: '2026-12-02T00:00:00Z', fim: '2026-12-02T01:00:00Z' }),
-      );
-      expect(erro).toEqual({ code: '23P01', constraint: 'reserva_sem_sobreposicao' });
-      // Adjacente depois da meia-noite UTC: aceita.
-      await inserirReserva(local, { ...s, inicio: '2026-12-02T00:30:00Z', fim: '2026-12-02T01:30:00Z' });
-      // O instante gravado é o mesmo em UTC, qualquer que seja o fuso da sessão.
-      const r = await local.query<{ utc: string }>(
-        "SELECT to_char(min(inicio) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI') AS utc FROM reserva WHERE profissional_id = $1",
-        [s.profissionalId],
-      );
-      expect(r.rows[0].utc).toBe('2026-12-01T23:30');
-    } finally {
-      await local.end();
-    }
-    expect(await reservasDoProfissional(s.profissionalId)).toBe(2);
-  });
-});
-
-describe('reserva_ordem_chk', () => {
   it.each([
-    ['fim = inicio', '2026-12-01T10:00:00Z', '2026-12-01T10:00:00Z', '2026-12-01T10:00:00Z'],
-    ['fim < inicio', '2026-12-01T10:00:00Z', '2026-12-01T09:00:00Z', '2026-12-01T09:00:00Z'],
-    ['ocupado_ate < fim', '2026-12-01T10:00:00Z', '2026-12-01T11:00:00Z', '2026-12-01T10:30:00Z'],
-  ])('CA-8: %s é rejeitado pelo CHECK com 23514', async (_caso, inicio, fim, ocupadoAte) => {
+    ['fim = inicio', '2026-12-01T10:00:00Z', '2026-12-01T10:00:00Z'],
+    ['fim < inicio', '2026-12-01T10:00:00Z', '2026-12-01T09:00:00Z'],
+  ])('CA-8: %s é rejeitado pelo CHECK com 23514', async (_caso, inicio, fim) => {
     const s = await criarCenario(c);
-    const erro = await erroSql(inserirReserva(c, { ...s, inicio, fim, ocupadoAte }));
-    expect(erro).toEqual({ code: '23514', constraint: 'reserva_ordem_chk' });
-    expect(await reservasDoProfissional(s.profissionalId)).toBe(0);
+    expect(await erroSql(inserirReserva(s, inicio, fim))).toEqual({ code: '23514', constraint: 'reserva_ordem_chk' });
   });
 });

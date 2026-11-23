@@ -11,7 +11,7 @@ import type { Tentativa } from './disputa';
 
 // CA-6 (arquivo B): 12 transações concorrentes no MESMO profissional com horários DESLOCADOS que se
 // sobrepõem dois a dois (início a cada 5 min, 60 min de duração). Exatamente uma é aceita; as outras 11
-// são recusadas por `reserva_sem_sobreposicao` (23P01). Controle: profissionais diferentes no mesmo
+// são recusadas por `reserva_item_sem_sobreposicao` (23P01, D-050). Controle: profissionais diferentes no mesmo
 // horário são todos aceitos (a exclusion é por profissional). Roda em paralelo com o arquivo A.
 // Sobre a trava do profissional e o caso sem trava, ver o comentário de ./disputa.ts.
 
@@ -46,7 +46,7 @@ function deslocadas(base: Date, n: number): Tentativa[] {
 
 async function idsNoIntervalo(de: Date, horas: number): Promise<string[]> {
   const r = await c.query<{ id: string }>(
-    'SELECT id FROM reserva WHERE salao_id = $1 AND profissional_id = $2 AND inicio >= $3 AND inicio < $4',
+    'SELECT DISTINCT reserva_id AS id FROM reserva_item WHERE salao_id = $1 AND profissional_id = $2 AND inicio >= $3 AND inicio < $4',
     [s.salaoId, s.profissional.profissionalId, de, new Date(de.getTime() + horas * 60 * 60_000)],
   );
   return r.rows.map((x) => x.id);
@@ -66,7 +66,7 @@ describe('CA-6 (B): disputa por horários sobrepostos em transações concorrent
     const aceita = aceitas(resultados);
     expect(aceita).toHaveLength(1);
     expect(resultados.filter((r) => !r.aceita)).toEqual(
-      Array.from({ length: N - 1 }, () => ({ aceita: false, code: '23P01', constraint: 'reserva_sem_sobreposicao' })),
+      Array.from({ length: N - 1 }, () => ({ aceita: false, code: '23P01', constraint: 'reserva_item_sem_sobreposicao' })),
     );
     expect(await idsNoIntervalo(base, 2)).toEqual([aceita[0].reservaId]);
   });
@@ -90,7 +90,7 @@ describe('CA-6 (B): disputa por horários sobrepostos em transações concorrent
       expect(aceita).toHaveLength(1);
       for (const r of resultados.filter((x) => !x.aceita)) {
         expect([
-          { aceita: false, code: '23P01', constraint: 'reserva_sem_sobreposicao' },
+          { aceita: false, code: '23P01', constraint: 'reserva_item_sem_sobreposicao' },
           { aceita: false, code: '40P01' },
         ]).toContainEqual(r);
       }

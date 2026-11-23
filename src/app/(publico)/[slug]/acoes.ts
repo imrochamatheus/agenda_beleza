@@ -10,52 +10,52 @@ import { configDaProtecao } from '@/server/protecao/config';
 import { extrairIp } from '@/server/protecao/ip';
 
 import { slugPlausivel } from '@/server/reserva-publica/passos';
-import { horariosParaReescolha, profissionalDoHorario } from '@/server/reserva-publica/reescolha';
+import { reescolhaDosItens } from '@/server/reserva-publica/reescolha';
 import { reservarPelaPagina } from '@/server/reserva-publica/servico';
-import { MENSAGENS_AVISO } from '@/server/reserva-publica/tipos';
 
+import { estadoInicialReserva } from './estado';
 import type { EstadoReserva } from './estado';
 import type { EstadoDenuncia } from './_denuncia/estado';
 import { lerFormularioDenuncia, paraEstadoDenuncia } from './_denuncia/formulario';
-import { destinoDoRedirecionamento, lerFormulario, lerSelecaoDoFormulario, paraEstado } from './formulario';
+import {
+  comReescolha,
+  destinoDoRedirecionamento,
+  lerFormulario,
+  lerReabrir,
+  paraEstado,
+  selecaoDaReescolha,
+} from './formulario';
 
-// Casca Next da reserva pública (D-026 §3): só converte FormData e resultados; nunca toca repositórios.
-// `agora` = new Date() só aqui. `voltar` e `slug_mudou` redirecionam (303) para o GET do passo.
+// Casca Next da reserva pública (D-026 §3; D-050 §3.10): só converte FormData e resultados; nunca toca
+// repositórios. `agora` = new Date() só aqui. `voltar` e `slug_mudou` redirecionam (303) para o GET do passo.
 export async function reservarAcao(anterior: EstadoReserva, formData: FormData): Promise<EstadoReserva> {
   const ip = extrairIp(await headers(), configDaProtecao().proxyHops);
   const { entrada, valores } = lerFormulario(formData, ip);
   const agora = new Date();
-  const selecao = lerSelecaoDoFormulario(formData);
-  // Reenvio depois de um conflito: o horário novo pode ser de outro profissional ("Sem preferência").
-  if (formData.get('reescolha') === '1' && selecao) {
-    const profissionalId = await profissionalDoHorario(entrada.slug, { ...selecao, h: entrada.inicio }, agora, ip);
-    if (profissionalId !== null) entrada.profissionalId = profissionalId;
-  }
+  const reabrir = lerReabrir(formData);
   const resultado = await reservarPelaPagina(entrada, agora);
-  // Horário tomado: NÃO redireciona (nome e telefone não vão para a URL). A resposta traz os horários
-  // atualizados e os valores digitados, e o formulário continua no passo de reescolha (vale sem JavaScript).
-  if (resultado.resultado === 'voltar' && resultado.passo === 'horario' && selecao) {
-    const reescolha = await horariosParaReescolha(entrada.slug, selecao, agora, ip);
-    if (reescolha !== null) {
-      return {
-        status: 'horario_indisponivel',
-        mensagem: MENSAGENS_AVISO.horario_indisponivel,
-        erros: {},
-        valores,
-        chave: anterior.chave,
-        resumo: null,
-        repetida: false,
-        reescolha,
-      };
+
+  // Horário de algum item tomado (CA-10): NÃO redireciona (nome e telefone não vão para a URL). A resposta
+  // aponta o item que caiu, com os horários atualizados dele, e preserva os demais itens e os valores
+  // digitados (vale sem JavaScript: o estado da ação assume a página).
+  if (resultado.resultado === 'reescolher') {
+    const selecao = selecaoDaReescolha(formData);
+    const reescolha = selecao === null ? null : await reescolhaDosItens(entrada.slug, selecao, agora, ip, { reabrir });
+    if (reescolha === null) {
+      redirect(destinoDoRedirecionamento(formData, { resultado: 'voltar', passo: 'servicos', aviso: 'servico_indisponivel' })!);
     }
+    return comReescolha({ ...estadoInicialReserva(anterior.chave), valores }, reescolha);
   }
+
   const destino = destinoDoRedirecionamento(formData, resultado);
   if (destino !== null) redirect(destino);
   const estado = paraEstado(resultado, valores, anterior.chave);
-  // Erro de validação ou recusa durante a reescolha: continua mostrando os horários atualizados.
+  // Erro de validação ou recusa durante a reescolha: os itens que estavam abertos continuam com a grade.
   // Recalculada (e não copiada de `anterior`): sem JavaScript o estado anterior não viaja no POST.
-  if (formData.get('reescolha') === '1' && estado.status === 'editando' && selecao) {
-    return { ...estado, reescolha: await horariosParaReescolha(entrada.slug, selecao, agora, ip) };
+  if (reabrir.length > 0 && estado.status === 'editando') {
+    const selecao = selecaoDaReescolha(formData);
+    const reescolha = selecao === null ? null : await reescolhaDosItens(entrada.slug, selecao, agora, ip, { reabrir });
+    if (reescolha?.resultado === 'reescolher') return comReescolha(estado, reescolha);
   }
   return estado;
 }

@@ -16,10 +16,11 @@ import type { Credencial } from '@/server/tenant/sessao';
 import { criarSessao, credencialDoProfissional, entrarDeVerdade } from '../../support/auth';
 import { SENHA_DE_TESTE, criarDoisSaloes, criarSalaoCompleto, instanteFuturo } from '../../support/factories';
 import type { SalaoCompleto } from '../../support/factories';
-import { conectar } from '../../support/sql';
+import { conectar, inserirReservaComItens as inserirReservaComItensSql } from '../../support/sql';
 
 import {
   MIN_MS,
+  cancelarReservas,
   cancelarReservasDoSalao,
   ctxDoGestor,
   fotografiaDoSalao,
@@ -105,21 +106,38 @@ describe('CA-3: recusa com reservas futuras confirmadas', () => {
     const antes = await fotografiaDoSalao(c, s.salaoId);
 
     const r = await desativarProfissional.executar(gestor, { id });
+    // Segundo item de r1: 1 min, logo depois dos 89 min do primeiro (apoio.inserirReservaComItens).
+    const segundoItem = new Date(madrugada.getTime() + 89 * MIN_MS);
+    const itensDe = async (reservaId: string) =>
+      (await c.query<{ id: string }>('SELECT id::text AS id FROM reserva_item WHERE reserva_id = $1 ORDER BY inicio', [reservaId])).rows.map((x) => x.id);
+    const [i1a, i1b] = await itensDe(r1);
+    const [i2] = await itensDe(r2);
 
     expect(r).toEqual({
       ok: true,
       dados: {
         resultado: 'recusado',
+        // D-050 RN-38: uma linha por ITEM confirmado futuro (r1 tem dois itens do profissional).
         reservas: [
           {
             id: r1,
+            itemId: i1a,
             inicio: madrugada.toISOString(),
             inicioLocal: emSaoPaulo(madrugada),
-            servicos: [s.servicos.nomes[0], s.servicos.nomes[1]],
+            servicos: [s.servicos.nomes[0]],
+            cliente: s.clientes.nomeAtiva,
+          },
+          {
+            id: r1,
+            itemId: i1b,
+            inicio: segundoItem.toISOString(),
+            inicioLocal: emSaoPaulo(segundoItem),
+            servicos: [s.servicos.nomes[1]],
             cliente: s.clientes.nomeAtiva,
           },
           {
             id: r2,
+            itemId: i2,
             inicio: tarde.toISOString(),
             inicioLocal: emSaoPaulo(tarde),
             servicos: [s.servicos.nomes[1]],
@@ -128,6 +146,8 @@ describe('CA-3: recusa com reservas futuras confirmadas', () => {
         ],
       },
     });
+    // Chave única por linha (a lista da UI usa itemId como key).
+    expect(new Set([i1a, i1b, i2]).size).toBe(3);
     expect(emSaoPaulo(madrugada)).toMatch(/ 23:30$/);
     expect(emSaoPaulo(madrugada).slice(0, 10)).not.toBe(
       `${String(madrugada.getUTCDate()).padStart(2, '0')}/${String(madrugada.getUTCMonth() + 1).padStart(2, '0')}/${madrugada.getUTCFullYear()}`,
@@ -143,13 +163,47 @@ describe('CA-3: recusa com reservas futuras confirmadas', () => {
     vi.mocked(console.info).mockImplementation((l: string) => {
       linhas.push(l);
     });
-    // A reserva da fábrica (confirmada, +7 dias) bloqueia o profissional da fábrica.
+    // A reserva da fábrica (confirmada, +7 dias, 2 itens do profissional) bloqueia o profissional da
+    // fábrica; D-050: a quantidade conta ITENS.
     const r = await desativarProfissional.executar(await gestorDe(s), { id: s.profissional.profissionalId });
     expect(r.ok && r.dados.resultado).toBe('recusado');
     expect(linhas.map((l) => JSON.parse(l))).toEqual([
-      { evento: 'profissional.desativacao_recusada', salaoId: s.salaoId, profissionalId: s.profissional.profissionalId, quantidade: 1 },
+      { evento: 'profissional.desativacao_recusada', salaoId: s.salaoId, profissionalId: s.profissional.profissionalId, quantidade: 2 },
     ]);
     expect(linhas.join()).not.toContain(s.clientes.nomeAtiva);
+  });
+});
+
+describe('D-050 RN-38: bloqueio por ITEM, não pela reserva', () => {
+  it('reserva com itens de dois profissionais: só o item confirmado de cada um conta', async () => {
+    const s = await criarSalaoCompleto();
+    const gestor = await gestorDe(s);
+    const eva = await novoProfissional(s, 'Eva');
+    const lia = await novoProfissional(s, 'Lia');
+    const [serv1, serv2] = s.servicos.ativos;
+    const inicio = instanteFuturo(6, 13);
+    // Item de Eva confirmado; item de Lia (na MESMA reserva) cancelado.
+    const { reservaId, itemIds } = await inserirReservaComItensSql(c, {
+      salaoId: s.salaoId,
+      clienteId: s.clientes.ativaId,
+      origem: 'equipe',
+      itens: [
+        { profissionalId: eva, inicio, duracaoMin: 30, servicoId: serv1 },
+        { profissionalId: lia, inicio: new Date(inicio.getTime() + 30 * MIN_MS), duracaoMin: 30, servicoId: serv2, status: 'cancelado' },
+      ],
+    });
+    // Lia: o único item dela está cancelado → desativa, mesmo com a reserva confirmada.
+    expect(await desativarProfissional.executar(gestor, { id: lia })).toEqual({ ok: true, dados: { resultado: 'desativado' } });
+    // Eva: recusa listando só o item dela.
+    const r = await desativarProfissional.executar(gestor, { id: eva });
+    expect(r.ok && r.dados.resultado === 'recusado' && r.dados.reservas).toEqual([
+      expect.objectContaining({ id: reservaId, inicio: inicio.toISOString(), servicos: [s.servicos.nomes[0]] }),
+    ]);
+    expect((await linhaProfissional(c, eva))!.ativo).toBe(true);
+    // Item de Eva cancelado (a reserva fica cancelada) → desativa.
+    await c.query(`UPDATE reserva_item SET status = 'cancelado' WHERE id = $1`, [itemIds[0]]);
+    await c.query(`UPDATE reserva SET status = 'cancelado', cancelada_em = now() WHERE id = $1`, [reservaId]);
+    expect(await desativarProfissional.executar(gestor, { id: eva })).toEqual({ ok: true, dados: { resultado: 'desativado' } });
   });
 });
 
@@ -171,12 +225,11 @@ describe('CA-4: desativação preserva o histórico', () => {
       (
         await c.query(
           `SELECT (SELECT count(*) FROM profissional)::int AS profissionais,
-                  (SELECT count(*) FROM reserva WHERE profissional_id = $1)::int AS reservas,
+                  (SELECT count(DISTINCT reserva_id) FROM reserva_item WHERE profissional_id = $1)::int AS reservas,
                   (SELECT count(*) FROM jornada WHERE profissional_id = $1)::int AS jornadas,
                   (SELECT count(*) FROM servico_profissional WHERE profissional_id = $1)::int AS vinculos,
                   (SELECT count(*) FROM bloqueio WHERE profissional_id = $1)::int AS bloqueios,
-                  (SELECT count(*) FROM reserva_item ri JOIN reserva r ON r.id = ri.reserva_id
-                    WHERE r.profissional_id = $1)::int AS itens`,
+                  (SELECT count(*) FROM reserva_item WHERE profissional_id = $1)::int AS itens`,
           [id],
         )
       ).rows[0];
@@ -189,8 +242,8 @@ describe('CA-4: desativação preserva o histórico', () => {
     expect(r).toEqual({ ok: true, dados: { resultado: 'desativado' } });
     expect((await linhaProfissional(c, id))!.ativo).toBe(false);
     expect(await contar()).toEqual(antes);
-    const { rows } = await c.query('SELECT profissional_id::text AS p FROM reserva WHERE id = $1', [passada]);
-    expect(rows[0].p).toBe(id);
+    const { rows } = await c.query('SELECT profissional_id::text AS p FROM reserva_item WHERE reserva_id = $1', [passada]);
+    expect(rows.map((x) => x.p)).toEqual([id]);
     const { contexto } = await resolverSalaoPorSlug(s.slugAtual);
     expect((await listarProfissionaisPublicos(contexto)).map((p) => p.id)).not.toContain(id);
     expect((await repos().profissionais.listarAtivos(ctxDoGestor(s))).map((p) => p.id)).not.toContain(id);
@@ -307,7 +360,7 @@ describe('CA-15: fronteira de tempo com relógio injetado', () => {
     expect(r.ok && r.dados.resultado === 'recusado' && r.dados.reservas.map((x) => x.id)).toEqual([andamento, proxima]);
     expect((await linhaProfissional(c, id))!.ativo).toBe(true);
 
-    await c.query(`UPDATE reserva SET status = 'cancelado' WHERE id = ANY($1)`, [[andamento, proxima]]);
+    await cancelarReservas(c, [andamento, proxima]);
     expect(await desativarProfissional.executar(gestor, { id }, { agora })).toEqual({ ok: true, dados: { resultado: 'desativado' } });
     expect((await c.query('SELECT status FROM reserva WHERE id = $1', [passada])).rows[0].status).toBe('confirmado');
   });

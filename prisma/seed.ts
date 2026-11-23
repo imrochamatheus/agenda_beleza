@@ -223,15 +223,15 @@ async function inserirSalao(
         skipDuplicates: true,
       });
 
+      // D-050: a reserva guarda só os derivados dos itens (status, inicio, fim, cancelada_em), já calculados
+      // pelo plano com `derivarReserva`; o profissional, o horário e o status de agenda ficam em cada item.
       await tx.reserva.createMany({
         data: plano.reservas.map((r, i) => ({
           id: r.id,
           salaoId: id.salao,
-          profissionalId: r.profissionalId,
           clienteId: r.clienteId,
           inicio: r.inicio,
           fim: r.fim,
-          ocupadoAte: r.ocupadoAte,
           status: r.status,
           origem: i % 2 === 0 ? ('equipe' as const) : ('publico' as const),
           canceladaEm: r.canceladaEm,
@@ -246,7 +246,12 @@ async function inserirSalao(
             salaoId: id.salao,
             reservaId: r.id,
             servicoId: it.servicoId,
+            profissionalId: it.profissionalId,
             ordem: it.ordem,
+            inicio: it.inicio,
+            fim: it.fim,
+            ocupadoAte: it.ocupadoAte,
+            status: it.status,
             precoCentavos: it.precoCentavos,
             duracaoMin: it.duracaoMin,
           })),

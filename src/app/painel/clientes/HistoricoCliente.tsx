@@ -5,7 +5,11 @@ import estilos from './Clientes.module.css';
 
 export type HistoricoClienteProps = { itens: ItemHistorico[]; total: number };
 
-/** Histórico de agendamentos (D-022 RN-15): data no fuso do salão, status, profissional, serviços, totais. */
+/**
+ * Histórico de agendamentos (D-022 RN-15; D-050 RN-35): data no fuso do salão e status derivado da reserva;
+ * cada serviço com hora, profissional, preço e status próprios (cancelado riscado, rótulo não riscado);
+ * total dos não cancelados, ou de todos numa reserva toda cancelada.
+ */
 export function HistoricoCliente({ itens, total }: HistoricoClienteProps) {
   return (
     <section className={estilos.secao} aria-labelledby="cliente-historico">
@@ -25,10 +29,18 @@ export function HistoricoCliente({ itens, total }: HistoricoClienteProps) {
                 <span>
                   <span className={estilos.quando}>{h.inicioLocal}</span> <span className={estilos.status}>({h.status})</span>
                 </span>
-                <span>Profissional: {h.profissional}</span>
-                <span className={estilos.servicos}>Serviços: {h.servicos.join(', ')}</span>
+                <ul className={estilos.itensReserva} aria-label="Serviços">
+                  {h.servicos.map((s, k) => (
+                    <li key={k} className={estilos.servicos}>
+                      <span className={s.cancelado ? estilos.itemCancelado : undefined}>
+                        {s.horaLocal} · {s.servico} · com {s.profissional} · {s.preco}
+                      </span>{' '}
+                      <span className={estilos.status}>({s.status})</span>
+                    </li>
+                  ))}
+                </ul>
                 <span>
-                  {h.duracaoTotal} · {h.precoTotal}
+                  {h.totalDaCancelada ? 'Total (cancelada)' : 'Total'}: {h.precoTotal}
                 </span>
               </li>
             ))}

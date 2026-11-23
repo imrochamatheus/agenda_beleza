@@ -17,9 +17,9 @@ describe('CA-22: situação de envio da reserva', () => {
     const nao = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'cancelamento', revisao: 1, estado: 'nao_enviada', erroCodigo: 'sem_consentimento', atualizadoEm: t(9) });
     const lista = await mensagensDaReserva(ctxDo(s), s.reservaId);
     expect(lista).toEqual([
-      { id: enviada, tipo: 'confirmacao', revisao: 0, estado: 'enviada', enviadaEm: t(1), erroCodigo: null, tentativas: 1, ultimaTentativaEm: t(1) },
-      { id: falhou, tipo: 'remarcacao', revisao: 1, estado: 'falhou', enviadaEm: null, erroCodigo: 'resultado_incerto', tentativas: 2, ultimaTentativaEm: t(5) },
-      { id: nao, tipo: 'cancelamento', revisao: 1, estado: 'nao_enviada', enviadaEm: null, erroCodigo: 'sem_consentimento', tentativas: 0, ultimaTentativaEm: null },
+      { id: enviada, reservaItemId: null, tipo: 'confirmacao', revisao: 0, estado: 'enviada', enviadaEm: t(1), erroCodigo: null, tentativas: 1, ultimaTentativaEm: t(1) },
+      { id: falhou, reservaItemId: null, tipo: 'remarcacao', revisao: 1, estado: 'falhou', enviadaEm: null, erroCodigo: 'resultado_incerto', tentativas: 2, ultimaTentativaEm: t(5) },
+      { id: nao, reservaItemId: null, tipo: 'cancelamento', revisao: 1, estado: 'nao_enviada', enviadaEm: null, erroCodigo: 'sem_consentimento', tentativas: 0, ultimaTentativaEm: null },
     ]);
     const texto = JSON.stringify(lista);
     expect(texto).not.toContain('SEGREDO');

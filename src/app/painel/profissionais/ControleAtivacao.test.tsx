@@ -48,8 +48,8 @@ describe('ControleAtivacao (ativo)', () => {
       async (): Promise<EstadoDesativacao> => ({
         status: 'recusado',
         reservas: [
-          { id: 'r1', inicio: '2031-01-02T02:30:00.000Z', inicioLocal: '01/01/2031 23:30', servicos: ['Corte', 'Escova'], cliente: 'Clara' },
-          { id: 'r2', inicio: '2031-01-03T15:00:00.000Z', inicioLocal: '03/01/2031 12:00', servicos: ['Escova'], cliente: 'cliente removida' },
+          { id: 'r1', itemId: 'i1', inicio: '2031-01-02T02:30:00.000Z', inicioLocal: '01/01/2031 23:30', servicos: ['Corte', 'Escova'], cliente: 'Clara' },
+          { id: 'r2', itemId: 'i2', inicio: '2031-01-03T15:00:00.000Z', inicioLocal: '03/01/2031 12:00', servicos: ['Escova'], cliente: 'cliente removida' },
         ],
       }),
     );
@@ -67,6 +67,35 @@ describe('ControleAtivacao (ativo)', () => {
       '03/01/2031 12:00 — Escova — cliente removida',
     ]);
     await waitFor(() => expect(dialogo.hasAttribute('open')).toBe(false));
+  });
+
+  it('D-050 RN-38: dois itens do mesmo profissional na mesma reserva → duas linhas, sem chave React duplicada', async () => {
+    const erros = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const desativar = vi.fn(
+        async (): Promise<EstadoDesativacao> => ({
+          status: 'recusado',
+          reservas: [
+            { id: 'r1', itemId: 'i1', inicio: '2031-01-02T13:00:00.000Z', inicioLocal: '02/01/2031 10:00', servicos: ['Corte'], cliente: 'Clara' },
+            { id: 'r1', itemId: 'i2', inicio: '2031-01-02T14:00:00.000Z', inicioLocal: '02/01/2031 11:00', servicos: ['Escova'], cliente: 'Clara' },
+          ],
+        }),
+      );
+      render(<ControleAtivacao id="p1" nome="Ana" ativo desativar={desativar} reativar={semReativar} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Desativar' }));
+      const dialogo = await screen.findByRole('dialog');
+      await act(async () => {
+        fireEvent.click(within(dialogo).getByRole('button', { name: 'Desativar' }));
+      });
+      const alerta = await screen.findByRole('alert');
+      expect(within(alerta).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+        '02/01/2031 10:00 — Corte — Clara',
+        '02/01/2031 11:00 — Escova — Clara',
+      ]);
+      expect(erros.mock.calls.map((c) => String(c[0])).filter((m) => /same key/i.test(m))).toEqual([]);
+    } finally {
+      erros.mockRestore();
+    }
   });
 
   it('erro da ação (ex.: acesso negado) aparece em role="alert"', async () => {

@@ -8,10 +8,10 @@ import { lerPublicas } from '@/server/repos/avaliacao-publica';
 
 import type { SalaoCompleto } from '../../support/factories';
 import { ipNovo } from '../../support/reserva-publica';
-import { conectar } from '../../support/sql';
+import { conectar, inserirReserva } from '../../support/sql';
 import { ctxDoGestor } from '../clientes/apoio';
 
-import { AGORA, conviteDe, criarAvaliavel, ctxPublico, emitirLink, enviar, salaoNovo } from './apoio';
+import { AGORA, DIA_MS, conviteDe, criarAvaliavel, ctxPublico, definirStatus, emitirLink, enviar, salaoNovo } from './apoio';
 
 // D-032 T-4/T-5: visibilidade derivada (CA-7, CA-8, CA-11, CA-15) e o gancho da anonimização.
 let c: pg.Client;
@@ -98,7 +98,7 @@ describe('CA-7: reserva nao_compareceu oculta e a volta reexibe', () => {
     const { token: tPendente } = await emitirLink(s, pendente.reservaId);
     const mensagensAntes = (await c.query('SELECT count(*) AS n FROM mensagem WHERE salao_id = $1', [s.salaoId])).rows[0].n;
 
-    await c.query("UPDATE reserva SET status = 'nao_compareceu' WHERE id = ANY($1)", [[a.reservaId, pendente.reservaId]]);
+    for (const id of [a.reservaId, pendente.reservaId]) await definirStatus(c, id, 'nao_compareceu');
     const oculta = await lerAvaliacoesPublicas(ctxPublico(s));
     expect([oculta.total, oculta.media]).toEqual([1, 4]);
     expect(oculta.itens.some((i) => i.nome === 'Ocultar E.')).toBe(false);
@@ -107,7 +107,7 @@ describe('CA-7: reserva nao_compareceu oculta e a volta reexibe', () => {
     // A avaliação continua gravada (só oculta).
     expect((await c.query('SELECT count(*) AS n FROM avaliacao WHERE reserva_id = $1', [a.reservaId])).rows[0].n).toBe('1');
 
-    await c.query("UPDATE reserva SET status = 'concluido' WHERE id = ANY($1)", [[a.reservaId, pendente.reservaId]]);
+    for (const id of [a.reservaId, pendente.reservaId]) await definirStatus(c, id, 'concluido');
     const volta = await lerAvaliacoesPublicas(ctxPublico(s));
     expect([volta.total, volta.media]).toEqual([2, 3]);
     expect(volta.itens.some((i) => i.nome === 'Ocultar E.')).toBe(true);
@@ -133,11 +133,18 @@ describe('CA-8: anonimização', () => {
     await avaliar(s, 5);
     const pendente = await criarAvaliavel(c, s, { nome: 'Sai Daqui' });
     // outra reserva da MESMA cliente, com convite ainda não usado
-    const outraReserva = await c.query<{ id: string }>(
-      `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-       SELECT salao_id, profissional_id, cliente_id, inicio + interval '40 days', fim + interval '40 days', fim + interval '40 days', 'concluido', 'equipe'
-         FROM reserva WHERE id = $1 RETURNING id::text AS id`, [a.reservaId]);
-    const { token: tOutra } = await emitirLink(s, outraReserva.rows[0].id);
+    const base = await c.query<{ inicio: Date; fim: Date }>('SELECT inicio, fim FROM reserva WHERE id = $1', [a.reservaId]);
+    const quarentaDias = 40 * DIA_MS;
+    const outraReserva = await inserirReserva(c, {
+      salaoId: s.salaoId,
+      profissionalId: s.gestor.profissionalId!,
+      clienteId: a.clienteId,
+      inicio: new Date(base.rows[0].inicio.getTime() + quarentaDias),
+      fim: new Date(base.rows[0].fim.getTime() + quarentaDias),
+      status: 'concluido',
+      servicoId: s.servicos.ativos[0],
+    });
+    const { token: tOutra } = await emitirLink(s, outraReserva);
 
     const r = await anonimizarCliente(ctxDoGestor(s), { clienteId: a.clienteId }, AGORA);
     expect(r.resultado).toBe('anonimizada');
@@ -148,7 +155,7 @@ describe('CA-8: anonimização', () => {
     expect(rows).toEqual([{ nome_exibicao: null, comentario: null, nota: 1 }]);
     expect(await verificarLink(s.slugAtual, tOutra, ipNovo(), AGORA)).toEqual({ ok: false, motivo: 'invalido' });
     expect(await enviar(s, tOutra)).toEqual({ resultado: 'link_invalido' });
-    const cv = await conviteDe(c, outraReserva.rows[0].id);
+    const cv = await conviteDe(c, outraReserva);
     expect(new Date(cv?.invalidado_em as string)).toEqual(AGORA);
     expect(pendente.clienteId).not.toBe(a.clienteId);
   });

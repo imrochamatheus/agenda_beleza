@@ -1,7 +1,9 @@
-// Dados da página pública do salão e do passo atual do fluxo (D-026 §2, §3). Sem next/*. Todo acesso parte
-// do `PublicoContext` do slug; horários só de `consultarDisponibilidade` (RN-7), nunca recalculados aqui.
+// Dados da página pública do salão e do passo atual do fluxo (D-026 §2, §3; D-050 §3.10). Sem next/*. Todo
+// acesso parte do `PublicoContext` do slug; horários só de `consultarDisponibilidadePorServico` (RN-7, RN-10),
+// nunca recalculados aqui: os itens já escolhidos entram como `escolhidos` e a consulta os desconta.
 import { datasDoPeriodo, limitesDaJanela } from '@/domain/disponibilidade';
-import { consultarDisponibilidade, listarProfissionaisElegiveis } from '@/server/disponibilidade/servico';
+import { consultarDisponibilidadePorServico, horarioOferecido } from '@/server/disponibilidade/servico';
+import type { DisponibilidadeDoServico, ItemJaEscolhido } from '@/server/disponibilidade/tipos';
 import { limitarPorIp } from '@/server/protecao/limite';
 import { lerFotosPublicas } from '@/server/fotos/leitura';
 import type { FotoPublica } from '@/server/fotos/tipos';
@@ -13,15 +15,16 @@ import {
 } from '@/server/repos/publico';
 import type { PerfilPublico, ProfissionalPublico, ServicoPublico } from '@/server/repos/publico';
 import type { PublicoContext } from '@/server/tenant/context';
-import { NaoEncontrado } from '@/server/tenant/erros';
 import { compararDatas, somarDias } from '@/server/tempo/fuso';
 import type { DataCivil } from '@/server/tempo/fuso';
 
 import type { DecisaoAgendamento } from './agendamento';
 import { decidirAgendamento } from './estado';
-import { chaveDeData, DIAS_POR_PAGINA, QUALQUER } from './passos';
-import type { PassoLido } from './passos';
-import type { Selecao, VisaoDoPasso } from './tipos';
+import { chaveDeData, DIAS_POR_PAGINA, valorDoItem, valoresDosItens } from './passos';
+import type { ItemDaUrl, PassoLido } from './passos';
+import type { CodigoAviso, ConsultaDaUrl, ItemEscolhido, ProfissionalComHorarios, Selecao, VisaoDoPasso } from './tipos';
+
+const MS_MIN = 60_000;
 
 export type DadosDoSalao = {
   perfil: PerfilPublico;
@@ -62,95 +65,154 @@ export function montarSelecao(servicos: readonly ServicoPublico[], ids: readonly
     escolhidos.push(s);
   }
   return {
-    servicos: escolhidos,
-    duracaoTotalMin: escolhidos.reduce((t, s) => t + s.duracaoMin, 0),
+    servicos: escolhidos.map(({ id, nome, precoCentavos, duracaoMin }) => ({ id, nome, precoCentavos, duracaoMin })),
     precoTotalCentavos: escolhidos.reduce((t, s) => t + s.precoCentavos, 0),
   };
 }
 
-
-/** Horários do período, unidos por instante (ordem estável nome, id: o primeiro elegível leva). */
-async function horariosDoPeriodo(
-  ctx: PublicoContext,
-  s: string[],
-  p: string,
-  de: DataCivil,
-  ate: DataCivil,
-  agora: Date,
-): Promise<{ ok: true; fuso: string; profissionais: number; porData: Map<string, Map<number, { id: string; nome: string }>> } | { ok: false }> {
-  let r;
-  try {
-    r = await consultarDisponibilidade(ctx, { servicoIds: s, profissionalId: p === QUALQUER ? null : p, de, ate, agora });
-  } catch (e) {
-    if (e instanceof NaoEncontrado) return { ok: false };
-    throw e;
-  }
-  if (r.resultado !== 'ok') return { ok: false };
-  const porData = new Map<string, Map<number, { id: string; nome: string }>>();
-  for (const prof of r.profissionais) {
-    for (const dia of prof.dias) {
-      const chave = chaveDeData(dia.data);
-      const mapa = porData.get(chave) ?? new Map<number, { id: string; nome: string }>();
-      for (const h of dia.horarios) {
-        const t = h.inicio.getTime();
-        if (!mapa.has(t)) mapa.set(t, { id: prof.profissionalId, nome: prof.nome });
-      }
-      porData.set(chave, mapa);
-    }
-  }
-  return { ok: true, fuso: r.fuso, profissionais: r.profissionais.length, porData };
+/** Item resolvido para o roteiro/resumo; o fim usa a duração ATUAL do serviço (a mesma da consulta). */
+export function itemEscolhido(
+  indice: number,
+  servico: { id: string; nome: string; precoCentavos: number; duracaoMin: number },
+  item: ItemDaUrl,
+  profissionalNome: string,
+): ItemEscolhido {
+  return {
+    indice,
+    servicoId: servico.id,
+    servicoNome: servico.nome,
+    profissionalId: item.profissionalId,
+    profissionalNome,
+    inicioIso: item.inicio.toISOString(),
+    fimIso: new Date(item.inicio.getTime() + servico.duracaoMin * MS_MIN).toISOString(),
+    precoCentavos: servico.precoCentavos,
+    duracaoMin: servico.duracaoMin,
+  };
 }
 
-/**
- * View-model do passo pedido. Se algo mudou desde o passo anterior (serviço desativado, nenhum
- * profissional, horário tomado), devolve o passo anterior com um aviso de código fechado.
- */
-export async function carregarPasso(
-  ctx: PublicoContext,
-  passo: PassoLido,
-  contexto: { servicos: readonly ServicoPublico[]; regras: RegrasDaPagina; agora: Date },
-): Promise<VisaoDoPasso> {
-  if (passo.passo === 'servicos') return { passo: 'servicos', aviso: passo.aviso };
-  const { servicos, regras, agora } = contexto;
-  const selecao = montarSelecao(servicos, passo.s);
-  if (selecao === null) return { passo: 'servicos', aviso: 'servico_indisponivel' };
+/** Por início; empate (não deve haver, RN-8) pelo índice. */
+export const porInicio = (a: ItemEscolhido, b: ItemEscolhido): number =>
+  a.inicioIso < b.inicioIso ? -1 : a.inicioIso > b.inicioIso ? 1 : a.indice - b.indice;
 
-  const elegiveis = await listarProfissionaisElegiveis(ctx, passo.s);
-  if (elegiveis.resultado !== 'ok') return { passo: 'servicos', aviso: 'servico_indisponivel' };
-  if (elegiveis.profissionais.length === 0) return { passo: 'servicos', aviso: 'sem_profissional' };
+/** Profissionais do serviço com os horários (ISO) da data, na ordem da consulta (nome, id). */
+export function profissionaisComHorarios(d: DisponibilidadeDoServico, data: DataCivil): ProfissionalComHorarios[] {
+  return d.profissionais.map((p) => ({
+    id: p.profissionalId,
+    nome: p.nome,
+    horarios: (p.dias.find((x) => compararDatas(x.data, data) === 0)?.horarios ?? []).map((h) => h.inicio.toISOString()),
+  }));
+}
 
-  const voltarAoProfissional = (): VisaoDoPasso => ({
-    passo: 'profissional',
-    s: passo.s,
-    selecao,
-    profissionais: elegiveis.profissionais,
-    aviso: 'profissional_indisponivel',
+/** Itens não nulos como `escolhidos` da consulta (um por serviço; `servicoId` = s[k]). */
+export function comoEscolhidos(s: readonly string[], itens: readonly (ItemDaUrl | null)[]): ItemJaEscolhido[] {
+  return itens.flatMap((x, k) => (x === null ? [] : [{ servicoId: s[k], profissionalId: x.profissionalId, inicio: x.inicio }]));
+}
+
+type Contexto = {
+  servicos: readonly ServicoPublico[];
+  /** Profissionais ativos do salão (nomes dos itens já escolhidos no passo de um serviço). */
+  equipe: readonly ProfissionalPublico[];
+  regras: RegrasDaPagina;
+  agora: Date;
+};
+
+type EntradaDaVisaoDoServico = {
+  s: string[];
+  data: DataCivil;
+  fuso: string;
+  selecao: Selecao;
+  indice: number;
+  /** Itens válidos (os inválidos já como null); o do índice é ignorado no roteiro. */
+  itens: (ItemDaUrl | null)[];
+  disponibilidade: DisponibilidadeDoServico;
+  nomes: ReadonlyMap<string, string>;
+  filtro: string | null;
+  /** Item a pré-selecionar se ainda oferecido ("Alterar"). */
+  atual: ItemDaUrl | null;
+  alterando: boolean;
+  aviso: CodigoAviso | null;
+  horarioPerdidoIso: string | null;
+};
+
+function visaoDoServico(e: EntradaDaVisaoDoServico): Extract<VisaoDoPasso, { passo: 'servico' }> {
+  const servico = e.selecao.servicos[e.indice];
+  const todos = profissionaisComHorarios(e.disponibilidade, e.data);
+  const opcoesDeFiltro = todos.map(({ id, nome }) => ({ id, nome }));
+  const filtro = e.filtro !== null && todos.some((p) => p.id === e.filtro) ? e.filtro : null;
+  const escolhidos: ItemEscolhido[] = [];
+  const pendentes: number[] = [];
+  e.itens.forEach((x, k) => {
+    if (k === e.indice) return;
+    const nome = x === null ? undefined : e.nomes.get(x.profissionalId);
+    if (x === null || nome === undefined) pendentes.push(k);
+    else escolhidos.push(itemEscolhido(k, e.selecao.servicos[k], x, nome));
   });
-  if (passo.passo === 'profissional') {
-    return { passo: 'profissional', s: passo.s, selecao, profissionais: elegiveis.profissionais, aviso: passo.aviso };
+  const atualOferecido = e.atual !== null && horarioOferecido(e.disponibilidade, e.atual.profissionalId, e.atual.inicio);
+  const semHorario = todos.every((p) => p.horarios.length === 0);
+  return {
+    passo: 'servico',
+    s: e.s,
+    data: chaveDeData(e.data),
+    fuso: e.fuso,
+    selecao: e.selecao,
+    indice: e.indice,
+    total: e.s.length,
+    servico,
+    escolhidos: escolhidos.sort(porInicio),
+    pendentes,
+    profissionais: filtro === null ? todos : todos.filter((p) => p.id === filtro),
+    opcoesDeFiltro,
+    filtro,
+    preSelecionado: atualOferecido ? valorDoItem(e.atual!.profissionalId, e.atual!.inicio) : null,
+    alterando: e.alterando,
+    proximoEhDados: pendentes.length === 0,
+    vazio: semHorario ? (e.disponibilidade.vazioPorConflito ? 'conflito' : 'calendario') : null,
+    aviso: e.aviso,
+    horarioPerdidoIso: e.horarioPerdidoIso,
+    consulta: { s: e.s, data: chaveDeData(e.data), h: valoresDosItens(e.itens) },
+  };
+}
+
+/** Aviso e horário perdido de um item que deixou de ser oferecido (5.7). */
+function perdaDoItem(d: DisponibilidadeDoServico, x: ItemDaUrl): { aviso: CodigoAviso; horarioPerdidoIso: string | null } {
+  return d.profissionais.some((p) => p.profissionalId === x.profissionalId)
+    ? { aviso: 'horario_indisponivel', horarioPerdidoIso: x.inicio.toISOString() }
+    : { aviso: 'profissional_indisponivel', horarioPerdidoIso: null };
+}
+
+const voltarAosServicos: VisaoDoPasso = { passo: 'servicos', marcados: [], aviso: 'servico_indisponivel' };
+
+/**
+ * View-model do passo pedido. Se algo mudou desde o passo anterior (serviço desativado, profissional
+ * inativo, horário tomado), devolve o passo válido mais avançado com um aviso de código fechado. Cada passo
+ * que calcula horários faz UMA consulta de disponibilidade (6 instruções SQL, D-018/D-050 CA-3).
+ */
+export async function carregarPasso(ctx: PublicoContext, passo: PassoLido, contexto: Contexto): Promise<VisaoDoPasso> {
+  const { servicos, regras, agora } = contexto;
+  if (passo.passo === 'servicos') {
+    const ofertaveis = new Set(servicos.map((s) => s.id.toLowerCase()));
+    return { passo: 'servicos', marcados: passo.marcados.filter((id) => ofertaveis.has(id)), aviso: passo.aviso };
   }
-  if (passo.p !== QUALQUER && !elegiveis.profissionais.some((x) => x.id.toLowerCase() === passo.p)) {
-    return voltarAoProfissional();
-  }
+  const selecao = montarSelecao(servicos, passo.s);
+  if (selecao === null) return voltarAosServicos;
 
   const ultima = somarDias(regras.hoje, regras.janelaDias);
   if (passo.passo === 'data') {
     const fim = somarDias(passo.de, DIAS_POR_PAGINA - 1);
     const ate = compararDatas(fim, ultima) > 0 ? ultima : fim;
-    const r = await horariosDoPeriodo(ctx, passo.s, passo.p, passo.de, ate, agora);
-    if (!r.ok || r.profissionais === 0) return voltarAoProfissional();
+    const r = await consultarDisponibilidadePorServico(ctx, { servicoIds: passo.s, de: passo.de, ate, agora });
+    if (r.resultado !== 'ok') return voltarAosServicos;
+    // DA-2: o dia é oferecido se CADA serviço tem ao menos um horário nele (não garante a combinação).
+    const temNoDia = (d: DataCivil) =>
+      r.servicos.every((sv) => sv.profissionais.some((p) => p.dias.some((x) => compararDatas(x.data, d) === 0 && x.horarios.length > 0)));
     const anterior = somarDias(passo.de, -DIAS_POR_PAGINA);
     const proxima = somarDias(passo.de, DIAS_POR_PAGINA);
     return {
       passo: 'data',
       s: passo.s,
-      p: passo.p,
       selecao,
       de: chaveDeData(passo.de),
-      dias: datasDoPeriodo(passo.de, ate).map((d) => ({
-        data: chaveDeData(d),
-        temHorarios: (r.porData.get(chaveDeData(d))?.size ?? 0) > 0,
-      })),
+      dias: datasDoPeriodo(passo.de, ate).map((d) => ({ data: chaveDeData(d), temHorarios: temNoDia(d) })),
       anterior: compararDatas(passo.de, regras.hoje) > 0
         ? chaveDeData(compararDatas(anterior, regras.hoje) < 0 ? regras.hoje : anterior)
         : null,
@@ -159,30 +221,99 @@ export async function carregarPasso(
     };
   }
 
-  const r = await horariosDoPeriodo(ctx, passo.s, passo.p, passo.data, passo.data, agora);
-  if (!r.ok || r.profissionais === 0) return voltarAoProfissional();
-  const doDia = r.porData.get(chaveDeData(passo.data)) ?? new Map<number, { id: string; nome: string }>();
-  const horarios = [...doDia.keys()].sort((a, b) => a - b).map((t) => new Date(t).toISOString());
-  const base = { s: passo.s, p: passo.p, data: chaveDeData(passo.data), selecao, fuso: r.fuso };
-  if (passo.passo === 'horario') return { passo: 'horario', ...base, horarios, aviso: passo.aviso };
+  if (passo.passo === 'servico') {
+    // Itens de outros serviços com profissional fora da equipe ativa contam como pendentes e não ocupam nada.
+    const nomes = new Map(contexto.equipe.map((p) => [p.id.toLowerCase(), p.nome]));
+    const itens = passo.itens.map((x, k) => (k === passo.indice || (x !== null && nomes.has(x.profissionalId)) ? x : null));
+    const outros = itens.map((x, k) => (k === passo.indice ? null : x));
+    const r = await consultarDisponibilidadePorServico(ctx, {
+      servicoIds: passo.s,
+      de: passo.data,
+      ate: passo.data,
+      agora,
+      escolhidos: comoEscolhidos(passo.s, outros),
+      calcular: [passo.s[passo.indice]],
+    });
+    if (r.resultado !== 'ok') return voltarAosServicos;
+    const d = r.servicos[0];
+    const atual = passo.preSelecionado;
+    const perda = atual !== null && !horarioOferecido(d, atual.profissionalId, atual.inicio) ? perdaDoItem(d, atual) : null;
+    return visaoDoServico({
+      s: passo.s,
+      data: passo.data,
+      fuso: r.fuso,
+      selecao,
+      indice: passo.indice,
+      itens,
+      disponibilidade: d,
+      nomes,
+      filtro: passo.filtro,
+      atual,
+      alterando: passo.alterando,
+      aviso: perda?.aviso ?? passo.aviso,
+      horarioPerdidoIso: perda?.horarioPerdidoIso ?? null,
+    });
+  }
 
-  const escolhido = doDia.get(passo.h.getTime());
-  if (escolhido === undefined) return { passo: 'horario', ...base, horarios, aviso: 'horario_indisponivel' };
-  return { passo: 'dados', ...base, inicioIso: passo.h.toISOString(), profissional: escolhido };
+  // Dados: UMA consulta com todos os itens como escolhidos e todos os serviços calculados. O serviço k é
+  // calculado sem o próprio item, então "item k oferecido" = item k cabe com todos os outros (RN-7..RN-10).
+  // O primeiro item que não cabe volta ao passo dele, montado com o MESMO resultado (sem segunda consulta).
+  const r = await consultarDisponibilidadePorServico(ctx, {
+    servicoIds: passo.s,
+    de: passo.data,
+    ate: passo.data,
+    agora,
+    escolhidos: comoEscolhidos(passo.s, passo.itens),
+  });
+  if (r.resultado !== 'ok') return voltarAosServicos;
+  const nomes = new Map(r.servicos.flatMap((sv) => sv.profissionais.map((p) => [p.profissionalId, p.nome] as const)));
+  const caiu = passo.itens.findIndex((x, k) => !horarioOferecido(r.servicos[k], x.profissionalId, x.inicio));
+  if (caiu >= 0) {
+    const perda = perdaDoItem(r.servicos[caiu], passo.itens[caiu]);
+    return visaoDoServico({
+      s: passo.s,
+      data: passo.data,
+      fuso: r.fuso,
+      selecao,
+      indice: caiu,
+      itens: passo.itens.map((x, k) => (k === caiu ? null : x)),
+      disponibilidade: r.servicos[caiu],
+      nomes,
+      filtro: null,
+      atual: null,
+      alterando: false,
+      aviso: perda.aviso,
+      horarioPerdidoIso: perda.horarioPerdidoIso,
+    });
+  }
+  const itens = passo.itens
+    .map((x, k) => itemEscolhido(k, selecao.servicos[k], x, nomes.get(x.profissionalId)!))
+    .sort(porInicio);
+  const consulta: ConsultaDaUrl = { s: passo.s, data: chaveDeData(passo.data), h: valoresDosItens(passo.itens) };
+  return {
+    passo: 'dados',
+    s: passo.s,
+    data: chaveDeData(passo.data),
+    fuso: r.fuso,
+    selecao,
+    itens,
+    totalCentavos: itens.reduce((t, i) => t + i.precoCentavos, 0),
+    consulta,
+  };
 }
 
 /**
- * Como `carregarPasso`, mas os passos que calculam disponibilidade (data, horário e dados) consomem o
+ * Como `carregarPasso`, mas os passos que calculam disponibilidade (data, serviço e dados) consomem o
  * limite de consultas do IP (D-027 RN-9). Excedido: `{ passo: 'limitado' }` e NENHUM cálculo é feito (CA-14).
- * Serviços e profissional não calculam horários e não consomem cota.
+ * O passo de serviços não calcula horários e não consome cota.
  */
 export async function carregarPassoComLimite(
   ctx: PublicoContext,
   passo: PassoLido,
-  contexto: { servicos: readonly ServicoPublico[]; regras: RegrasDaPagina; agora: Date; ip: string },
+  contexto: Contexto & { ip: string },
   limitar: typeof limitarPorIp = limitarPorIp,
 ): Promise<VisaoDoPasso> {
-  if (passo.passo !== 'servicos' && passo.passo !== 'profissional') {
+  if (passo.passo !== 'servicos') {
     const r = await limitar(contexto.ip, 'disponibilidade', contexto.agora);
     if (!r.permitido) return { passo: 'limitado' };
   }

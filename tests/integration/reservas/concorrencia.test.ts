@@ -21,7 +21,10 @@ import {
 import type { CenarioReserva } from '../../support/reservas';
 import { conectar, telefoneNovo } from '../../support/sql';
 
-// D-025 T-6b: CA-2, CA-2b, CA-15. Pool de 16 (POOL_MAX_TESTES). Sem sleep fixo: as esperas de trava são
+import { item, jornadaDaBia, revalidacao, um } from './apoio-itens';
+
+// D-025 T-6b: CA-2, CA-2b, CA-15; D-050 T-5: CA-17 (10 reservas com um item disputado e outros livres) e
+// CA-22 (criação × desativação). A ordem de travas com itens cruzados (CA-18) fica em travas.test.ts. Pool de 16 (POOL_MAX_TESTES). Sem sleep fixo: as esperas de trava são
 // observadas em pg_stat_activity (marcadores FOR SHARE OF sa|p|s). A verificação usa a conexão `pg` própria.
 
 let c: pg.Client;
@@ -58,7 +61,7 @@ describe('CA-2: 10 requisições, mesmo telefone, chaves distintas', () => {
     expect(outras).toHaveLength(9);
     for (const r of outras) {
       // A trava do profissional serializa as criações: a perdedora sempre vê a reserva da vencedora.
-      expect(r).toEqual({ resultado: 'horario_indisponivel', causa: 'revalidacao' });
+      expect(r).toEqual(revalidacao());
     }
     const depois = await contarLinhas(cen.s.salaoId);
     expect(depois).toEqual({ ...antes, reserva: 1, itens: 1, cliente: antes.cliente + 1, consentimento: 1, mensagem: 1 });
@@ -69,7 +72,7 @@ describe('CA-2: 10 requisições, mesmo telefone, chaves distintas', () => {
     const antes = await contarLinhas(cen.s.salaoId);
     const telefone = telefoneNovo();
     const rs = await Promise.all(
-      Array.from({ length: 10 }, (_, i) => dispara(cen, { cliente: { nome: 'Ana', telefone }, inicio: sp(DIA, `${String(9 + i).padStart(2, '0')}:00`) })),
+      Array.from({ length: 10 }, (_, i) => dispara(cen, { cliente: { nome: 'Ana', telefone }, ...um(cen, sp(DIA, `${String(9 + i).padStart(2, '0')}:00`)) })),
     );
     expect(rs.map((r) => r.resultado)).toEqual(Array(10).fill('criada'));
     const depois = await contarLinhas(cen.s.salaoId);
@@ -84,7 +87,7 @@ describe('CA-2b: 10 telefones distintos, mesmo horário', () => {
     const rs = await Promise.all(Array.from({ length: 10 }, () => dispara(cen, {})));
     expect(rs.filter((r) => r.resultado === 'criada')).toHaveLength(1);
     for (const r of rs.filter((x) => x.resultado !== 'criada')) {
-      expect(r).toEqual({ resultado: 'horario_indisponivel', causa: 'revalidacao' });
+      expect(r).toEqual(revalidacao());
     }
     expect(await contarLinhas(cen.s.salaoId)).toEqual({ ...antes, reserva: 1, itens: 1, cliente: antes.cliente + 1, consentimento: 1, mensagem: 1 });
   });
@@ -100,7 +103,7 @@ describe('CA-2b: 10 telefones distintos, mesmo horário', () => {
       }),
     );
     expect(rs.filter((r) => r.resultado === 'criada')).toHaveLength(1);
-    expect(rs.filter((r) => r.resultado !== 'criada')).toEqual(Array(9).fill({ resultado: 'horario_indisponivel', causa: 'revalidacao' }));
+    expect(rs.filter((r) => r.resultado !== 'criada')).toEqual(Array(9).fill(revalidacao()));
     expect(await contarLinhas(cen.s.salaoId)).toEqual({ ...antes, reserva: 1, itens: 1, cliente: antes.cliente + 1, consentimento: 1, mensagem: 1 });
   });
 
@@ -108,15 +111,21 @@ describe('CA-2b: 10 telefones distintos, mesmo horário', () => {
     const cen = await criarCenarioReserva();
     const antes = await contarLinhas(cen.s.salaoId);
     const aposRevalidar = async () => {
+      // Reserva + item num único comando (outra conexão, autocommit), no mesmo horário da Ana.
       await c.query(
-        `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-         SELECT $1, $2, id, $3, $4, $4, 'confirmado', 'equipe' FROM cliente WHERE salao_id = $1 LIMIT 1`,
-        [cen.s.salaoId, cen.ana, sp(DIA, '10:00'), sp(DIA, '10:30')],
+        `WITH r AS (
+           INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem)
+           SELECT $1, id, $3, $4, 'confirmado', 'equipe' FROM cliente WHERE salao_id = $1 LIMIT 1
+           RETURNING id
+         )
+         INSERT INTO reserva_item (salao_id, reserva_id, servico_id, profissional_id, ordem, inicio, fim, ocupado_ate, status, preco_centavos, duracao_min)
+         SELECT $1, r.id, $5, $2, 0, $3, $4, $4, 'confirmado', 5000, 30 FROM r`,
+        [cen.s.salaoId, cen.ana, sp(DIA, '10:00'), sp(DIA, '10:30'), cen.A],
       );
     };
     const r = await dispara(cen, {}, { aposRevalidar });
-    expect(r).toEqual({ resultado: 'horario_indisponivel', causa: '23P01' });
-    expect(await contarLinhas(cen.s.salaoId)).toEqual({ ...antes, reserva: 1 });
+    expect(r).toEqual({ resultado: 'horario_indisponivel', causa: '23P01', itens: [] });
+    expect(await contarLinhas(cen.s.salaoId)).toEqual({ ...antes, reserva: 1, itens: 1 });
   });
 });
 
@@ -150,7 +159,7 @@ describe('CA-15: travas FOR SHARE × gravações concorrentes', () => {
     );
     expect(r.resultado).toBe('criada');
     if (r.resultado !== 'criada') return;
-    expect(r.reserva.ocupadoAte).toEqual(new Date(r.reserva.fim.getTime() + 20 * 60_000));
+    expect(r.reserva.itens[0].ocupadoAte).toEqual(new Date(r.reserva.fim.getTime() + 20 * 60_000));
   });
 
   it('(a) desativação confirmada antes da trava do profissional (FOR NO KEY UPDATE): profissional_indisponivel', async () => {
@@ -166,7 +175,7 @@ describe('CA-15: travas FOR SHARE × gravações concorrentes', () => {
         await trava.query('COMMIT');
       },
     );
-    expect(r).toEqual({ resultado: 'profissional_indisponivel' });
+    expect(r).toEqual({ resultado: 'profissional_indisponivel', itens: [0] });
     expect((await contarLinhas(cen.s.salaoId)).reserva).toBe(0);
   });
 
@@ -184,7 +193,7 @@ describe('CA-15: travas FOR SHARE × gravações concorrentes', () => {
         expect(prof.ativo).toBe(true);
         expect(reservas).toBe(1);
       } else {
-        expect(r).toEqual({ resultado: 'profissional_indisponivel' });
+        expect(r).toEqual({ resultado: 'profissional_indisponivel', itens: [0] });
         expect(d.resultado).toBe('desativado');
         expect(prof.ativo).toBe(false);
         expect(reservas).toBe(0);
@@ -194,9 +203,7 @@ describe('CA-15: travas FOR SHARE × gravações concorrentes', () => {
 
   it('mesmo profissional: a segunda criação espera a primeira; profissional distinto não espera', async () => {
     const cen = await criarCenarioReserva();
-    await db().jornada.createMany({
-      data: [0, 1, 2, 3, 4, 5, 6].map((diaSemana) => ({ salaoId: cen.s.salaoId, profissionalId: cen.bia, diaSemana, inicioMin: 540, fimMin: 1140 })),
-    });
+    await jornadaDaBia(cen);
     await trava.query('BEGIN');
     try {
       // `trava` faz o papel de uma criação em andamento da Ana (FOR NO KEY UPDATE no profissional).
@@ -204,7 +211,7 @@ describe('CA-15: travas FOR SHARE × gravações concorrentes', () => {
       const daAna = dispara(cen, {});
       await esperarTrava(c, 'FOR NO KEY UPDATE OF p', 1);
       // A Bia não espera: termina com a trava da Ana ainda aberta.
-      const daBia = await dispara(cen, { profissionalId: cen.bia });
+      const daBia = await dispara(cen, um(cen, sp(DIA, '10:00'), { profissionalId: cen.bia }));
       expect(daBia.resultado).toBe('criada');
       expect((await contarLinhas(cen.s.salaoId)).reserva).toBe(1);
       await trava.query('COMMIT');
@@ -250,7 +257,7 @@ describe('CA-15: travas FOR SHARE × gravações concorrentes', () => {
         await trava.query('COMMIT');
       },
     );
-    expect(r).toEqual({ resultado: 'profissional_indisponivel' });
+    expect(r).toEqual({ resultado: 'profissional_indisponivel', itens: [0] });
   });
 
   it('(d) reserva × edição de telefone da mesma cliente: sem erro, sem impasse', async () => {
@@ -272,10 +279,55 @@ describe('CA-15: travas FOR SHARE × gravações concorrentes', () => {
     const antes = await contarLinhas(cen.s.salaoId);
     const telefone = telefoneNovo();
     const rs = await Promise.all([
-      dispara(cen, { cliente: { nome: 'Ana', telefone }, inicio: sp(DIA, '10:00') }),
-      dispara(cen, { cliente: { nome: 'Ana', telefone }, inicio: sp(DIA, '14:00') }),
+      dispara(cen, { cliente: { nome: 'Ana', telefone }, ...um(cen, sp(DIA, '10:00')) }),
+      dispara(cen, { cliente: { nome: 'Ana', telefone }, ...um(cen, sp(DIA, '14:00')) }),
     ]);
     expect(rs.map((r) => r.resultado)).toEqual(['criada', 'criada']);
     expect(await contarLinhas(cen.s.salaoId)).toMatchObject({ reserva: 2, cliente: antes.cliente + 1 });
+  });
+});
+
+describe('D-050 CA-17: 10 reservas diferentes com um item no mesmo profissional e horário', () => {
+  it('1 criada; 9 horario_indisponivel no item disputado, sem item gravado; sem 23505, 40P01 nem erro', async () => {
+    const cen = await criarCenarioReserva({ jornada: [['00:00', '24:00']] });
+    await jornadaDaBia(cen, [['00:00', '24:00']]);
+    const antes = await contarLinhas(cen.s.salaoId);
+    // Cada reserva: A com a Bia em um horário livre próprio (item 0) + B com a Ana às 12:00 (item 1, disputado).
+    const rs = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, k) =>
+        dispara(cen, {
+          chaveRequisicao: randomUUID(),
+          itens: [item(cen, sp(DIA, `${String(13 + k).padStart(2, '0')}:00`), { profissionalId: cen.bia }), item(cen, sp(DIA, '12:00'), { servicoId: cen.B })],
+        }),
+      ),
+    );
+    expect(rs.filter((r) => r.status === 'rejected')).toEqual([]);
+    const valores = rs.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+    expect(valores.filter((r) => r.resultado === 'criada')).toHaveLength(1);
+    expect(valores.filter((r) => r.resultado !== 'criada')).toEqual(Array(9).fill(revalidacao(1)));
+    expect(await contarLinhas(cen.s.salaoId)).toEqual({ ...antes, reserva: 1, itens: 2, cliente: antes.cliente + 1, consentimento: 1, mensagem: 1 });
+  });
+});
+
+describe('D-050 CA-22: criação com item em P1 × desativação de P1, em paralelo', () => {
+  it('ou a reserva (2 itens, P1 num deles) é criada e a desativação recusada, ou a desativação ocorre e a reserva é profissional_indisponivel', async () => {
+    for (let i = 0; i < 5; i++) {
+      const cen = await criarCenarioReserva();
+      await jornadaDaBia(cen);
+      const [r, d] = await Promise.all([
+        dispara(cen, { itens: [item(cen, sp(DIA, '10:00'), { profissionalId: cen.bia }), item(cen, sp(DIA, '11:00'), { servicoId: cen.B })] }),
+        desativar(cen.ctxEquipe, { id: cen.ana }, AGORA),
+      ]);
+      const reservas = await db().reserva.count({ where: { salaoId: cen.s.salaoId } });
+      if (r.resultado === 'criada') {
+        expect(d.resultado).toBe('recusado');
+        expect(reservas).toBe(1);
+      } else {
+        expect(r).toEqual({ resultado: 'profissional_indisponivel', itens: [1] });
+        expect(d.resultado).toBe('desativado');
+        expect(reservas).toBe(0);
+        expect(await db().reservaItem.count({ where: { salaoId: cen.s.salaoId } })).toBe(0);
+      }
+    }
   });
 });

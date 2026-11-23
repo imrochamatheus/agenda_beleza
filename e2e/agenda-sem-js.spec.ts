@@ -41,12 +41,20 @@ test.describe('CA-14: agenda sem JavaScript', () => {
 
   test('abrir a reserva e voltar para a agenda', async ({ page }) => {
     await page.goto('/dev/agenda');
-    await page.getByRole('link', { name: /Maria Souza · Corte feminino · Confirmada/ }).first().click();
-    await expect(page).toHaveURL(/reserva=demo-r1$/);
+    await page.getByRole('link', { name: /Maria Souza · Corte feminino · Confirmado/ }).first().click();
+    await expect(page).toHaveURL(/reserva=demo-r1#item-demo-r1-i1$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Reserva' })).toBeVisible();
     await expect(page.getByText('Ana Demonstração')).toBeVisible();
     await page.getByRole('link', { name: 'Voltar para a agenda' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Agenda' })).toBeVisible();
+  });
+
+  test('D-050: os 3 blocos da reserva de 3 itens levam ao mesmo detalhe, cada um na sua parada', async ({ page }) => {
+    await page.goto('/dev/agenda');
+    await page.getByRole('link', { name: /Lúcia Prado · Hidratação · Confirmado/ }).click();
+    await expect(page).toHaveURL(/reserva=demo-r9#item-demo-r9-i2$/);
+    await expect(page.getByRole('list', { name: 'Serviços da reserva' }).locator(':scope > li')).toHaveCount(3);
+    await expect(page.locator('li#item-demo-r9-i2')).toContainText('Hidratação');
   });
 
   test('profissional desconhecido → 404', async ({ page }) => {

@@ -72,6 +72,30 @@ export const SALAO_A: SalaoSpec = {
     { chave: 'r6', profissional: 'helena', cliente: 'ana', dia: 3, inicioMin: h(10), servicos: ['corte', 'escova'], status: 'confirmado' },
     { chave: 'r7', profissional: 'beatriz', cliente: 'elisa', dia: 4, inicioMin: h(14), servicos: ['manicure', 'hidratacao'], status: 'confirmado' },
     { chave: 'r8', profissional: 'marcos', cliente: 'carla', dia: 5, inicioMin: h(15), servicos: ['corte'], status: 'cancelado' },
+    // D-050 (CA-51): o exemplo da E3.6, cada serviço com o seu profissional e horário. Manhã: escova com Marcos
+    // e, em seguida, hidratação com Beatriz; tarde: manicure com Helena.
+    {
+      chave: 'r9',
+      cliente: 'bruna',
+      dia: 2,
+      status: 'confirmado',
+      itens: [
+        { servico: 'escova', profissional: 'marcos', inicioMin: h(10) },
+        { servico: 'hidratacao', profissional: 'beatriz', inicioMin: h(10, 30) },
+        { servico: 'manicure', profissional: 'helena', inicioMin: h(14) },
+      ],
+    },
+    // D-050: item cancelado ao lado de um concluído; a reserva fica `concluido` (status derivado, RN-21).
+    {
+      chave: 'r10',
+      cliente: 'debora',
+      dia: -3,
+      status: 'concluido',
+      itens: [
+        { servico: 'corte', profissional: 'helena', inicioMin: h(9) },
+        { servico: 'manicure', profissional: 'beatriz', inicioMin: h(10, 15), status: 'cancelado' },
+      ],
+    },
   ],
   avaliacoes: [
     { reserva: 'r1', nota: 5, comentario: 'Atendimento impecável e ambiente muito agradável.', nomeExibicao: 'Ana C.' },

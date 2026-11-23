@@ -19,6 +19,7 @@ import {
   criarReservaEm,
   ctxDoGestor,
   inserirBloqueio,
+  itemDe,
   linhaBloqueio,
   linhasBloqueio,
 } from './apoio';
@@ -262,6 +263,7 @@ describe('listarConfirmadasQueCruzam (RN-8, R-4, R-5)', () => {
     expect(x.reservas).toEqual([
       {
         id: r.cruzaInicio,
+        itemId: await itemDe(c, r.cruzaInicio),
         profissionalId: s.profissional.profissionalId,
         profissionalNome: s.profissional.nome,
         inicio: d('2026-12-15T17:30Z'),
@@ -271,7 +273,7 @@ describe('listarConfirmadasQueCruzam (RN-8, R-4, R-5)', () => {
       expect.objectContaining({ id: r.dentro }),
     ]);
     // R-5: chaves exatas, sem telefone.
-    expect(Object.keys(x.reservas[0]).sort()).toEqual(['clienteNome', 'fim', 'id', 'inicio', 'profissionalId', 'profissionalNome']);
+    expect(Object.keys(x.reservas[0]).sort()).toEqual(['clienteNome', 'fim', 'id', 'inicio', 'itemId', 'profissionalId', 'profissionalNome']);
   });
 
   it('do salão (null): todos os profissionais do salão, cliente anonimizada com nome null; nada de outro salão', async () => {
@@ -312,24 +314,20 @@ describe('listarConfirmadasQueCruzam (RN-8, R-4, R-5)', () => {
   it('R-5: o texto da consulta não lê telefone', () => {
     const sql = consultaReservasQueCruzam(s.salaoId, BLOQUEIO, null, 10);
     expect(sql.text).not.toMatch(/telefone/i);
-    expect(sql.text).toContain("r.status = 'confirmado'");
+    expect(sql.text).toContain("i.status = 'confirmado'");
   });
 
   /**
    * Plano genérico (parâmetros $n desconhecidos, como o Prisma reaproveita) de `texto`, numa transação
-   * desfeita no fim. Os índices btree de reserva por (salao_id, …, inicio) saem DENTRO da transação:
+   * desfeita no fim. Os índices btree de reserva_item por (salao_id, …, inicio) saem DENTRO da transação (D-050):
    * com tabelas minúsculas o custo os favorece, e o que a R-3 protege é a APLICABILIDADE do índice
    * parcial (a implicação status = 'confirmado' ⇒ predicado do índice). Com volume real (58 mil
-   * reservas e ANALYZE) o planejador escolhe reserva_sem_sobreposicao sem isso (dev.md §4).
+   * reservas e ANALYZE) o planejador escolhe a exclusion sem isso (D-016 dev.md §4; D-050 dba.md Q8).
    */
   async function planoGenerico(texto: string, valores: unknown[]): Promise<string> {
     await c.query('BEGIN');
     try {
-      for (const indice of [
-        'reserva_salao_id_inicio_idx',
-        'reserva_salao_id_profissional_id_inicio_idx',
-        'reserva_salao_id_cliente_id_inicio_idx',
-      ]) {
+      for (const indice of ['reserva_item_salao_id_inicio_idx', 'reserva_item_salao_id_profissional_id_inicio_idx']) {
         await c.query(`DROP INDEX ${indice}`);
       }
       await c.query('SET LOCAL enable_seqscan = off');
@@ -348,23 +346,23 @@ describe('listarConfirmadasQueCruzam (RN-8, R-4, R-5)', () => {
   it.each([
     ['do profissional', true],
     ['do salão', false],
-  ])('R-3: plano genérico (%s) usa o índice parcial reserva_sem_sobreposicao', async (_nome, comProfissional) => {
+  ])('R-3: plano genérico (%s) usa o índice parcial reserva_item_sem_sobreposicao', async (_nome, comProfissional) => {
     const sql = consultaReservasQueCruzam(s.salaoId, BLOQUEIO, comProfissional ? s.profissional.profissionalId : null, 100);
     const plano = await planoGenerico(sql.text, sql.values);
     expect(plano).toContain('$1');
-    expect(plano).toMatch(/Index Scan (using|on) reserva_sem_sobreposicao/);
+    expect(plano).toMatch(/Index Scan (using|on) reserva_item_sem_sobreposicao/);
     // Os índices voltaram (ROLLBACK).
     const { rows } = await c.query<{ n: number }>(
-      "SELECT count(*)::int AS n FROM pg_indexes WHERE tablename = 'reserva' AND indexname = 'reserva_salao_id_inicio_idx'",
+      "SELECT count(*)::int AS n FROM pg_indexes WHERE tablename = 'reserva_item' AND indexname = 'reserva_item_salao_id_inicio_idx'",
     );
     expect(rows[0].n).toBe(1);
   });
 
   it('R-3 (controle): com o status como parâmetro, o índice parcial deixa de ser aplicável', async () => {
     const sql = consultaReservasQueCruzam(s.salaoId, BLOQUEIO, s.profissional.profissionalId, 100);
-    const comParametro = sql.text.replace("r.status = 'confirmado'", `r.status = $${sql.values.length + 1}::status_reserva`);
+    const comParametro = sql.text.replace("i.status = 'confirmado'", `i.status = $${sql.values.length + 1}::status_reserva`);
     expect(comParametro).not.toBe(sql.text);
     const plano = await planoGenerico(comParametro, [...sql.values, 'confirmado']);
-    expect(plano).not.toContain('reserva_sem_sobreposicao');
+    expect(plano).not.toContain('reserva_item_sem_sobreposicao');
   });
 });

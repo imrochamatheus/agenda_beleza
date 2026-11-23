@@ -9,8 +9,9 @@ export type { MensagemSituacao } from './situacao-tipos';
 
 /**
  * Situação de envio das mensagens de uma reserva para a equipe (D-043). Quem vê a reserva (`agenda.ver`)
- * vê as mensagens; o profissional só as das reservas do próprio perfil. Reserva inexistente, malformada,
- * de outro salão ou de outro profissional → NaoEncontrado, sempre o mesmo. Somente leitura, sem checagem
+ * vê as mensagens; o profissional só reservas em que tem item, e delas as mensagens sem item e as dos
+ * próprios itens (D-050 RN-37). Reserva inexistente, malformada, de outro salão ou sem item do profissional
+ * → NaoEncontrado, sempre o mesmo. Somente leitura, sem checagem
  * de assinatura (RN-4). Devolve só rótulos mapeados: nunca `erroCodigo` bruto, destinatário, parâmetros,
  * id do provedor nem `erro_detalhe` (RN-5).
  */
@@ -24,6 +25,7 @@ export async function consultarMensagensDaReserva(ctx: TenantContext, id: unknow
   );
   return linhas.map((m) => ({
     id: m.id,
+    reservaItemId: m.reservaItemId,
     estado: m.estado,
     ...rotuloDaMensagem(m),
     tentativas: m.tentativas,

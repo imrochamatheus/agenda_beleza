@@ -46,6 +46,7 @@ export function paraAviso(r: { reservas: ReservaCobertaDTO[]; total: number }, f
     total: r.total,
     reservas: r.reservas.map((x) => ({
       id: x.id,
+      itemId: x.itemId,
       profissionalNome: x.profissionalNome,
       inicioLocal: formatarDataHora(x.inicio, fuso),
       fimLocal: formatarDataHora(x.fim, fuso),

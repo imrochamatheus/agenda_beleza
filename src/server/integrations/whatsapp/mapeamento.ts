@@ -6,9 +6,13 @@ import type { EnvioModelo, ModeloWhatsApp } from './port';
 // rede, sem ambiente, sem relógio. O que a documentação oficial não confirma está marcado NÃO
 // CONFIRMADO (README, "Pendente de validação na Meta") e é trocável aqui sem tocar o resto.
 
-/** Ordem fixa dos parâmetros posicionais de cada modelo (RN-7). */
+/**
+ * Ordem fixa dos parâmetros posicionais de cada modelo (RN-7). D-050 RN-27: a confirmação é consolidada
+ * por reserva (`salao`, `data`, `itens` = "09:00 Escova com Ana; 10:00 …"); exige o modelo novo aprovado
+ * na Meta (docs/whatsapp-templates.md). Com o modelo antigo a Meta recusa (parametros_invalidos, R-3).
+ */
 export const ORDEM_PARAMETROS: Readonly<Record<ModeloWhatsApp, readonly string[]>> = {
-  confirmacao: ['salao', 'servicos', 'profissional', 'data', 'horario'],
+  confirmacao: ['salao', 'data', 'itens'],
   remarcacao: ['salao', 'servicos', 'profissional', 'data', 'horario'],
   cancelamento: ['salao', 'servicos', 'data', 'horario'],
   convite_avaliacao: ['salao', 'link'],

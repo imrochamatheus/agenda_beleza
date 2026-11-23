@@ -9,6 +9,7 @@ import { resolverTenant } from '@/server/tenant/sessao';
 import { credencialDoGestor } from '../../support/auth';
 import { criarSalaoCompleto } from '../../support/factories';
 import type { SalaoCompleto } from '../../support/factories';
+import { conferirDerivados } from '../../support/reservas';
 import { conectar } from '../../support/sql';
 
 // CA-14: unidade de trabalho. Uma alteração por um repositório seguida de falha em outro repositório
@@ -64,18 +65,60 @@ describe('CA-14: emTransacao', () => {
   });
 
   it('CA-14: sem falha, as alterações de repositórios diferentes persistem juntas', async () => {
+    // D-050: `atualizarStatus` saiu de RepoReserva; a escrita de reserva aqui é criar + criarItens
+    // (reserva e item na mesma transação que as renomeações).
+    const inicio = new Date(s.reserva.fim.getTime() + 24 * 60 * 60_000);
+    const fim = new Date(inicio.getTime() + 30 * 60_000);
     const resultado = await emTransacao(async (r) => {
       const servico = await r.servicos.renomear(ctx, s.servicos.ativos[0], 'Corte confirmado');
       const profissional = await r.profissionais.renomear(ctx, s.profissional.profissionalId, 'Ana Confirmada');
-      const reserva = await r.reservas.atualizarStatus(ctx, s.reserva.id, { de: 'confirmado', para: 'concluido' });
-      return { servico: servico.nome, profissional: profissional.nome, reserva: reserva.status };
+      const nova = await r.reservas.criar(ctx, { clienteId: s.clientes.ativaId, origem: 'equipe', chaveRequisicao: null, inicio, fim });
+      if (!nova.criada) throw new Error('reserva não criada');
+      await r.reservas.criarItens(ctx, nova.id, [
+        {
+          servicoId: s.servicos.ativos[1],
+          profissionalId: s.profissional.profissionalId,
+          ordem: 0,
+          inicio,
+          fim,
+          ocupadoAte: fim,
+          precoCentavos: 5500,
+          duracaoMin: 30,
+          encaixe: false,
+        },
+      ]);
+      return { servico: servico.nome, profissional: profissional.nome, reservaId: nova.id };
     });
-    expect(resultado).toEqual({ servico: 'Corte confirmado', profissional: 'Ana Confirmada', reserva: 'concluido' });
+    expect(resultado).toMatchObject({ servico: 'Corte confirmado', profissional: 'Ana Confirmada' });
     const depois = await estado();
     expect((depois.servico as { nome: string }).nome).toBe('Corte confirmado');
-    expect((depois.reserva as { status: string }).status).toBe('concluido');
     const p = await c.query('SELECT nome FROM profissional WHERE id = $1', [s.profissional.profissionalId]);
     expect(p.rows).toEqual([{ nome: 'Ana Confirmada' }]);
+    const itens = await c.query('SELECT status::text AS status, profissional_id::text AS p FROM reserva_item WHERE reserva_id = $1', [
+      resultado.reservaId,
+    ]);
+    expect(itens.rows).toEqual([{ status: 'confirmado', p: s.profissional.profissionalId }]);
+    expect(await conferirDerivados(resultado.reservaId)).toBe(1);
+  });
+
+  it('CA-14: falha DEPOIS de criar reserva e itens desfaz também a reserva e os itens', async () => {
+    const inicio = new Date(s.reserva.fim.getTime() + 2 * 24 * 60 * 60_000);
+    const fim = new Date(inicio.getTime() + 30 * 60_000);
+    const contar = async () =>
+      (await c.query<{ n: number }>('SELECT count(*)::int AS n FROM reserva_item WHERE salao_id = $1', [s.salaoId])).rows[0].n;
+    const antes = await contar();
+    const erro = new Error('falha proposital');
+    await expect(
+      emTransacao(async (r) => {
+        const nova = await r.reservas.criar(ctx, { clienteId: s.clientes.ativaId, origem: 'equipe', chaveRequisicao: null, inicio, fim });
+        if (!nova.criada) throw new Error('reserva não criada');
+        await r.reservas.criarItens(ctx, nova.id, [
+          { servicoId: s.servicos.ativos[0], profissionalId: s.profissional.profissionalId, ordem: 0, inicio, fim, ocupadoAte: fim, precoCentavos: 1, duracaoMin: 30, encaixe: false },
+        ]);
+        throw erro;
+      }),
+    ).rejects.toBe(erro);
+    expect(await contar()).toBe(antes);
   });
 
   it('CA-14: a transação usa READ COMMITTED', async () => {

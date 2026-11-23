@@ -42,6 +42,28 @@ describe('CA-14: lerContatoDaCliente', () => {
     expect(await lerContatoDaCliente(ctxDoProfissional(a), so)).toMatchObject({ nome: 'Só Cancelada', anonimizada: false });
   });
 
+  it('D-050 RN-38: basta um ITEM com o profissional, mesmo cancelado e mesmo que não seja o primeiro da reserva', async () => {
+    const cliente = await inserirCliente(c, a.salaoId, 'Dois Profissionais');
+    // Item 1 com a profissional P1; item 2 (cancelado) com o gestor-profissional (P2).
+    await inserirReservaComPreco(c, {
+      salaoId: a.salaoId,
+      profissionalId: a.profissional.profissionalId,
+      clienteId: cliente,
+      inicio: new Date('2027-03-02T13:00:00Z'),
+      status: 'confirmado',
+      itens: [
+        { servicoId: a.servicos.ativos[0], precoCentavos: 1000, duracaoMin: 30 },
+        { servicoId: a.servicos.ativos[1], precoCentavos: 1000, duracaoMin: 30, profissionalId: a.gestor.profissionalId!, status: 'cancelado' },
+      ],
+    });
+    const p2 = criarTenantContext({ usuarioId: a.gestor.usuarioId, papel: 'profissional', salaoId: a.salaoId, profissionalId: a.gestor.profissionalId });
+    expect(await lerContatoDaCliente(ctxDoProfissional(a), cliente)).toMatchObject({ nome: 'Dois Profissionais' });
+    expect(await lerContatoDaCliente(p2, cliente)).toMatchObject({ nome: 'Dois Profissionais' });
+    // Outro profissional do salão, sem item com ela: NaoEncontrado.
+    const p3 = criarTenantContext({ usuarioId: a.gestor.usuarioId, papel: 'profissional', salaoId: a.salaoId, profissionalId: a.profissionalInativoId });
+    await expect(lerContatoDaCliente(p3, cliente)).rejects.toBeInstanceOf(NaoEncontrado);
+  });
+
   it('P2 sem reserva da cliente, profissional de outro salão e inexistente: NaoEncontrado igual', async () => {
     const cliente = await inserirCliente(c, a.salaoId, 'Sem Reserva');
     // O gestor tem perfil de profissional: como "profissional" de contexto, não tem reserva com ela.

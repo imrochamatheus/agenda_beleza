@@ -5,7 +5,7 @@ import { obter } from '@/server/clientes/servico';
 import { NaoEncontrado } from '@/server/tenant/erros';
 
 import { criarDoisSaloes, criarSalaoCompleto } from '../../support/factories';
-import { conectar } from '../../support/sql';
+import { conectar, inserirReserva } from '../../support/sql';
 
 import { MANAUS, SP, UUID_INEXISTENTE, ctxDoGestor, ctxDoProfissional, inserirCliente, inserirReservaComPreco } from './apoio';
 
@@ -38,13 +38,17 @@ describe('CA-13: histórico no fuso do salão, com snapshots', () => {
     const d = await obter(ctxDoGestor(s), s.clientes.ativaId);
     expect(d.totalReservas).toBe(3);
     expect(d.cliente).toMatchObject({ nome: 'Helena', telefoneFormatado: '(11) 97777-0001', anonimizada: false });
-    expect(d.historico.map((h) => [h.inicioLocal, h.status, h.duracaoTotal, h.precoTotal])).toEqual([
-      ['12/07/2027 23:30', 'Confirmado', '45 min', 'R$\u00a019,99'],
-      ['11/06/2027 14:30', 'Concluído', '1 h 45 min', 'R$\u00a0178,45'],
-      ['10/05/2027 10:00', 'Cancelado', '1 h', 'R$\u00a090,00'],
+    expect(d.historico.map((h) => [h.inicioLocal, h.status, h.precoTotal, h.totalDaCancelada])).toEqual([
+      ['12/07/2027 23:30', 'Confirmado', 'R$\u00a019,99', false],
+      ['11/06/2027 14:30', 'Concluído', 'R$\u00a0178,45', false],
+      // RN-35: reserva toda cancelada soma todos os itens, com o rótulo de cancelada.
+      ['10/05/2027 10:00', 'Cancelado', 'R$\u00a090,00', true],
     ]);
-    expect(d.historico[1].servicos).toEqual([s.servicos.nomes[1], s.servicos.nomes[0]]);
-    expect(d.historico.every((h) => h.profissional === s.profissional.nome)).toBe(true);
+    expect(d.historico[1].servicos.map((x) => [x.servico, x.horaLocal, x.preco])).toEqual([
+      [s.servicos.nomes[1], '14:30', 'R$\u00a055,00'],
+      [s.servicos.nomes[0], '15:00', 'R$\u00a0123,45'],
+    ]);
+    expect(d.historico.every((h) => h.servicos.every((x) => x.profissional === s.profissional.nome))).toBe(true);
   });
 
   it('o mesmo instante UTC em America/Manaus mostra outra hora; "não compareceu" tem rótulo', async () => {
@@ -79,8 +83,8 @@ describe('CA-13: histórico no fuso do salão, com snapshots', () => {
     });
     const d = await obter(ctxDoGestor(s), cl);
     expect(d.historico).toHaveLength(1);
-    expect(d.historico[0].servicos).toEqual(['Coloração (descontinuada)']);
-    expect(d.historico[0].profissional.length).toBeGreaterThan(0);
+    expect(d.historico[0].servicos.map((x) => x.servico)).toEqual(['Coloração (descontinuada)']);
+    expect(d.historico[0].servicos[0].profissional.length).toBeGreaterThan(0);
   });
 
   it('sem reservas: histórico vazio e total 0', async () => {
@@ -92,21 +96,71 @@ describe('CA-13: histórico no fuso do salão, com snapshots', () => {
   it('60 reservas: mostra as 50 mais recentes e o total 60', async () => {
     const s = await criarSalaoCompleto();
     const cl = await inserirCliente(c, s.salaoId, 'Muitas');
-    await c.query(
-      `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-       SELECT $1, $2, $3, '2027-01-01T10:00:00Z'::timestamptz + g * interval '1 day',
-              '2027-01-01T10:30:00Z'::timestamptz + g * interval '1 day',
-              '2027-01-01T10:30:00Z'::timestamptz + g * interval '1 day', 'cancelado', 'equipe'
-         FROM generate_series(1, 60) g`,
-      [s.salaoId, s.profissional.profissionalId, cl],
-    );
+    const servicoId = s.servicos.ativos[0];
+    for (let g = 1; g <= 60; g++) {
+      const inicio = new Date(Date.UTC(2027, 0, 1 + g, 10, 0));
+      await inserirReserva(c, {
+        salaoId: s.salaoId,
+        profissionalId: s.profissional.profissionalId,
+        clienteId: cl,
+        inicio,
+        fim: new Date(inicio.getTime() + 30 * 60_000),
+        status: 'cancelado',
+        servicoId,
+      });
+    }
     const d = await obter(ctxDoGestor(s), cl);
     expect(d.totalReservas).toBe(60);
     expect(d.historico).toHaveLength(50);
     // As mais recentes primeiro: a 60ª (02/03/2027) abre a lista.
     expect(d.historico[0].inicioLocal).toBe('02/03/2027 07:00');
-    expect(d.historico[0].servicos).toEqual([]);
-    expect(d.historico[0].duracaoTotal).toBe('—');
+    expect(d.historico[0].servicos).toHaveLength(1);
+    expect(d.historico[0]).toMatchObject({ status: 'Cancelado', totalDaCancelada: true });
+  });
+});
+
+describe('D-050 RN-35: reserva com itens de profissionais e status diferentes', () => {
+  it('cada item com seu profissional, hora e status; cancelado listado com preço; total só dos não cancelados', async () => {
+    const s = await criarSalaoCompleto({ salao: { fuso: SP } });
+    const cl = await inserirCliente(c, s.salaoId, 'Itens');
+    const [s1, s2] = s.servicos.ativos;
+    await inserirReservaComPreco(c, {
+      salaoId: s.salaoId,
+      profissionalId: s.profissional.profissionalId,
+      clienteId: cl,
+      inicio: new Date('2027-10-05T12:00:00Z'),
+      status: 'confirmado',
+      itens: [
+        { servicoId: s1, precoCentavos: 8000, duracaoMin: 60 },
+        { servicoId: s2, precoCentavos: 6500, duracaoMin: 30, profissionalId: s.gestor.profissionalId!, status: 'cancelado' },
+      ],
+    });
+    const [h] = (await obter(ctxDoGestor(s), cl)).historico;
+    expect(h).toMatchObject({ inicioLocal: '05/10/2027 09:00', status: 'Confirmado', precoTotal: 'R$\u00a080,00', totalDaCancelada: false });
+    expect(h.servicos).toEqual([
+      { servico: s.servicos.nomes[0], profissional: s.profissional.nome, horaLocal: '09:00', status: 'Confirmado', cancelado: false, preco: 'R$\u00a080,00' },
+      { servico: s.servicos.nomes[1], profissional: s.gestor.nome, horaLocal: '10:00', status: 'Cancelado', cancelado: true, preco: 'R$\u00a065,00' },
+    ]);
+  });
+
+  it('status derivado: um item concluído e outro não compareceu → "Concluído", total dos dois', async () => {
+    const s = await criarSalaoCompleto({ salao: { fuso: SP } });
+    const cl = await inserirCliente(c, s.salaoId, 'Derivado');
+    const [s1, s2] = s.servicos.ativos;
+    await inserirReservaComPreco(c, {
+      salaoId: s.salaoId,
+      profissionalId: s.profissional.profissionalId,
+      clienteId: cl,
+      inicio: new Date('2027-10-06T12:00:00Z'),
+      status: 'concluido',
+      itens: [
+        { servicoId: s1, precoCentavos: 1000, duracaoMin: 30 },
+        { servicoId: s2, precoCentavos: 2000, duracaoMin: 30, status: 'nao_compareceu' },
+      ],
+    });
+    const [h] = (await obter(ctxDoGestor(s), cl)).historico;
+    expect(h).toMatchObject({ status: 'Concluído', precoTotal: 'R$\u00a030,00' });
+    expect(h.servicos.map((x) => x.status)).toEqual(['Concluído', 'Não compareceu']);
   });
 });
 

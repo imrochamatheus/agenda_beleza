@@ -13,7 +13,7 @@ import type { Credencial } from '@/server/tenant/sessao';
 import { criarSessao } from '../../support/auth';
 import { criarDoisSaloes, criarSalaoCompleto, instanteFuturo } from '../../support/factories';
 import type { SalaoCompleto } from '../../support/factories';
-import { conectar } from '../../support/sql';
+import { conectar, inserirReserva } from '../../support/sql';
 
 import { cancelarReservasDoSalao, fotografiaDoSalao, linhaProfissional } from './apoio';
 
@@ -68,11 +68,15 @@ async function inserirReservaSemCommit(s: SalaoCompleto): Promise<void> {
   const inicio = instanteFuturo(5, 15);
   const fim = new Date(inicio.getTime() + 30 * 60_000);
   await tx.query('BEGIN');
-  await tx.query(
-    `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-     VALUES ($1, $2, $3, $4, $5, $5, 'confirmado', 'equipe')`,
-    [s.salaoId, s.profissional.profissionalId, s.clientes.ativaId, inicio, fim],
-  );
+  // D-050: reserva e item (do profissional) no mesmo comando, sem commit.
+  await inserirReserva(tx, {
+    salaoId: s.salaoId,
+    profissionalId: s.profissional.profissionalId,
+    clienteId: s.clientes.ativaId,
+    inicio,
+    fim,
+    servicoId: s.servicos.ativos[0],
+  });
 }
 
 describe('D-7: desativação concorrente com inserção de reserva', () => {

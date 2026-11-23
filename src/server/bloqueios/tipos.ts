@@ -81,7 +81,10 @@ export type BloqueioItem = {
 };
 
 export type ReservaCoberta = {
+  /** Id da reserva. */
   id: string;
+  /** Id do item (D-050 RN-38: uma linha por item; chave única da lista). */
+  itemId: string;
   profissionalNome: string;
   /** formatarDataHora no fuso do salão. */
   inicioLocal: string;

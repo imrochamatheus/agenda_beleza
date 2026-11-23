@@ -3,14 +3,13 @@ import { expect, test, type Page } from '@playwright/test';
 import { analisarComAxe, semRolagemHorizontal } from './suporte/vitrine';
 
 // D-027 CA-5, CA-10, CA-14: verificação humana (Turnstile simulado) na etapa de dados e o aviso de consulta
-// limitada, em /dev/reserva (mesmo componente da página real, sem banco), 375×812, com JavaScript.
+// limitada, em /dev/reserva (mesmo componente da página real, sem banco), 375×812, com JavaScript. D-050: sem o
+// passo "Profissional"; o horário (do primeiro profissional) é escolhido no passo do serviço.
 
 async function ateOsDados(page: Page) {
   const resposta = await page.goto('/dev/reserva');
   if (resposta?.status() !== 200) throw new Error('/dev/reserva indisponível: ligue VITRINE_COMPONENTES=true.');
   await page.getByRole('checkbox', { name: /Escova/ }).check();
-  await page.getByRole('button', { name: 'Continuar' }).click();
-  await page.getByRole('radio', { name: 'Ana' }).check();
   await page.getByRole('button', { name: 'Continuar' }).click();
   await page.getByRole('list').getByRole('link', { name: /\d{2}\/\d{2}\/\d{4}$/ }).first().click();
   await page.getByRole('radio').first().check();

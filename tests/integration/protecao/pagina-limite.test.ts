@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import PaginaPublicaDoSalao from '@/app/(publico)/[slug]/page';
 import { carregarPassoComLimite, carregarSalao, lerRegrasDaPagina } from '@/server/reserva-publica/pagina';
-import { chaveDeData, lerPasso } from '@/server/reserva-publica/passos';
+import { chaveDeData, lerPasso, valorDoItem } from '@/server/reserva-publica/passos';
 import type { ParametrosBrutos } from '@/server/reserva-publica/passos';
 import { criarPublicoContext } from '@/server/tenant/context';
 
@@ -13,6 +13,7 @@ import { instalarContadorDeComandos } from '../../support/reservas';
 import { contadorDoIp } from './apoio';
 
 // D-027 CA-8 e CA-14: a consulta de horários por IP e a página com query, sem cálculo quando limitada.
+// D-050: a query passa a `s`, `data` e `h<k>` (sem `p`); o passo calculado é o do serviço.
 
 const { ipDaRequisicao } = vi.hoisted(() => ({ ipDaRequisicao: { valor: '192.0.2.1' } }));
 vi.mock('next/headers', () => ({
@@ -39,11 +40,11 @@ describe('carregarPassoComLimite (CA-8, CA-14)', () => {
     const salao = await carregarSalao(ctx, AGORA);
     const regras = await lerRegrasDaPagina(ctx, AGORA);
     const ip = ipNovo();
-    const params: ParametrosBrutos = { s: c.A, p: c.ana, data: DIA_CHAVE };
-    const ler = () => carregarPassoComLimite(ctx, lerPasso(params, regras), { servicos: salao.servicos, regras, agora: AGORA, ip });
+    const params: ParametrosBrutos = { s: c.A, data: DIA_CHAVE };
+    const ler = () => carregarPassoComLimite(ctx, lerPasso(params, regras), { servicos: salao.servicos, equipe: salao.equipe, regras, agora: AGORA, ip });
 
     vi.stubEnv('PROTECAO_LIMITE_IP_DISPONIBILIDADE', '3');
-    for (let i = 0; i < 3; i++) expect((await ler()).passo).toBe('horario');
+    for (let i = 0; i < 3; i++) expect((await ler()).passo).toBe('servico');
     const contador = instalarContadorDeComandos();
     try {
       expect(await ler()).toEqual({ passo: 'limitado' });
@@ -54,14 +55,14 @@ describe('carregarPassoComLimite (CA-8, CA-14)', () => {
     expect(await contadorDoIp(ip, 'disponibilidade')).toBe(4);
   });
 
-  it('passos de serviços e profissional não consomem cota', async () => {
+  it('o passo de serviços (inclusive "Alterar serviços") não consome cota', async () => {
     const c = await criarCenarioReserva();
     const ctx = criarPublicoContext(c.s.salaoId, c.s.slugAtual);
     const salao = await carregarSalao(ctx, AGORA);
     const regras = await lerRegrasDaPagina(ctx, AGORA);
     const ip = ipNovo();
-    for (const params of [{}, { s: c.A }] as ParametrosBrutos[]) {
-      await carregarPassoComLimite(ctx, lerPasso(params, regras), { servicos: salao.servicos, regras, agora: AGORA, ip });
+    for (const params of [{}, { s: c.A, alterar: 'servicos' }] as ParametrosBrutos[]) {
+      await carregarPassoComLimite(ctx, lerPasso(params, regras), { servicos: salao.servicos, equipe: salao.equipe, regras, agora: AGORA, ip });
     }
     expect(await contadorDoIp(ip, 'disponibilidade')).toBe(0);
   });
@@ -73,11 +74,11 @@ describe('carregarPassoComLimite (CA-8, CA-14)', () => {
     const regras = await lerRegrasDaPagina(ctx, AGORA);
     vi.stubEnv('PROTECAO_LIMITE_IP_DISPONIBILIDADE', '1');
     const ler = (ip: string) =>
-      carregarPassoComLimite(ctx, lerPasso({ s: c.A, p: c.ana, data: DIA_CHAVE }, regras), { servicos: salao.servicos, regras, agora: AGORA, ip });
+      carregarPassoComLimite(ctx, lerPasso({ s: c.A, data: DIA_CHAVE }, regras), { servicos: salao.servicos, equipe: salao.equipe, regras, agora: AGORA, ip });
     const a = ipNovo();
-    expect((await ler(a)).passo).toBe('horario');
+    expect((await ler(a)).passo).toBe('servico');
     expect((await ler(a)).passo).toBe('limitado');
-    expect((await ler(ipNovo())).passo).toBe('horario');
+    expect((await ler(ipNovo())).passo).toBe('servico');
   });
 });
 
@@ -91,19 +92,20 @@ describe('página com query limitada (CA-14)', () => {
     const c = await criarCenarioReserva();
     vi.stubEnv('PROTECAO_LIMITE_IP_DISPONIBILIDADE', '1');
     ipDaRequisicao.valor = ipNovo();
-    const params = { s: c.A, p: c.ana, data: DIA_CHAVE };
+    const params = { s: c.A, data: DIA_CHAVE };
     const primeira = await html(c.s.slugAtual, params);
-    expect(primeira).toContain(sp(DIA, '09:00').toISOString().slice(0, 10));
+    expect(primeira).toContain('name="h0"');
+    expect(primeira).toContain(valorDoItem(c.ana, sp(DIA, '09:00')));
     const segunda = await html(c.s.slugAtual, params);
     expect(segunda).toContain('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
-    expect(segunda).not.toContain('name="inicio"');
-    expect(segunda).not.toContain(`h=${encodeURIComponent(sp(DIA, '09:00').toISOString())}`);
+    expect(segunda).not.toContain('name="h0"');
+    expect(segunda).not.toContain(sp(DIA, '09:00').toISOString());
   });
 
   it('o passo "dados" entrega o campo cf-turnstile-response com o token simulado', async () => {
     const c = await criarCenarioReserva();
     ipDaRequisicao.valor = ipNovo();
-    const pagina = await html(c.s.slugAtual, { s: c.A, p: c.ana, data: DIA_CHAVE, h: sp(DIA, '10:00').toISOString() });
+    const pagina = await html(c.s.slugAtual, { s: c.A, data: DIA_CHAVE, h0: valorDoItem(c.ana, sp(DIA, '10:00')) });
     expect(pagina).toMatch(/<input type="hidden" name="cf-turnstile-response" value="XXXX\.DUMMY\.TOKEN\.XXXX"\/>/);
   });
 });

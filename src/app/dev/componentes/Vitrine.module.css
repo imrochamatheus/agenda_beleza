@@ -25,3 +25,25 @@
   color: var(--cor-texto-suave);
   font-size: var(--texto-sm);
 }
+
+/* Link "Alterar" do roteiro: alvo mínimo de 44 px. */
+.acao {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+}
+
+.total {
+  margin: 0;
+  font-size: var(--texto-lg);
+  font-weight: 600;
+}
+
+.somenteLeitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

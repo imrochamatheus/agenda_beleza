@@ -1,10 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { diaFuturo, linkDoDia, marcarComSetas, noPassoDoServico, paradasDoRoteiro, radioDoHorario, tabAte } from './suporte/publico';
 import { analisarComAxe, semRolagemHorizontal } from './suporte/vitrine';
 
-// D-026 CA-12: o fluxo da página pública de reserva só com o teclado em /dev/reserva (mesmo componente da
-// página real, dados em memória, sem banco), em 375×812: sem rolagem horizontal e axe 4.14.0 sem
-// violações em cada passo. A variante sem JavaScript está em reserva-publica-sem-js.spec.ts.
+// D-026 CA-12 e D-050 critérios visuais 3–6, 9, 10, 12, 15 e 16: o fluxo da página pública de reserva só com o
+// teclado em /dev/reserva (mesmos componentes da página real, dados em memória, sem banco), em 375×812: sem rolagem
+// horizontal e axe 4.14.0 sem violações em cada passo, foco visível em cada parada. Exemplo do web-design: Escova
+// (Ana, Bia), Hidratação (as três) e Manicure (só Carla); segunda a sábado. A variante sem JavaScript está em
+// reserva-publica-sem-js.spec.ts.
 
 async function abrir(page: Page, busca = '') {
   const resposta = await page.goto(`/dev/reserva${busca}`);
@@ -14,87 +17,135 @@ async function abrir(page: Page, busca = '') {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }
 
-/** Foca o elemento e confere que o foco é visível (contorno), como o Tab o deixaria. */
-async function focar(page: Page, alvo: ReturnType<Page['getByRole']>) {
-  await alvo.focus();
-  await expect(alvo).toBeFocused();
-  const contorno = await alvo.evaluate((e) => {
-    const s = getComputedStyle(e);
-    return { estilo: s.outlineStyle, largura: parseFloat(s.outlineWidth), sombra: s.boxShadow };
-  });
-  expect(contorno.estilo !== 'none' && contorno.largura > 0 ? true : contorno.sombra !== 'none').toBe(true);
-}
-
 async function verificar(page: Page, contexto: string) {
   await semRolagemHorizontal(page, contexto);
   await analisarComAxe(page, contexto);
 }
 
+/** Alvos de pelo menos 44 px de altura (critério 5). */
+async function alvoMinimo(page: Page, alvo: ReturnType<Page['getByRole']>, contexto: string) {
+  const caixa = await alvo.boundingBox();
+  expect(caixa, contexto).not.toBeNull();
+  expect(caixa!.height, `${contexto}: altura`).toBeGreaterThanOrEqual(44);
+}
+
 test.describe('CA-12: reserva completa só com o teclado (375×812)', () => {
-  test('perfil → serviços → profissional → dia → horário → dados → confirmação', async ({ page }) => {
+  test('serviços → dia → um passo por serviço (filtro e setas) → dados (erro e correção) → confirmação', async ({ page }) => {
+    const dia = diaFuturo({ de: 1, ate: 13, semana: [1, 2, 3, 4, 5, 6] });
     await abrir(page);
     await expect(page.getByRole('heading', { level: 1, name: /Studio Bela/ })).toBeVisible();
     await verificar(page, 'perfil e serviços');
 
-    // 1. Serviços: Space marca, Enter no botão envia o GET.
-    const escova = page.getByRole('checkbox', { name: /Escova/ });
-    await focar(page, escova);
-    await page.keyboard.press('Space');
-    await expect(escova).toBeChecked();
-    await focar(page, page.getByRole('button', { name: 'Continuar' }));
+    for (const nome of ['Escova', 'Hidratação', 'Manicure']) {
+      const caixa = page.getByRole('checkbox', { name: new RegExp(`^${nome}\\b`) });
+      await tabAte(page, caixa);
+      await page.keyboard.press('Space');
+      await expect(caixa).toBeChecked();
+    }
+    await tabAte(page, page.getByRole('button', { name: 'Continuar' }));
     await page.keyboard.press('Enter');
 
-    // 2. Profissional.
-    await expect(page.getByRole('heading', { level: 2, name: 'Profissional' })).toBeVisible();
-    await expect(page.getByRole('radio', { name: /Sem preferência/ })).toBeChecked();
-    await verificar(page, 'passo profissional');
-    await focar(page, page.getByRole('radio', { name: /Sem preferência/ }));
-    await page.keyboard.press('ArrowDown');
-    await expect(page.getByRole('radio', { name: 'Ana' })).toBeChecked();
-    await page.keyboard.press('ArrowUp');
-    await focar(page, page.getByRole('button', { name: 'Continuar' }));
-    await page.keyboard.press('Enter');
-
-    // 3. Dia: o primeiro link de dia com horários.
     await expect(page.getByRole('heading', { level: 2, name: 'Escolha o dia' })).toBeVisible();
     await verificar(page, 'passo dia');
-    const dia = page.getByRole('list').getByRole('link', { name: /\d{2}\/\d{2}\/\d{4}$/ }).first();
-    await focar(page, dia);
+    await tabAte(page, linkDoDia(page, dia));
     await page.keyboard.press('Enter');
 
-    // 4. Horário.
-    await expect(page.getByRole('heading', { level: 2, name: 'Escolha o horário' })).toBeVisible();
-    await verificar(page, 'passo horário');
-    const primeiro = page.getByRole('radio').first();
-    await focar(page, primeiro);
-    await page.keyboard.press('Space');
-    await expect(primeiro).toBeChecked();
-    await focar(page, page.getByRole('button', { name: 'Continuar' }));
+    // Serviço 1: Escova (Ana, Bia). O filtro é navegação; o atual tem aria-current (critério 10).
+    await noPassoDoServico(page, 'Escova', 1, 3);
+    await verificar(page, 'serviço 1');
+    const filtro = page.getByRole('navigation', { name: 'Filtrar por profissional' });
+    await expect(filtro.getByRole('link', { name: 'Todos (2)' })).toHaveAttribute('aria-current', 'true');
+    await alvoMinimo(page, filtro.getByRole('link', { name: 'Ana', exact: true }), 'pílula do filtro');
+    // Todas as grades do serviço partilham um único `name` (uma parada de Tab por serviço).
+    const nomes = await page.getByRole('group', { name: /^Horários de / }).getByRole('radio').evaluateAll((els) => [...new Set(els.map((e) => (e as HTMLInputElement).name))]);
+    expect(nomes).toEqual(['h0']);
+    await tabAte(page, page.getByRole('group', { name: 'Horários de Ana' }).getByRole('radio').first());
+    await marcarComSetas(page, radioDoHorario(page, 'Ana', '09:00'));
+    await tabAte(page, page.getByRole('button', { name: 'Continuar' }));
     await page.keyboard.press('Enter');
 
-    // 5. Dados: envio vazio mostra erros por campo.
+    // Serviço 2: Hidratação; usa o filtro (Tab + Enter) para ir direto à Bia.
+    await noPassoDoServico(page, 'Hidratação', 2, 3);
+    await verificar(page, 'serviço 2');
+    const bia = page.getByRole('navigation', { name: 'Filtrar por profissional' }).getByRole('link', { name: 'Bia', exact: true });
+    await tabAte(page, bia);
+    await page.keyboard.press('Enter');
+    await expect(bia).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByRole('group', { name: /^Horários de / })).toHaveCount(1);
+    await alvoMinimo(page, page.getByRole('link', { name: /^Alterar Escova/ }), '"Alterar"');
+    await tabAte(page, page.getByRole('group', { name: 'Horários de Bia' }).getByRole('radio').first());
+    await marcarComSetas(page, radioDoHorario(page, 'Bia', '10:00'));
+    await tabAte(page, page.getByRole('button', { name: 'Continuar' }));
+    await page.keyboard.press('Enter');
+
+    // Serviço 3: Manicure, só Carla (sem filtro).
+    await noPassoDoServico(page, 'Manicure', 3, 3);
+    await verificar(page, 'serviço 3');
+    await expect(page.getByRole('navigation', { name: 'Filtrar por profissional' })).toHaveCount(0);
+    await tabAte(page, page.getByRole('group', { name: 'Horários de Carla' }).getByRole('radio').first());
+    await marcarComSetas(page, radioDoHorario(page, 'Carla', '15:00'));
+    await tabAte(page, page.getByRole('button', { name: 'Continuar para seus dados' }));
+    await page.keyboard.press('Enter');
+
+    // Dados: envio vazio mostra erros por campo.
     await expect(page.getByRole('heading', { level: 2, name: 'Seus dados' })).toBeVisible();
+    expect(await paradasDoRoteiro(page)).toEqual([
+      expect.stringMatching(/^09:00 .*Escova .*com Ana/),
+      expect.stringMatching(/^10:00 .*Hidratação .*com Bia/),
+      expect.stringMatching(/^15:00 .*Manicure .*com Carla/),
+    ]);
     await verificar(page, 'passo dados');
-    await focar(page, page.getByRole('button', { name: 'Confirmar reserva' }));
+    await tabAte(page, page.getByRole('button', { name: 'Confirmar reserva' }));
     await page.keyboard.press('Enter');
     await expect(page.getByText('Informe', { exact: false }).first()).toBeVisible();
-    await expect(page.getByRole('alert').or(page.getByText('Erro:').first()).first()).toBeVisible();
     await verificar(page, 'passo dados com erros');
 
-    // Preenche só com o teclado e confirma.
     await page.getByRole('textbox', { name: /Nome/ }).fill('Maria da Silva');
     await page.getByRole('textbox', { name: /Telefone/ }).fill('(11) 98765-4321');
     const aceite = page.getByRole('checkbox', { name: /mensagens da minha reserva/ });
-    await focar(page, aceite);
+    await tabAte(page, aceite);
     await page.keyboard.press('Space');
     await expect(aceite).toBeChecked();
-    await focar(page, page.getByRole('button', { name: 'Confirmar reserva' }));
+    await tabAte(page, page.getByRole('button', { name: 'Confirmar reserva' }));
     await page.keyboard.press('Enter');
 
     await expect(page.getByText('Reserva confirmada!')).toBeVisible();
-    await expect(page.getByText('Profissional: Ana')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Sua reserva' }).getByText('Escova', { exact: true })).toBeVisible();
+    expect(await paradasDoRoteiro(page)).toEqual([
+      expect.stringMatching(/^09:00.*10:00 .*Escova .*com Ana/),
+      expect.stringMatching(/^10:00.*10:40 .*Hidratação .*com Bia/),
+      expect.stringMatching(/^15:00.*15:45 .*Manicure .*com Carla/),
+    ]);
+    await expect(page.getByRole('region', { name: 'Sua reserva' }).getByText('R$ 205,00')).toBeVisible();
     await verificar(page, 'confirmação');
+  });
+
+  for (const [vista, titulo] of [
+    ['reescolha', 'Escolha outro horário para Hidratação'],
+    ['confirmada', 'Sua reserva'],
+    ['conflito', 'Hidratação'],
+  ] as const) {
+    test(`vista ${vista}: axe sem violações e sem rolagem horizontal`, async ({ page }) => {
+      await abrir(page, `?vista=${vista}`);
+      await expect(page.getByRole('heading', { level: 2, name: titulo, exact: true })).toBeVisible();
+      await verificar(page, `vista ${vista}`);
+    });
+  }
+
+  test('reescolha: o aviso nomeia o serviço e o horário; os dados voltam preenchidos (critério 15)', async ({ page }) => {
+    await abrir(page, '?vista=reescolha');
+    await expect(page.getByRole('status')).toContainText('O horário das 10:00 de Hidratação com Bia acabou de ser reservado.');
+    await expect(page.getByRole('textbox', { name: /Nome/ })).toHaveValue('Maria Souza');
+    await expect(page.getByRole('textbox', { name: /Telefone/ })).not.toHaveValue('');
+    await expect(page.getByRole('checkbox', { name: /mensagens da minha reserva/ })).toBeChecked();
+    // Os itens mantidos ficam no roteiro, sem "Alterar".
+    await expect(page.getByRole('link', { name: /^Alterar / })).toHaveCount(0);
+  });
+
+  test('conflito: os horários do serviço coincidem com os já escolhidos → vazio com as saídas', async ({ page }) => {
+    await abrir(page, '?vista=conflito');
+    await expect(page.getByRole('heading', { level: 3, name: /coincidem com os serviços que você já escolheu/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Escolher outro dia' })).toBeVisible();
+    await expect(page.getByRole('radio')).toHaveCount(0);
   });
 
   test('vista indisponível: aviso, sem formulário, axe sem violações', async ({ page }) => {
@@ -114,9 +165,9 @@ test.describe('CA-12: reserva completa só com o teclado (375×812)', () => {
   });
 
   test('parâmetros malformados na URL voltam ao passo anterior, sem erro', async ({ page }) => {
-    await abrir(page, '?s=lixo&p=x&data=2026-02-30&h=amanha');
+    await abrir(page, '?s=lixo&p=x&data=2026-02-30&h0=amanha');
     await expect(page.getByRole('heading', { level: 2, name: 'Serviços' })).toBeVisible();
-    await abrir(page, '?s=11111111-1111-4111-8111-111111111111&p=qualquer&data=nao');
+    await abrir(page, '?s=11111111-1111-4111-8111-111111111111&data=nao&h0=x');
     await expect(page.getByRole('heading', { level: 2, name: 'Escolha o dia' })).toBeVisible();
   });
 });
