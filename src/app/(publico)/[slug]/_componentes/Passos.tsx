@@ -1,38 +1,33 @@
-import { diaDaSemana } from '@/domain/disponibilidade';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { FaixaDeDias } from '@/components/ui/FaixaDeDias';
 import { RoteiroDoDia } from '@/components/ui/RoteiroDoDia';
 import type { ParadaDoRoteiro } from '@/components/ui/RoteiroDoDia';
 import { SlotGrid } from '@/components/ui/SlotGrid';
-import {
-  formatarDataCivil,
-  formatarDiaDaSemana,
-  formatarDuracao,
-  formatarHora,
-  formatarMoeda,
-} from '@/lib/format';
+import { formatarDuracao, formatarHora, formatarMoeda } from '@/lib/format';
 import {
   camposOcultos,
   hrefAlterarItem,
   hrefAlterarServicos,
   hrefFiltro,
   hrefOutroDia,
-  lerData,
   lerItem,
-  montarHref,
 } from '@/server/reserva-publica/passos';
 import { MENSAGENS_AVISO, MENSAGENS_PASSO } from '@/server/reserva-publica/tipos';
 import type {
   CodigoAviso,
   ConsultaDaUrl,
+  FaixaDaSemana,
   ItemEscolhido,
   ProfissionalComHorarios,
   Selecao,
+  ServicoDaSelecao,
   VisaoDoPasso,
 } from '@/server/reserva-publica/tipos';
 import type { ServicoPublico } from '@/server/repos/publico';
 
+import { estadoSemDia, propsDaFaixa, rotuloDoDia } from './faixa';
 import { FiltroDeProfissional } from './FiltroDeProfissional';
 import estilos from './Salao.module.css';
 
@@ -45,12 +40,8 @@ function Aviso({ codigo }: { codigo: CodigoAviso | null }) {
   return codigo ? <Alert variante="aviso">{MENSAGENS_AVISO[codigo]}</Alert> : null;
 }
 
-/** 'Terça-feira, 01/12/2026' a partir de 'AAAA-MM-DD' (dia civil do salão, sem fuso). */
-export function rotuloDoDia(chave: string): string {
-  const d = lerData(chave);
-  if (d === null) return chave;
-  return `${formatarDiaDaSemana(diaDaSemana(d))}, ${formatarDataCivil(chave)}`;
-}
+// O `FormularioDados` importa `rotuloDoDia` daqui; a implementação mora em `faixa.ts` (D-051 §3.6).
+export { rotuloDoDia };
 
 /** "1 serviço", "3 serviços". */
 export const quantidadeDeServicos = (n: number): string => `${n} ${n === 1 ? 'serviço' : 'serviços'}`;
@@ -187,35 +178,66 @@ export function PassoServicos({ base, servicos, visao }: { base: string; servico
   );
 }
 
-export function PassoData({ base, visao }: { base: string; visao: Visao<'data'> }) {
+const ID_INDICADOR = 'reservar-indicador';
+
+/**
+ * Cabeçalho do passo de um serviço (D-051 §3.6, web-design §5.1): indicador "Serviço k de N", `h2#reservar`
+ * descrito por ele, duração e preço e o aviso (antes da régua no DOM, critério 13).
+ */
+function CabecalhoDoPasso({
+  indice,
+  total,
+  servico,
+  aviso,
+}: {
+  indice: number;
+  total: number;
+  servico: ServicoDaSelecao;
+  aviso: string | null;
+}) {
+  return (
+    <>
+      <p id={ID_INDICADOR} className={estilos.indicador}>
+        {MENSAGENS_PASSO.indicador(indice + 1, total)}
+      </p>
+      <h2 id="reservar" aria-describedby={ID_INDICADOR}>
+        {servico.nome}
+      </h2>
+      <p className={estilos.suave}>{detalheDoServico(servico.duracaoMin, servico.precoCentavos)}</p>
+      {aviso ? <Alert variante="aviso">{aviso}</Alert> : null}
+    </>
+  );
+}
+
+/** Resumo dos serviços e a régua da semana (passo do serviço 0, com ou sem dia; D-051 RN-1). */
+function ResumoEFaixa({ base, s, selecao, faixa }: { base: string; s: readonly string[]; selecao: Selecao; faixa: FaixaDaSemana }) {
+  return (
+    <>
+      <ResumoDaSelecao selecao={selecao} />
+      <FaixaDeDias {...propsDaFaixa(base, s, faixa)} className={estilos.faixaNoCartao} />
+    </>
+  );
+}
+
+/**
+ * Passo do serviço 0 sem dia escolhido (D-051 RN-7, RN-9): régua da semana e, no lugar dos horários, o estado
+ * vazio. Sem `<form>` (D6): os dias e as semanas são links GET.
+ */
+export function PassoDia({ base, visao }: { base: string; visao: Visao<'dia'> }) {
+  const vazio = estadoSemDia(visao.faixa, visao.servico.nome);
   return (
     <section className={estilos.reserva} aria-labelledby="reservar">
-      <h2 id="reservar">Escolha o dia</h2>
-      <Aviso codigo={visao.aviso} />
-      <ResumoDaSelecao selecao={visao.selecao} />
-      <ul className={estilos.dias}>
-        {visao.dias.map((d) => (
-          <li key={d.data} className={estilos.dia}>
-            {d.temHorarios ? (
-              <a href={montarHref(base, { s: visao.s, data: d.data })}>{rotuloDoDia(d.data)}</a>
-            ) : (
-              <span className={estilos.suave}>{rotuloDoDia(d.data)} (sem horários)</span>
-            )}
-          </li>
-        ))}
-      </ul>
-      <p className={`${estilos.suave} ${estilos.apoio}`}>{MENSAGENS_PASSO.diaComHorarios}</p>
+      <CabecalhoDoPasso
+        indice={0}
+        total={visao.total}
+        servico={visao.servico}
+        aviso={visao.aviso === null ? null : MENSAGENS_AVISO[visao.aviso]}
+      />
+      <ResumoEFaixa base={base} s={visao.s} selecao={visao.selecao} faixa={visao.faixa} />
+      <div className={estilos.horarios}>
+        <EmptyState nivelTitulo={3} titulo={vazio.titulo} descricao={<p>{vazio.texto}</p>} />
+      </div>
       <ul className={estilos.navegacao}>
-        {visao.anterior ? (
-          <li>
-            <a href={montarHref(base, { s: visao.s, de: visao.anterior })}>Dias anteriores</a>
-          </li>
-        ) : null}
-        {visao.proxima ? (
-          <li>
-            <a href={montarHref(base, { s: visao.s, de: visao.proxima })}>Próximos dias</a>
-          </li>
-        ) : null}
         <li>
           <a href={hrefAlterarServicos(base, { s: visao.s })}>Alterar serviços</a>
         </li>
@@ -257,13 +279,13 @@ function paradasDoPasso(base: string, visao: Visao<'servico'>, consulta: Consult
 /**
  * Passo "Serviço k de N" (web-design §5.3): GET com os itens dos outros serviços em campos ocultos e as
  * grades deste serviço (um `name` por serviço). Ordem de leitura: indicador → título → roteiro → filtro →
- * grades → "Continuar" → navegação.
+ * grades → "Continuar" → navegação. No serviço 0 (`faixa` presente, D-051) entram o resumo e a régua antes
+ * dos horários, que ficam num bloco com traço no topo, e "Escolher outro dia" sai (a régua cumpre o papel).
  */
 export function PassoServico({ base, visao }: { base: string; visao: Visao<'servico'> }) {
   const consulta = visao.consulta;
   const nome = visao.servico.nome;
-  const aviso = textoDoAviso(visao);
-  const idIndicador = 'reservar-indicador';
+  const faixa = visao.faixa;
   const filtros = [
     { id: null, rotulo: `Todos (${visao.opcoesDeFiltro.length})` },
     ...visao.opcoesDeFiltro.map((p) => ({ id: p.id, rotulo: p.nome })),
@@ -272,16 +294,8 @@ export function PassoServico({ base, visao }: { base: string; visao: Visao<'serv
     href: hrefFiltro(base, consulta, o.id, visao.alterando ? visao.indice : null),
     atual: o.id === visao.filtro,
   }));
-  return (
-    <form method="get" action={base} className={estilos.reserva}>
-      <p id={idIndicador} className={estilos.indicador}>
-        {MENSAGENS_PASSO.indicador(visao.indice + 1, visao.total)}
-      </p>
-      <h2 id="reservar" aria-describedby={idIndicador}>
-        {nome}
-      </h2>
-      <p className={estilos.suave}>{detalheDoServico(visao.servico.duracaoMin, visao.servico.precoCentavos)}</p>
-      {aviso ? <Alert variante="aviso">{aviso}</Alert> : null}
+  const horarios = (
+    <>
       <RoteiroDoDia rotulo="Seu dia" titulo={rotuloDoDia(visao.data)} paradas={paradasDoPasso(base, visao, consulta)} />
       <CamposOcultos campos={camposOcultos(consulta, visao.indice)} />
       {visao.vazio !== null ? (
@@ -304,10 +318,25 @@ export function PassoServico({ base, visao }: { base: string; visao: Visao<'serv
           </div>
         </>
       )}
+    </>
+  );
+  return (
+    <form method="get" action={base} className={estilos.reserva}>
+      <CabecalhoDoPasso indice={visao.indice} total={visao.total} servico={visao.servico} aviso={textoDoAviso(visao)} />
+      {faixa !== null ? (
+        <>
+          <ResumoEFaixa base={base} s={visao.s} selecao={visao.selecao} faixa={faixa} />
+          <div className={estilos.horarios}>{horarios}</div>
+        </>
+      ) : (
+        horarios
+      )}
       <ul className={estilos.navegacao}>
-        <li>
-          <a href={hrefOutroDia(base, consulta)}>Escolher outro dia</a>
-        </li>
+        {faixa === null ? (
+          <li>
+            <a href={hrefOutroDia(base, consulta)}>Escolher outro dia</a>
+          </li>
+        ) : null}
         <li>
           <a href={hrefAlterarServicos(base, consulta)}>Alterar serviços</a>
         </li>

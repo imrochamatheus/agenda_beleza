@@ -32,6 +32,7 @@ describe('Vitrine (RN-17)', () => {
       'Lista de dados',
       'Grade de horários',
       'Roteiro do dia',
+      'Régua da semana',
       'Diálogos',
     ]);
     const contato = screen.getByLabelText('E-mail de contato');
@@ -144,5 +145,24 @@ describe('Vitrine (RN-17)', () => {
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Cancelar', hidden: true }));
     expect(contador('contador-confirmado')).toBe('Confirmações: 0');
     expect(contador('contador-cancelado')).toBe('Cancelamentos: 1');
+  });
+
+  it('D-051: régua da semana nos quatro exemplos (selecionado, vazia, última com 5 dias, marcado sem horário)', () => {
+    render(<Vitrine />);
+    const selecionada = screen.getByRole('list', { name: 'Semana com dia selecionado 06/12/2026 a 12/12/2026' });
+    expect(within(selecionada).getAllByRole('link')).toHaveLength(6);
+    expect(within(selecionada).getByRole('link', { name: 'Terça-feira, 08/12/2026' }).getAttribute('aria-current')).toBe(
+      'date',
+    );
+    expect(within(selecionada).getByText('Domingo, 06/12/2026, sem horários')).toBeTruthy();
+    const vazia = screen.getByRole('group', { name: 'Semana toda sem horário 13/12/2026 a 19/12/2026' });
+    expect(vazia.getAttribute('tabindex')).toBe('0');
+    expect(within(vazia).queryAllByRole('link')).toHaveLength(0);
+    const ultima = screen.getByRole('list', { name: 'Última semana, com 5 dias 24/01/2027 a 28/01/2027' });
+    expect(within(ultima).getAllByRole('listitem')).toHaveLength(5);
+    expect(screen.queryByRole('navigation', { name: 'Semanas (marcado sem horário)' })).toBeNull();
+    const marcado = screen.getByRole('list', { name: /^Dia marcado sem horário/ }).querySelector('[aria-current="date"]')!;
+    expect(marcado.tagName).toBe('SPAN');
+    expect(marcado.textContent).toContain('Quarta-feira, 23/12/2026, sem horários');
   });
 });

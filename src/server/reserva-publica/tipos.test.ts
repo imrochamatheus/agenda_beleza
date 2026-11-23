@@ -34,6 +34,24 @@ describe('MENSAGENS_PASSO', () => {
     expect(MENSAGENS_PASSO.reescolhaSemHorarioTitulo('Hidratação')).toBe('Não há mais horários para Hidratação neste dia.');
   });
 
+  it('régua da semana e estados sem dia (D-051 web-design §4.3, §6)', () => {
+    expect(MENSAGENS_PASSO.escolhaODia).toBe('Escolha o dia');
+    expect([MENSAGENS_PASSO.semanaAnterior, MENSAGENS_PASSO.proximaSemana]).toEqual(['Semana anterior', 'Próxima semana']);
+    expect(MENSAGENS_PASSO.navegacaoSemanas).toBe('Semanas');
+    expect(MENSAGENS_PASSO.hoje).toBe('Hoje');
+    expect([MENSAGENS_PASSO.sufixoHoje, MENSAGENS_PASSO.sufixoSemHorarios]).toEqual([', hoje', ', sem horários']);
+    expect(MENSAGENS_PASSO.semDiaTitulo).toBe('Escolha um dia para ver os horários');
+    expect(MENSAGENS_PASSO.semDiaTexto('Escova')).toBe('Os horários de Escova aparecem aqui, separados por profissional.');
+    expect(MENSAGENS_PASSO.semanaVaziaTitulo).toBe('Nenhum dia desta semana tem horário');
+    expect(MENSAGENS_PASSO.semanaVaziaComProxima).toBe('Veja a próxima semana ou altere os serviços.');
+    expect(MENSAGENS_PASSO.semanaVaziaUltima).toBe(
+      'Esta é a última semana aberta para reservas. Volte à semana anterior ou altere os serviços.',
+    );
+    expect(MENSAGENS_PASSO.semanaVaziaUnica).toBe(
+      'Não há dias abertos para reservas agora. Altere os serviços ou tente mais tarde.',
+    );
+  });
+
   it('todo código de aviso tem texto', () => {
     for (const c of CODIGOS_AVISO) expect(MENSAGENS_AVISO[c]).toMatch(/\S/);
   });

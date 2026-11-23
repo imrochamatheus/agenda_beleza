@@ -121,6 +121,28 @@ export function formatarDiaDaSemana(dia: number): string {
   return DIAS_DA_SEMANA[dia];
 }
 
+/** Forma curta (D-051, régua da semana): índice = dia da semana, 0 = domingo. */
+const DIAS_DA_SEMANA_CURTOS = Object.freeze(['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']);
+
+/** 0 → 'Dom', 1 → 'Seg' … 6 → 'Sáb'; fora de 0..6 inteiro → RangeError (D-051). */
+export function formatarDiaDaSemanaCurto(dia: number): string {
+  if (typeof dia !== 'number' || !Number.isInteger(dia) || dia < 0 || dia > 6) {
+    throw new RangeError(`formatarDiaDaSemanaCurto: o dia deve ser inteiro de 0 a 6 (recebido: ${String(dia)})`);
+  }
+  return DIAS_DA_SEMANA_CURTOS[dia];
+}
+
+const MESES_CURTOS = Object.freeze(['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']);
+
+/**
+ * 'AAAA-MM-DD' → { dia: '1', mes: 'dez' } (dia sem zero à esquerda, mês curto minúsculo; D-051). Data civil,
+ * sem fuso. Chave inválida → RangeError (mesma validação de `formatarDataCivil`).
+ */
+export function formatarDiaEMesCurtos(chave: string): { dia: string; mes: string } {
+  const [dia, mes] = formatarDataCivil(chave).split('/');
+  return { dia: String(Number(dia)), mes: MESES_CURTOS[Number(mes) - 1] };
+}
+
 type Partes = { day: string; month: string; year: string; hour: string; minute: string };
 
 const formatadores = new Map<string, Intl.DateTimeFormat>();

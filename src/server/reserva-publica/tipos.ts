@@ -37,6 +37,20 @@ export const MENSAGENS_PASSO = {
   continuar: 'Continuar',
   continuarParaDados: 'Continuar para seus dados',
   diaComHorarios: 'Um dia aparece disponível quando cada serviço tem ao menos um horário livre nele.',
+  /** Régua da semana no passo do serviço 0 (D-051 web-design §4.3, §6). */
+  escolhaODia: 'Escolha o dia',
+  semanaAnterior: 'Semana anterior',
+  proximaSemana: 'Próxima semana',
+  navegacaoSemanas: 'Semanas',
+  hoje: 'Hoje',
+  sufixoHoje: ', hoje',
+  sufixoSemHorarios: ', sem horários',
+  semDiaTitulo: 'Escolha um dia para ver os horários',
+  semDiaTexto: (servico: string) => `Os horários de ${servico} aparecem aqui, separados por profissional.`,
+  semanaVaziaTitulo: 'Nenhum dia desta semana tem horário',
+  semanaVaziaComProxima: 'Veja a próxima semana ou altere os serviços.',
+  semanaVaziaUltima: 'Esta é a última semana aberta para reservas. Volte à semana anterior ou altere os serviços.',
+  semanaVaziaUnica: 'Não há dias abertos para reservas agora. Altere os serviços ou tente mais tarde.',
   /** Reescolha, um item: "O horário das 10:00 de Hidratação com Bia acabou de ser reservado. …". */
   reescolhaUm: (hora: string, servico: string, profissional: string | null) =>
     `O horário das ${hora} de ${servico}${profissional === null ? '' : ` com ${profissional}`} acabou de ser reservado. ` +
@@ -155,20 +169,39 @@ export type ProfissionalComHorarios = {
   horarios: string[];
 };
 
+/** Dia da régua: oferecido se CADA serviço tem ao menos um horário nele (DA-2). */
+export type DiaDaFaixa = { data: string; temHorarios: boolean };
+
+/** Régua de uma semana alinhada a hoje (D-051 RN-3). Datas civis 'AAAA-MM-DD' do salão. */
+export type FaixaDaSemana = {
+  /** Hoje (para "Hoje" e o sufixo ", hoje"). */
+  hoje: string;
+  inicio: string;
+  fim: string;
+  /** 1..7 dias, de `inicio` a `fim`. */
+  dias: DiaDaFaixa[];
+  /** Início da semana anterior/próxima; null fora da janela. */
+  anterior: string | null;
+  proxima: string | null;
+  /** Dia marcado (`aria-current`); null no passo `'dia'`. */
+  selecionado: string | null;
+};
+
 export type VisaoDoPasso =
   /** Consulta de horários limitada por IP (D-027): nenhum horário foi calculado. */
   | { passo: 'limitado' }
   /** `marcados`: serviços a deixar marcados ("Alterar serviços"). */
   | { passo: 'servicos'; marcados: string[]; aviso: CodigoAviso | null }
+  /** Passo do serviço 0 sem dia escolhido (D-051): a régua e o estado "escolha um dia". */
   | {
-      passo: 'data';
+      passo: 'dia';
       s: string[];
       selecao: Selecao;
-      de: string;
-      /** Dia oferecido se CADA serviço tem ao menos um horário nele (DA-2). */
-      dias: { data: string; temHorarios: boolean }[];
-      anterior: string | null;
-      proxima: string | null;
+      /** `selecao.servicos[0]`. */
+      servico: ServicoDaSelecao;
+      /** `s.length` (para "Serviço 1 de N"). */
+      total: number;
+      faixa: FaixaDaSemana;
       aviso: CodigoAviso | null;
     }
   | {
@@ -203,6 +236,8 @@ export type VisaoDoPasso =
       horarioPerdidoIso: string | null;
       /** Estado da URL deste passo (sem `f`, `alterar`, `enviado`, `aviso`). */
       consulta: ConsultaDaUrl;
+      /** Régua da semana da `data`: só no serviço 0 (`indice === 0`); null nos passos k ≥ 1 (D-051). */
+      faixa: FaixaDaSemana | null;
     }
   | {
       passo: 'dados';

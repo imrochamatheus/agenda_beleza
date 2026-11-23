@@ -223,7 +223,7 @@ describe('FormularioDados: reescolha por item (CA-10, web-design §5.6)', () => 
     expect(screen.getByRole('heading', { level: 3, name: 'Não há mais horários para Hidratação neste dia.' })).toBeTruthy();
     const outroDia = screen.getByRole('link', { name: 'Escolher outro dia' }).getAttribute('href')!;
     const seguir = screen.getByRole('link', { name: 'Seguir sem Hidratação' }).getAttribute('href')!;
-    expect(outroDia).toBe(`/bela?s=${S[0]}&s=${S[1]}&s=${S[2]}&de=2026-12-01`);
+    expect(outroDia).toBe(`/bela?s=${S[0]}&s=${S[1]}&s=${S[2]}&de=2026-12-01#reservar`);
     expect(seguir).toBe(`/bela?s=${S[0]}&s=${S[2]}&data=2026-12-01&h0=${encodeURIComponent(V[0])}&h1=${encodeURIComponent(V[2])}`);
     expect(outroDia + seguir).not.toMatch(/Maria|123/);
     expect(screen.queryAllByRole('radio')).toHaveLength(0);

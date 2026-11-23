@@ -1,7 +1,16 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { carregarPasso, carregarSalao, lerRegrasDaPagina } from '@/server/reserva-publica/pagina';
-import { camposOcultos, chaveDeData, hrefAlterarItem, hrefSeguirSem, lerPasso, lerSelecao } from '@/server/reserva-publica/passos';
+import {
+  camposOcultos,
+  chaveDeData,
+  hrefAlterarItem,
+  hrefDaSemana,
+  hrefDoDia,
+  hrefSeguirSem,
+  lerPasso,
+  lerSelecao,
+} from '@/server/reserva-publica/passos';
 import type { ParametrosBrutos } from '@/server/reserva-publica/passos';
 import { reescolhaDosItens } from '@/server/reserva-publica/reescolha';
 import { reservarPelaPagina } from '@/server/reserva-publica/servico';
@@ -56,10 +65,17 @@ const paramsDoHref = (href: string): ParametrosBrutos => {
   return p;
 };
 
-describe('CA-6/CA-9: percorrer serviços → data → serviço a serviço → dados → confirmação', () => {
+describe('CA-6/CA-9: percorrer serviços → dia (régua) → serviço a serviço → dados → confirmação', () => {
   it('A com Ana 09:00, B com Bia 10:00 e C com Carla 15:00: uma reserva com 3 itens e o resumo por início', async () => {
     const c = await criarCenarioTres();
-    let v = await abrir(c, { s: [c.A, c.B, c.C], data: DIA_CHAVE });
+    const s = [c.A, c.B, c.C];
+    // D-051: depois dos serviços vem a régua (semana 0); o dia D fica na semana seguinte.
+    const semana0 = await abrir(c, { s });
+    if (semana0.passo !== 'dia') throw new Error(`passo inesperado: ${semana0.passo}`);
+    const semana1 = await abrir(c, paramsDoHref(hrefDaSemana('/x', s, semana0.faixa.proxima!)));
+    if (semana1.passo !== 'dia') throw new Error(`passo inesperado: ${semana1.passo}`);
+    expect(semana1.faixa.dias.find((d) => d.data === DIA_CHAVE)?.temHorarios).toBe(true);
+    let v = await abrir(c, paramsDoHref(hrefDoDia('/x', s, DIA_CHAVE)));
     const escolhas = [h(c.ana, sp(DIA, '09:00')), h(c.bia, sp(DIA, '10:00')), h(c.carla, sp(DIA, '15:00'))];
     for (const [k, valor] of escolhas.entries()) {
       if (v.passo !== 'servico') throw new Error(`passo inesperado: ${v.passo}`);

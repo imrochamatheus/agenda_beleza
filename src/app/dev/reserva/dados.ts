@@ -7,10 +7,11 @@ import type { EstadoReserva, ReescolhaNoEstado } from '@/app/(publico)/[slug]/es
 import { mensagemDaReescolha } from '@/app/(publico)/[slug]/formulario';
 import { montarSemana } from '@/server/semana/montagem';
 import type { PerfilPublico, ProfissionalPublico, ServicoPublico } from '@/server/repos/publico';
-import { chaveDeData, DIAS_POR_PAGINA, valorDoItem, valoresDosItens } from '@/server/reserva-publica/passos';
+import { chaveDeData, inicioDaSemana, limitesDaSemana, valorDoItem, valoresDosItens } from '@/server/reserva-publica/passos';
 import type { ItemDaUrl, PassoLido } from '@/server/reserva-publica/passos';
 import type {
   CodigoAviso,
+  FaixaDaSemana,
   ItemEscolhido,
   ProfissionalComHorarios,
   ResumoConfirmacao,
@@ -148,6 +149,28 @@ function itemEscolhidoDemo(indice: number, s: readonly string[], x: ItemDaUrl): 
 
 const porInicio = (a: ItemEscolhido, b: ItemEscolhido) => (a.inicioIso < b.inicioIso ? -1 : a.inicioIso > b.inicioIso ? 1 : a.indice - b.indice);
 
+/**
+ * Régua da semana que começa em `inicio` (já alinhado), com a função real `limitesDaSemana` e a mesma regra
+ * DA-2 da página (cada serviço com ao menos um horário no dia, sem os itens escolhidos; D-051 RN-4).
+ */
+function faixaDemo(s: readonly string[], inicio: DataCivil, hoje: DataCivil, agora: Date, selecionado: DataCivil | null): FaixaDaSemana {
+  const semana = limitesDaSemana(inicio, { hoje, janelaDias: JANELA_DEMO });
+  const dias: FaixaDaSemana['dias'] = [];
+  for (let d = semana.de; compararDatas(d, semana.ate) <= 0; d = somarDias(d, 1)) {
+    const temHorarios = s.every((sid) => profissionaisDoServico(sid, d, agora, []).some((p) => p.horarios.length > 0));
+    dias.push({ data: chaveDeData(d), temHorarios });
+  }
+  return {
+    hoje: chaveDeData(hoje),
+    inicio: chaveDeData(semana.de),
+    fim: chaveDeData(semana.ate),
+    dias,
+    anterior: semana.anterior === null ? null : chaveDeData(semana.anterior),
+    proxima: semana.proxima === null ? null : chaveDeData(semana.proxima),
+    selecionado: selecionado === null ? null : chaveDeData(selecionado),
+  };
+}
+
 type EntradaDoServico = {
   s: string[];
   data: DataCivil;
@@ -159,6 +182,8 @@ type EntradaDoServico = {
   filtro: string | null;
   aviso: CodigoAviso | null;
   agora: Date;
+  /** Hoje no fuso da demonstração (régua do serviço 0). */
+  hoje: DataCivil;
 };
 
 /** View-model do passo "Serviço k de N", com a mesma forma de `carregarPasso`. */
@@ -200,6 +225,10 @@ function visaoDoServico(e: EntradaDoServico): Extract<VisaoDoPasso, { passo: 'se
     aviso: perdeu ? 'horario_indisponivel' : e.aviso,
     horarioPerdidoIso: perdeu ? e.atual!.inicio.toISOString() : null,
     consulta: { s: e.s, data: chaveDeData(e.data), h: valoresDosItens(itens) },
+    faixa:
+      e.indice === 0
+        ? faixaDemo(e.s, inicioDaSemana(e.data, { hoje: e.hoje, janelaDias: JANELA_DEMO }), e.hoje, e.agora, e.data)
+        : null,
   };
 }
 
@@ -210,26 +239,14 @@ export function visaoDemonstracao(passo: PassoLido, hoje: DataCivil, agora: Date
   }
   const selecao = selecaoDemo(passo.s);
   if (selecao === null) return { passo: 'servicos', marcados: [], aviso: 'servico_indisponivel' };
-  const ultima = somarDias(hoje, JANELA_DEMO);
-
-  if (passo.passo === 'data') {
-    const fim = somarDias(passo.de, DIAS_POR_PAGINA - 1);
-    const ate = compararDatas(fim, ultima) > 0 ? ultima : fim;
-    const dias: { data: string; temHorarios: boolean }[] = [];
-    for (let d = passo.de; compararDatas(d, ate) <= 0; d = somarDias(d, 1)) {
-      const temHorarios = passo.s.every((sid) => profissionaisDoServico(sid, d, agora, []).some((p) => p.horarios.length > 0));
-      dias.push({ data: chaveDeData(d), temHorarios });
-    }
-    const anterior = somarDias(passo.de, -DIAS_POR_PAGINA);
-    const proxima = somarDias(passo.de, DIAS_POR_PAGINA);
+  if (passo.passo === 'dia') {
     return {
-      passo: 'data',
+      passo: 'dia',
       s: passo.s,
       selecao,
-      de: chaveDeData(passo.de),
-      dias,
-      anterior: compararDatas(passo.de, hoje) > 0 ? chaveDeData(compararDatas(anterior, hoje) < 0 ? hoje : anterior) : null,
-      proxima: compararDatas(proxima, ultima) <= 0 ? chaveDeData(proxima) : null,
+      servico: selecao.servicos[0],
+      total: passo.s.length,
+      faixa: faixaDemo(passo.s, passo.semana, hoje, agora, null),
       aviso: passo.aviso,
     };
   }
@@ -246,6 +263,7 @@ export function visaoDemonstracao(passo: PassoLido, hoje: DataCivil, agora: Date
       filtro: passo.filtro,
       aviso: passo.aviso,
       agora,
+      hoje,
     });
   }
 
@@ -266,6 +284,7 @@ export function visaoDemonstracao(passo: PassoLido, hoje: DataCivil, agora: Date
       filtro: null,
       aviso: 'horario_indisponivel',
       agora,
+      hoje,
     });
     return { ...v, horarioPerdidoIso: perdido.inicio.toISOString() };
   }
@@ -286,7 +305,18 @@ export function visaoDemonstracao(passo: PassoLido, hoje: DataCivil, agora: Date
 // Vistas fixas do exemplo (web-design §5.5, §5.6, §5.7): Escova com Ana às 09:00, Hidratação com Bia às 10:00
 // e Manicure com Carla às 15:00, no próximo dia útil depois de hoje.
 
-export type VistaDaReserva = 'reescolha' | 'confirmada' | 'conflito';
+export type VistaDaReserva = 'reescolha' | 'confirmada' | 'conflito' | 'semana-vazia';
+
+/**
+ * Vista `semana-vazia` (D-051 CA-12, CA-17): o mesmo passo da query, com todos os dias da régua sem horário
+ * (no modelo da `visaoDoConflito`). Só muda o passo `'dia'` e o serviço 0; os demais ficam como vieram.
+ */
+export function visaoDaSemanaVazia(visao: VisaoDoPasso): VisaoDoPasso {
+  const esvaziar = (f: FaixaDaSemana): FaixaDaSemana => ({ ...f, dias: f.dias.map((d) => ({ ...d, temHorarios: false })) });
+  if (visao.passo === 'dia') return { ...visao, faixa: esvaziar(visao.faixa) };
+  if (visao.passo === 'servico' && visao.faixa !== null) return { ...visao, faixa: esvaziar(visao.faixa) };
+  return visao;
+}
 
 /** Próximo dia depois de hoje que não é domingo. */
 export function diaDoExemplo(hoje: DataCivil): DataCivil {
@@ -330,6 +360,7 @@ export function visaoDoConflito(hoje: DataCivil, agora: Date): VisaoDoPasso {
     filtro: null,
     aviso: null,
     agora,
+    hoje,
   });
   return { ...v, profissionais: v.profissionais.map((p) => ({ ...p, horarios: [] })), vazio: 'conflito' };
 }

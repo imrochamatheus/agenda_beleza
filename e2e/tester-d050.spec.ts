@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { comBanco, reservasDoTelefone, telefoneUnico } from './suporte/fixtures';
-import { diaFuturo, linkDoDia, marcarComSetas, noPassoDoServico, paradasDoRoteiro, radioDoHorario, tabAte } from './suporte/publico';
+import { diaFuturo, irParaSemanaDoDia, linkDoDia, marcarComSetas, noPassoDoServico, paradasDoRoteiro, radioDoHorario, tabAte } from './suporte/publico';
 import { semRolagemHorizontal } from './suporte/vitrine';
 
 // Sem JS o axe não injeta (a análise depende de script na página): aqui só a rolagem; o axe das mesmas telas é
@@ -42,8 +42,10 @@ test('TESTER: exemplo do usuário só com teclado e sem JS em 375×812 (itens ad
   await tabAte(page, page.getByRole('button', { name: 'Continuar' }));
   await page.keyboard.press('Enter');
 
-  await expect(page.getByRole('heading', { level: 2, name: 'Escolha o dia' })).toBeVisible();
+  // D-051: a régua fica no passo do 1º serviço (semana do dia por "Próxima semana", Tab + Enter).
+  await noPassoDoServico(page, 'Escova', 1, 3);
   await verificarTela(page, 'dia');
+  await irParaSemanaDoDia(page, dia, { teclado: true });
   await tabAte(page, linkDoDia(page, dia));
   await page.keyboard.press('Enter');
 

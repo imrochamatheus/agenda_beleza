@@ -19,6 +19,7 @@ import {
   PERFIL_DEMO,
   PERFIL_VAZIO_DEMO,
   SERVICOS_DEMO,
+  visaoDaSemanaVazia,
   visaoDemonstracao,
   visaoDoConflito,
 } from './dados';
@@ -27,7 +28,9 @@ import {
 // real, com dados em memória e uma ação que só valida. 404 sem VITRINE_COMPONENTES=true (exceto em next
 // dev), lido na requisição, antes de qualquer parâmetro. `?vista=indisponivel`, `?vista=vazio`, `?vista=limitado` e,
 // do exemplo da D-050 (Escova, Hidratação e Manicure com Ana, Bia e Carla), `?vista=reescolha` (Hidratação tomada),
-// `?vista=confirmada` e `?vista=conflito` (passo de um serviço vazio por conflito).
+// `?vista=confirmada` e `?vista=conflito` (passo de um serviço vazio por conflito). D-051 (régua da semana no
+// serviço 0): `?s=…` mostra o passo 0 sem dia, `…&data=` com o dia marcado, `…&de=` outra semana (a última com
+// `de` = hoje + 60) e `…&vista=semana-vazia` a mesma semana com todos os dias sem horário.
 export const dynamic = 'force-dynamic';
 
 const METADADOS: Metadata = {
@@ -52,7 +55,13 @@ export default async function DemonstracaoReserva({ searchParams }: Props) {
   const exemplo = vista === 'reescolha' || vista === 'confirmada' ? vista : null;
   const passo = exemplo !== null ? passoDoExemplo(hoje) : lerPasso(params, { hoje, janelaDias: JANELA_DEMO });
   const visao =
-    vista === 'limitado' ? { passo: 'limitado' as const } : vista === 'conflito' ? visaoDoConflito(hoje, agora) : visaoDemonstracao(passo, hoje, agora);
+    vista === 'limitado'
+      ? { passo: 'limitado' as const }
+      : vista === 'conflito'
+        ? visaoDoConflito(hoje, agora)
+        : vista === 'semana-vazia'
+          ? visaoDaSemanaVazia(visaoDemonstracao(passo, hoje, agora))
+          : visaoDemonstracao(passo, hoje, agora);
   return (
     <PaginaDoSalao
       base={ROTAS.devReserva}

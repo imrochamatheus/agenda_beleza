@@ -11,6 +11,8 @@ import {
   formatarDataHora,
   formatarDeslocamentoUtc,
   formatarDiaDaSemana,
+  formatarDiaDaSemanaCurto,
+  formatarDiaEMesCurtos,
   formatarFaixaDeMinutos,
   formatarLista,
   formatarHora,
@@ -477,4 +479,32 @@ describe('mascararTelefone (D-045 RN-2, CA-5)', () => {
       expect(mascararTelefone(v)).toBe('—');
     },
   );
+});
+
+describe('formatarDiaDaSemanaCurto (D-051)', () => {
+  it('0 = Dom … 6 = Sáb', () => {
+    expect([0, 1, 2, 3, 4, 5, 6].map(formatarDiaDaSemanaCurto)).toEqual(['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']);
+  });
+
+  it('fora de 0..6 inteiro → RangeError', () => {
+    for (const v of [7, -1, 1.5, Number.NaN, '1' as unknown as number]) {
+      expect(() => formatarDiaDaSemanaCurto(v)).toThrow(RangeError);
+    }
+  });
+});
+
+describe('formatarDiaEMesCurtos (D-051)', () => {
+  it('dia sem zero à esquerda e os 12 meses curtos, sem depender do fuso', () => {
+    const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+    meses.forEach((mes, i) => {
+      expect(formatarDiaEMesCurtos(`2026-${String(i + 1).padStart(2, '0')}-01`)).toEqual({ dia: '1', mes });
+    });
+    expect(formatarDiaEMesCurtos('2026-11-29')).toEqual({ dia: '29', mes: 'nov' });
+    expect(formatarDiaEMesCurtos('2024-02-29')).toEqual({ dia: '29', mes: 'fev' });
+    expect(formatarDiaEMesCurtos('2026-12-10')).toEqual({ dia: '10', mes: 'dez' });
+  });
+
+  it.each(['2026-02-30', 'x', '2026-13-01', '', '01/12/2026'])('%s → RangeError', (v) => {
+    expect(() => formatarDiaEMesCurtos(v)).toThrow(RangeError);
+  });
 });

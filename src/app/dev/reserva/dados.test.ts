@@ -12,6 +12,7 @@ import {
   JANELA_DEMO,
   passoDoExemplo,
   SERVICOS_DEMO,
+  visaoDaSemanaVazia,
   visaoDemonstracao,
   visaoDoConflito,
 } from './dados';
@@ -32,16 +33,50 @@ describe('visaoDemonstracao (D-050)', () => {
     expect(ver({ s: [ESCOVA, MANICURE], alterar: 'servicos' })).toMatchObject({ passo: 'servicos', marcados: [ESCOVA, MANICURE] });
   });
 
-  it('dias: 14 por página, domingos sem horário, navegação até o fim da janela; dia exige horário em cada serviço', () => {
+  it('dia (D-051): semana 0 de 7 dias sem dia marcado, domingos sem horário; última semana com 5 dias', () => {
     const v = ver({ s: [ESCOVA, MANICURE] });
-    if (v.passo !== 'data') throw new Error('passo inesperado');
-    expect(v.dias).toHaveLength(14);
-    expect(v.dias.find((d) => d.data === '2026-12-06')?.temHorarios).toBe(false);
-    expect(v.dias.find((d) => d.data === DIA)?.temHorarios).toBe(true);
+    if (v.passo !== 'dia') throw new Error('passo inesperado');
+    expect([v.servico.nome, v.total]).toEqual(['Escova', 2]);
+    expect(v.faixa.dias.map((d) => d.data)).toEqual(['2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04', '2026-12-05', '2026-12-06', '2026-12-07']);
+    expect(v.faixa.dias.find((d) => d.data === '2026-12-06')?.temHorarios).toBe(false);
+    expect(v.faixa.dias.find((d) => d.data === DIA)?.temHorarios).toBe(true);
     expect(v.selecao).toEqual({ servicos: [SERVICOS_DEMO[0], SERVICOS_DEMO[2]], precoTotalCentavos: 13000 });
-    expect([v.anterior, v.proxima]).toEqual([null, '2026-12-15']);
-    const fim = ver({ s: ESCOVA, de: '2027-01-20' });
-    expect(fim.passo === 'data' && [fim.dias.at(-1)?.data, fim.proxima, fim.anterior]).toEqual(['2027-01-30', null, '2027-01-06']);
+    expect([v.faixa.hoje, v.faixa.anterior, v.faixa.proxima, v.faixa.selecionado]).toEqual(['2026-12-01', null, '2026-12-08', null]);
+    // `de` = hoje + 60 (a última data): a 9ª semana, de hoje + 56 a hoje + 60.
+    const fim = ver({ s: ESCOVA, de: '2027-01-30' });
+    if (fim.passo !== 'dia') throw new Error('passo inesperado');
+    expect([fim.faixa.inicio, fim.faixa.fim, fim.faixa.dias.length, fim.faixa.proxima, fim.faixa.anterior]).toEqual([
+      '2027-01-26',
+      '2027-01-30',
+      5,
+      null,
+      '2027-01-19',
+    ]);
+  });
+
+  it('serviço 0 com dia (D-051): régua da semana do dia com ele marcado; serviço k ≥ 1 sem régua', () => {
+    const v = ver({ s: [ESCOVA, HIDRATACAO], data: '2026-12-10' });
+    if (v.passo !== 'servico') throw new Error('passo inesperado');
+    expect([v.faixa?.inicio, v.faixa?.fim, v.faixa?.selecionado, v.faixa?.anterior]).toEqual([
+      '2026-12-08',
+      '2026-12-14',
+      '2026-12-10',
+      '2026-12-01',
+    ]);
+    const k1 = ver({ s: [ESCOVA, HIDRATACAO], data: DIA, h0: valorDoItem(ANA, Z('09:00')) });
+    expect(k1).toMatchObject({ passo: 'servico', indice: 1, faixa: null });
+  });
+
+  it('semana vazia (CA-12, CA-17): todos os dias sem horário no passo dia e no serviço 0; os demais ficam iguais', () => {
+    const dia = visaoDaSemanaVazia(ver({ s: [ESCOVA] }));
+    expect(dia.passo === 'dia' && dia.faixa.dias.every((d) => !d.temHorarios)).toBe(true);
+    expect(dia.passo === 'dia' && dia.faixa.proxima).toBe('2026-12-08');
+    const s0 = visaoDaSemanaVazia(ver({ s: [ESCOVA], data: DIA }));
+    expect(s0.passo === 'servico' && s0.faixa?.dias.every((d) => !d.temHorarios)).toBe(true);
+    const k1 = ver({ s: [ESCOVA, HIDRATACAO], data: DIA, h0: valorDoItem(ANA, Z('09:00')) });
+    expect(visaoDaSemanaVazia(k1)).toBe(k1);
+    const servicos = ver({});
+    expect(visaoDaSemanaVazia(servicos)).toBe(servicos);
   });
 
   it('serviço 1 de 2: profissionais que fazem o serviço, cada um com a sua jornada; o outro fica pendente', () => {
@@ -85,6 +120,8 @@ describe('visaoDemonstracao (D-050)', () => {
     expect(v).toMatchObject({ passo: 'dados', totalCentavos: 16500, itens: [{ servicoNome: 'Hidratação' }, { servicoNome: 'Escova' }] });
     const cruzado = ver({ s: [ESCOVA, HIDRATACAO], data: DIA, h0, h1: valorDoItem(CARLA, Z('09:30')) });
     expect(cruzado).toMatchObject({ passo: 'servico', indice: 0, aviso: 'horario_indisponivel', horarioPerdidoIso: Z('10:00') });
+    // O recuo ao item 0 traz a régua com o dia marcado (D-051 RN-15).
+    expect(cruzado.passo === 'servico' && cruzado.faixa?.selecionado).toBe(DIA);
   });
 
   it('"Alterar": pré-seleciona o horário atual; horário que não é mais oferecido vira aviso com a hora perdida', () => {
