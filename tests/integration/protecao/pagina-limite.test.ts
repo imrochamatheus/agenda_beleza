@@ -55,6 +55,29 @@ describe('carregarPassoComLimite (CA-8, CA-14)', () => {
     expect(await contadorDoIp(ip, 'disponibilidade')).toBe(4);
   });
 
+  it('D-051 (CA-14): o passo "dia" e a navegação de semana consomem UMA cota cada; limitado não calcula a régua', async () => {
+    const c = await criarCenarioReserva();
+    const ctx = criarPublicoContext(c.s.salaoId, c.s.slugAtual);
+    const salao = await carregarSalao(ctx, AGORA);
+    const regras = await lerRegrasDaPagina(ctx, AGORA);
+    const ip = ipNovo();
+    const ler = (params: ParametrosBrutos) =>
+      carregarPassoComLimite(ctx, lerPasso(params, regras), { servicos: salao.servicos, equipe: salao.equipe, regras, agora: AGORA, ip });
+    vi.stubEnv('PROTECAO_LIMITE_IP_DISPONIBILIDADE', '2');
+    expect((await ler({ s: c.A })).passo).toBe('dia');
+    expect(await contadorDoIp(ip, 'disponibilidade')).toBe(1);
+    expect((await ler({ s: c.A, de: '2026-11-27' })).passo).toBe('dia');
+    expect(await contadorDoIp(ip, 'disponibilidade')).toBe(2);
+    const contador = instalarContadorDeComandos();
+    try {
+      expect(await ler({ s: c.A, de: '2026-12-04' })).toEqual({ passo: 'limitado' });
+      expect(contador.contar()).toBe(1);
+    } finally {
+      await contador.encerrar();
+    }
+    expect(await contadorDoIp(ip, 'disponibilidade')).toBe(3);
+  });
+
   it('o passo de serviços (inclusive "Alterar serviços") não consome cota', async () => {
     const c = await criarCenarioReserva();
     const ctx = criarPublicoContext(c.s.salaoId, c.s.slugAtual);
@@ -100,6 +123,9 @@ describe('página com query limitada (CA-14)', () => {
     expect(segunda).toContain('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
     expect(segunda).not.toContain('name="h0"');
     expect(segunda).not.toContain(sp(DIA, '09:00').toISOString());
+    // D-051: sem régua nem horários quando limitado.
+    expect(segunda).not.toContain('Escolha o dia');
+    expect(primeira).toContain('Escolha o dia');
   });
 
   it('o passo "dados" entrega o campo cf-turnstile-response com o token simulado', async () => {

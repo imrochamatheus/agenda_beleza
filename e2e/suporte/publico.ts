@@ -55,15 +55,46 @@ export function diaFuturo(o: { de: number; ate: number; semana?: readonly number
 /** "AAAA-MM-DD" → "DD/MM/AAAA" (fim do nome acessível do link do dia). */
 export const dataBr = (iso: string): string => iso.split('-').reverse().join('/');
 
-/** Link de um dia do passo "Escolha o dia" (nome "Terça-feira, 25/11/2026"). */
+/** Régua da semana do passo do serviço 0 (D-051): a lista "Escolha o dia <período>". */
+export const reguaDaSemana = (page: Page): Locator => page.getByRole('list', { name: /^Escolha o dia/ });
+
+const dataNoNome = (iso: string) => new RegExp(dataBr(iso).replace(/\//g, '\\/'));
+
+/** Link de um dia da régua (nome "Terça-feira, 25/11/2026", com ", hoje" quando é hoje). */
 export function linkDoDia(page: Page, iso: string): Locator {
-  return page.getByRole('list').getByRole('link', { name: new RegExp(`${dataBr(iso).replace(/\//g, '\\/')}$`) });
+  return reguaDaSemana(page).getByRole('link', { name: dataNoNome(iso) });
 }
 
-/** Abre o dia `iso` (precisa estar na primeira página de dias e ter horários). */
+/**
+ * Leva a régua até a semana que contém `iso` pelos links "Próxima semana" (no máximo 10 vezes), sem calcular a
+ * semana no teste: imune a uma virada de dia entre o teste e o servidor (D-051 R-3). Com `teclado`, chega ao
+ * link por Tab e o ativa com Enter. Falha se o dia aparece na régua sem ser link (sem horários).
+ */
+export async function irParaSemanaDoDia(page: Page, iso: string, o: { teclado?: boolean } = {}) {
+  await expect(page.getByRole('heading', { level: 3, name: 'Escolha o dia' })).toBeVisible();
+  for (let i = 0; i <= 10; i += 1) {
+    if ((await linkDoDia(page, iso).count()) > 0) return;
+    const marcado = reguaDaSemana(page).getByText(dataNoNome(iso));
+    if ((await marcado.count()) > 0) throw new Error(`o dia ${iso} está na régua sem horários`);
+    const proxima = page.getByRole('navigation', { name: 'Semanas' }).getByRole('link', { name: 'Próxima semana' });
+    const periodo = await reguaDaSemana(page).getAttribute('aria-labelledby');
+    const antes = await page.locator(`[id="${periodo!.split(' ')[1]}"]`).innerText();
+    if (o.teclado) {
+      await tabAte(page, proxima);
+      await page.keyboard.press('Enter');
+    } else {
+      await proxima.click();
+    }
+    await expect(page.locator(`[id="${periodo!.split(' ')[1]}"]`)).not.toHaveText(antes);
+  }
+  throw new Error(`o dia ${iso} não apareceu na régua`);
+}
+
+/** Abre o dia `iso` pela régua do passo do serviço 0 (navega as semanas se preciso). */
 export async function escolherDia(page: Page, iso: string) {
-  await expect(page.getByRole('heading', { level: 2, name: 'Escolha o dia' })).toBeVisible();
+  await irParaSemanaDoDia(page, iso);
   await linkDoDia(page, iso).click();
+  await expect(linkDoDia(page, iso)).toHaveAttribute('aria-current', 'date');
 }
 
 /** Confere que a tela é o passo "Serviço k de N" do serviço (h2 = nome, indicador no aria-describedby). */

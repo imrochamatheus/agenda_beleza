@@ -152,23 +152,6 @@
   gap: var(--espaco-1);
 }
 
-.dias {
-  display: grid;
-  gap: var(--espaco-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.dia {
-  display: flex;
-  align-items: center;
-  min-height: var(--alvo-minimo);
-  padding: var(--espaco-2) var(--espaco-3);
-  border: 1px solid var(--cor-borda-sutil);
-  border-radius: var(--raio);
-}
-
 .navegacao {
   display: flex;
   flex-wrap: wrap;
@@ -223,6 +206,25 @@
 
 .indicador + h2 {
   margin-block-start: calc(-1 * var(--espaco-3));
+  /* Os links da régua terminam em #reservar: o indicador acima do h2 continua visível (D-051 web-design §7). */
+  scroll-margin-block-start: var(--espaco-8);
+}
+
+/*
+ * D-051 (C1): no celular a régua sangra até a borda interna do cartão (o mesmo --espaco-4 do padding de
+ * .reserva), para caberem 7 colunas de 44 px em 375 px. Só a régua: título, semanas e apoio ficam no padding.
+ */
+.faixaNoCartao {
+  --faixa-sangria: calc(-1 * var(--espaco-4));
+}
+
+/* Bloco de horários do serviço 0: o traço separa "qual dia" de "qual horário". */
+.horarios {
+  display: grid;
+  gap: var(--espaco-4);
+  min-width: 0;
+  padding-block-start: var(--espaco-4);
+  border-block-start: 1px solid var(--cor-borda-sutil);
 }
 
 .alterar {
@@ -318,9 +320,12 @@
     flex-wrap: nowrap;
   }
 
-  .dias,
   .apoio {
     max-width: 36rem;
+  }
+
+  .faixaNoCartao {
+    --faixa-sangria: 0;
   }
 }
 

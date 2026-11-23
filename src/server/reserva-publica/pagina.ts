@@ -15,14 +15,23 @@ import {
 } from '@/server/repos/publico';
 import type { PerfilPublico, ProfissionalPublico, ServicoPublico } from '@/server/repos/publico';
 import type { PublicoContext } from '@/server/tenant/context';
-import { compararDatas, somarDias } from '@/server/tempo/fuso';
+import { compararDatas } from '@/server/tempo/fuso';
 import type { DataCivil } from '@/server/tempo/fuso';
 
 import type { DecisaoAgendamento } from './agendamento';
 import { decidirAgendamento } from './estado';
-import { chaveDeData, DIAS_POR_PAGINA, valorDoItem, valoresDosItens } from './passos';
+import { chaveDeData, inicioDaSemana, limitesDaSemana, valorDoItem, valoresDosItens } from './passos';
 import type { ItemDaUrl, PassoLido } from './passos';
-import type { CodigoAviso, ConsultaDaUrl, ItemEscolhido, ProfissionalComHorarios, Selecao, VisaoDoPasso } from './tipos';
+import type {
+  CodigoAviso,
+  ConsultaDaUrl,
+  DiaDaFaixa,
+  FaixaDaSemana,
+  ItemEscolhido,
+  ProfissionalComHorarios,
+  Selecao,
+  VisaoDoPasso,
+} from './tipos';
 
 const MS_MIN = 60_000;
 
@@ -108,6 +117,43 @@ export function comoEscolhidos(s: readonly string[], itens: readonly (ItemDaUrl 
   return itens.flatMap((x, k) => (x === null ? [] : [{ servicoId: s[k], profissionalId: x.profissionalId, inicio: x.inicio }]));
 }
 
+/**
+ * DA-2 (D-050, sem mudança de regra): o dia é oferecido se CADA serviço tem ao menos um horário nele (não
+ * garante a combinação). Um item por data de [de, ate], em ordem.
+ */
+export function diasDaFaixa(servicos: readonly DisponibilidadeDoServico[], de: DataCivil, ate: DataCivil): DiaDaFaixa[] {
+  const temNoDia = (d: DataCivil) =>
+    servicos.every((sv) => sv.profissionais.some((p) => p.dias.some((x) => compararDatas(x.data, d) === 0 && x.horarios.length > 0)));
+  return datasDoPeriodo(de, ate).map((d) => ({ data: chaveDeData(d), temHorarios: temNoDia(d) }));
+}
+
+/**
+ * Régua da semana que começa em `inicio` (já alinhado, D-051 RN-3): UMA consulta (6 instruções SQL) com todos os
+ * serviços de `s`, no período da semana (≤ 7 datas) e SEM `escolhidos` (RN-4: a marcação não considera os itens).
+ * null se a consulta não é 'ok' (serviço deixou de ser ofertável entre as leituras).
+ */
+async function carregarFaixa(
+  ctx: PublicoContext,
+  s: string[],
+  inicio: DataCivil,
+  regras: RegrasDaPagina,
+  agora: Date,
+  selecionado: DataCivil | null,
+): Promise<FaixaDaSemana | null> {
+  const semana = limitesDaSemana(inicio, regras);
+  const r = await consultarDisponibilidadePorServico(ctx, { servicoIds: s, de: semana.de, ate: semana.ate, agora });
+  if (r.resultado !== 'ok') return null;
+  return {
+    hoje: chaveDeData(regras.hoje),
+    inicio: chaveDeData(semana.de),
+    fim: chaveDeData(semana.ate),
+    dias: diasDaFaixa(r.servicos, semana.de, semana.ate),
+    anterior: semana.anterior === null ? null : chaveDeData(semana.anterior),
+    proxima: semana.proxima === null ? null : chaveDeData(semana.proxima),
+    selecionado: selecionado === null ? null : chaveDeData(selecionado),
+  };
+}
+
 type Contexto = {
   servicos: readonly ServicoPublico[];
   /** Profissionais ativos do salão (nomes dos itens já escolhidos no passo de um serviço). */
@@ -132,6 +178,8 @@ type EntradaDaVisaoDoServico = {
   alterando: boolean;
   aviso: CodigoAviso | null;
   horarioPerdidoIso: string | null;
+  /** Régua (só no serviço 0); null nos passos k ≥ 1. */
+  faixa: FaixaDaSemana | null;
 };
 
 function visaoDoServico(e: EntradaDaVisaoDoServico): Extract<VisaoDoPasso, { passo: 'servico' }> {
@@ -170,6 +218,7 @@ function visaoDoServico(e: EntradaDaVisaoDoServico): Extract<VisaoDoPasso, { pas
     aviso: e.aviso,
     horarioPerdidoIso: e.horarioPerdidoIso,
     consulta: { s: e.s, data: chaveDeData(e.data), h: valoresDosItens(e.itens) },
+    faixa: e.faixa,
   };
 }
 
@@ -185,7 +234,9 @@ const voltarAosServicos: VisaoDoPasso = { passo: 'servicos', marcados: [], aviso
 /**
  * View-model do passo pedido. Se algo mudou desde o passo anterior (serviço desativado, profissional
  * inativo, horário tomado), devolve o passo válido mais avançado com um aviso de código fechado. Cada passo
- * que calcula horários faz UMA consulta de disponibilidade (6 instruções SQL, D-018/D-050 CA-3).
+ * que calcula horários faz UMA consulta de disponibilidade (6 instruções SQL, D-018/D-050 CA-3); o passo do
+ * serviço 0 faz mais uma, a da régua da semana (D-051 §3.4): `'dia'` = 6, serviço 0 com dia = 12, serviço
+ * k ≥ 1 = 6, dados = 6 (12 quando o item 0 caiu). As chamadas são sequenciais (uma conexão por visitante).
  */
 export async function carregarPasso(ctx: PublicoContext, passo: PassoLido, contexto: Contexto): Promise<VisaoDoPasso> {
   const { servicos, regras, agora } = contexto;
@@ -196,30 +247,22 @@ export async function carregarPasso(ctx: PublicoContext, passo: PassoLido, conte
   const selecao = montarSelecao(servicos, passo.s);
   if (selecao === null) return voltarAosServicos;
 
-  const ultima = somarDias(regras.hoje, regras.janelaDias);
-  if (passo.passo === 'data') {
-    const fim = somarDias(passo.de, DIAS_POR_PAGINA - 1);
-    const ate = compararDatas(fim, ultima) > 0 ? ultima : fim;
-    const r = await consultarDisponibilidadePorServico(ctx, { servicoIds: passo.s, de: passo.de, ate, agora });
-    if (r.resultado !== 'ok') return voltarAosServicos;
-    // DA-2: o dia é oferecido se CADA serviço tem ao menos um horário nele (não garante a combinação).
-    const temNoDia = (d: DataCivil) =>
-      r.servicos.every((sv) => sv.profissionais.some((p) => p.dias.some((x) => compararDatas(x.data, d) === 0 && x.horarios.length > 0)));
-    const anterior = somarDias(passo.de, -DIAS_POR_PAGINA);
-    const proxima = somarDias(passo.de, DIAS_POR_PAGINA);
+  if (passo.passo === 'dia') {
+    const faixa = await carregarFaixa(ctx, passo.s, passo.semana, regras, agora, null);
+    if (faixa === null) return voltarAosServicos;
     return {
-      passo: 'data',
+      passo: 'dia',
       s: passo.s,
       selecao,
-      de: chaveDeData(passo.de),
-      dias: datasDoPeriodo(passo.de, ate).map((d) => ({ data: chaveDeData(d), temHorarios: temNoDia(d) })),
-      anterior: compararDatas(passo.de, regras.hoje) > 0
-        ? chaveDeData(compararDatas(anterior, regras.hoje) < 0 ? regras.hoje : anterior)
-        : null,
-      proxima: compararDatas(proxima, ultima) <= 0 ? chaveDeData(proxima) : null,
+      servico: selecao.servicos[0],
+      total: passo.s.length,
+      faixa,
       aviso: passo.aviso,
     };
   }
+  /** Régua da semana da data, só para a visão do serviço 0 (a segunda chamada; D-051 D2). */
+  const faixaDoServico = (indice: number, data: DataCivil) =>
+    indice === 0 ? carregarFaixa(ctx, passo.s, inicioDaSemana(data, regras), regras, agora, data) : Promise.resolve(null);
 
   if (passo.passo === 'servico') {
     // Itens de outros serviços com profissional fora da equipe ativa contam como pendentes e não ocupam nada.
@@ -238,6 +281,8 @@ export async function carregarPasso(ctx: PublicoContext, passo: PassoLido, conte
     const d = r.servicos[0];
     const atual = passo.preSelecionado;
     const perda = atual !== null && !horarioOferecido(d, atual.profissionalId, atual.inicio) ? perdaDoItem(d, atual) : null;
+    const faixa = await faixaDoServico(passo.indice, passo.data);
+    if (passo.indice === 0 && faixa === null) return voltarAosServicos;
     return visaoDoServico({
       s: passo.s,
       data: passo.data,
@@ -252,6 +297,7 @@ export async function carregarPasso(ctx: PublicoContext, passo: PassoLido, conte
       alterando: passo.alterando,
       aviso: perda?.aviso ?? passo.aviso,
       horarioPerdidoIso: perda?.horarioPerdidoIso ?? null,
+      faixa,
     });
   }
 
@@ -270,6 +316,8 @@ export async function carregarPasso(ctx: PublicoContext, passo: PassoLido, conte
   const caiu = passo.itens.findIndex((x, k) => !horarioOferecido(r.servicos[k], x.profissionalId, x.inicio));
   if (caiu >= 0) {
     const perda = perdaDoItem(r.servicos[caiu], passo.itens[caiu]);
+    const faixa = await faixaDoServico(caiu, passo.data);
+    if (caiu === 0 && faixa === null) return voltarAosServicos;
     return visaoDoServico({
       s: passo.s,
       data: passo.data,
@@ -284,6 +332,7 @@ export async function carregarPasso(ctx: PublicoContext, passo: PassoLido, conte
       alterando: false,
       aviso: perda.aviso,
       horarioPerdidoIso: perda.horarioPerdidoIso,
+      faixa,
     });
   }
   const itens = passo.itens
@@ -303,7 +352,7 @@ export async function carregarPasso(ctx: PublicoContext, passo: PassoLido, conte
 }
 
 /**
- * Como `carregarPasso`, mas os passos que calculam disponibilidade (data, serviço e dados) consomem o
+ * Como `carregarPasso`, mas os passos que calculam disponibilidade (dia, serviço e dados) consomem o
  * limite de consultas do IP (D-027 RN-9). Excedido: `{ passo: 'limitado' }` e NENHUM cálculo é feito (CA-14).
  * O passo de serviços não calcula horários e não consome cota.
  */

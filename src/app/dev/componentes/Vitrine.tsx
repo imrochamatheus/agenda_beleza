@@ -9,12 +9,20 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DataList, type Coluna } from '@/components/ui/DataList';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { FaixaDeDias, type DiaDaFaixaDeDias } from '@/components/ui/FaixaDeDias';
 import { Field } from '@/components/ui/Field';
 import { RoteiroDoDia, type ParadaDoRoteiro } from '@/components/ui/RoteiroDoDia';
 import { Select } from '@/components/ui/Select';
 import { SlotGrid } from '@/components/ui/SlotGrid';
 import { ROTAS } from '@/config/navegacao';
-import { formatarDataHora, formatarMoeda } from '@/lib/format';
+import {
+  formatarDataCivil,
+  formatarDataHora,
+  formatarDiaDaSemana,
+  formatarDiaDaSemanaCurto,
+  formatarDiaEMesCurtos,
+  formatarMoeda,
+} from '@/lib/format';
 
 import estilos from './Vitrine.module.css';
 
@@ -96,6 +104,39 @@ const PARADAS_ROTEIRO: readonly ParadaDoRoteiro[] = [
   },
   { chave: 'r4', hora: null, servico: 'Hidratação', detalhe: 'a escolher', estado: 'pendente' },
 ];
+
+// Régua da semana (D-051 §4.1): dias fictícios de 29/11/2026 (domingo) em diante, montados com o format.ts.
+function diasDaVitrine(
+  primeiro: number,
+  quantos: number,
+  estado: (i: number) => { comHorario: boolean; atual?: boolean },
+): DiaDaFaixaDeDias[] {
+  return Array.from({ length: quantos }, (_, i) => {
+    const t = new Date(Date.UTC(2026, 10, 29 + primeiro + i));
+    const chave = t.toISOString().slice(0, 10);
+    const semana = t.getUTCDay();
+    const { comHorario, atual = false } = estado(i);
+    const { dia, mes } = formatarDiaEMesCurtos(chave);
+    return {
+      chave,
+      semana: formatarDiaDaSemanaCurto(semana),
+      dia,
+      mes,
+      rotulo: `${formatarDiaDaSemana(semana)}, ${formatarDataCivil(chave)}${comHorario ? '' : ', sem horários'}`,
+      href: comHorario ? '#secao-faixa' : null,
+      atual,
+    };
+  });
+}
+
+const periodoDe = (dias: readonly DiaDaFaixaDeDias[]) =>
+  `${formatarDataCivil(dias[0].chave)} a ${formatarDataCivil(dias[dias.length - 1].chave)}`;
+
+const SEMANA_SELECIONADA = diasDaVitrine(7, 7, (i) => ({ comHorario: i !== 0, atual: i === 2 }));
+const SEMANA_VAZIA = diasDaVitrine(14, 7, () => ({ comHorario: false }));
+const ULTIMA_SEMANA = diasDaVitrine(56, 5, (i) => ({ comHorario: i % 2 === 0 }));
+const MARCADO_SEM_HORARIO = diasDaVitrine(21, 7, (i) => ({ comHorario: i !== 3, atual: i === 3 }));
+const LINK_SEMANA = (rotulo: string) => ({ href: '#secao-faixa', rotulo });
 
 const OPCOES_PROFISSIONAL = [
   { valor: 'p1', rotulo: 'Profissional 1' },
@@ -261,6 +302,47 @@ export function Vitrine() {
           titulo="Terça-feira, 10/03/2026"
           paradas={PARADAS_ROTEIRO}
           rodape={<p className={estilos.total}>Total: {formatarMoeda(13000)}</p>}
+        />
+      </section>
+
+      <section aria-labelledby="secao-faixa" className={estilos.secao}>
+        <h2 id="secao-faixa">Régua da semana</h2>
+        <FaixaDeDias
+          idTitulo="faixa-selecionada"
+          titulo="Semana com dia selecionado"
+          periodo={periodoDe(SEMANA_SELECIONADA)}
+          dias={SEMANA_SELECIONADA}
+          anterior={LINK_SEMANA('Semana anterior')}
+          proxima={LINK_SEMANA('Próxima semana')}
+          rotuloNavegacao="Semanas (dia selecionado)"
+          apoio="Um dia aparece disponível quando cada serviço tem ao menos um horário livre nele."
+        />
+        <FaixaDeDias
+          idTitulo="faixa-vazia"
+          titulo="Semana toda sem horário"
+          periodo={periodoDe(SEMANA_VAZIA)}
+          dias={SEMANA_VAZIA}
+          anterior={LINK_SEMANA('Semana anterior')}
+          proxima={LINK_SEMANA('Próxima semana')}
+          rotuloNavegacao="Semanas (semana sem horário)"
+        />
+        <FaixaDeDias
+          idTitulo="faixa-ultima"
+          titulo="Última semana, com 5 dias"
+          periodo={periodoDe(ULTIMA_SEMANA)}
+          dias={ULTIMA_SEMANA}
+          anterior={LINK_SEMANA('Semana anterior')}
+          proxima={null}
+          rotuloNavegacao="Semanas (última semana)"
+        />
+        <FaixaDeDias
+          idTitulo="faixa-marcado"
+          titulo="Dia marcado sem horário"
+          periodo={periodoDe(MARCADO_SEM_HORARIO)}
+          dias={MARCADO_SEM_HORARIO}
+          anterior={null}
+          proxima={null}
+          rotuloNavegacao="Semanas (marcado sem horário)"
         />
       </section>
 

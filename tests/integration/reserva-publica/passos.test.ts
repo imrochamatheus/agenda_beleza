@@ -91,29 +91,53 @@ describe('CA-8: query inválida, de outro salão ou fora de ordem', () => {
   });
 });
 
-describe('passo "data" (DA-2)', () => {
-  it('14 dias; um dia é oferecido só se CADA serviço tem horário nele; navegação respeita a janela', async () => {
+describe('passo "dia" (DA-2; D-051 RN-3, RN-4)', () => {
+  it('7 dias alinhados a hoje; um dia é oferecido só se CADA serviço tem horário nele; navegação respeita a janela', async () => {
     const c = await criarCenarioTres({ funcionamento: { 2: [['09:00', '18:00']], 3: [['09:00', '18:00']] } });
     // Carla só trabalha às quartas: C só tem horário na quarta; A tem na terça e na quarta.
     await db().jornada.deleteMany({ where: { salaoId: c.s.salaoId, profissionalId: c.carla } });
     await db().jornada.create({ data: { salaoId: c.s.salaoId, profissionalId: c.carla, diaSemana: 3, inicioMin: 540, fimMin: 1080 } });
-    const so = await passo(c, { s: c.A });
-    if (so.passo !== 'data') throw new Error('passo inesperado');
-    expect(so.dias).toHaveLength(14);
-    expect(so.de).toBe('2026-11-20');
-    expect(so.anterior).toBeNull();
-    expect(so.proxima).toBe('2026-12-04');
-    expect(so.dias.filter((d) => d.temHorarios).map((d) => d.data)).toEqual(['2026-11-24', '2026-11-25', '2026-12-01', '2026-12-02']);
-    const ambos = await passo(c, { s: [c.A, c.C] });
-    if (ambos.passo !== 'data') throw new Error('passo inesperado');
-    expect(ambos.dias.filter((d) => d.temHorarios).map((d) => d.data)).toEqual(['2026-11-25', '2026-12-02']);
+    const dia = (v: VisaoDoPasso) => {
+      if (v.passo !== 'dia') throw new Error(`passo inesperado: ${v.passo}`);
+      return v;
+    };
+    const so = dia(await passo(c, { s: c.A }));
+    expect(so.faixa.dias).toHaveLength(7);
+    expect([so.faixa.hoje, so.faixa.inicio, so.faixa.fim, so.faixa.anterior, so.faixa.proxima, so.faixa.selecionado]).toEqual([
+      '2026-11-20',
+      '2026-11-20',
+      '2026-11-26',
+      null,
+      '2026-11-27',
+      null,
+    ]);
+    expect(so.faixa.dias.filter((d) => d.temHorarios).map((d) => d.data)).toEqual(['2026-11-24', '2026-11-25']);
+    expect([so.servico.nome, so.total]).toEqual(['A', 1]);
+    // Semana 1 (navegada): terça e quarta de novo.
+    const semana1 = dia(await passo(c, { s: c.A, de: '2026-11-27' }));
+    expect(semana1.faixa.dias.filter((d) => d.temHorarios).map((d) => d.data)).toEqual(['2026-12-01', '2026-12-02']);
+    const ambos = dia(await passo(c, { s: [c.A, c.C], de: '2026-11-29' }));
+    expect(ambos.faixa.inicio).toBe('2026-11-27');
+    expect(ambos.faixa.dias.filter((d) => d.temHorarios).map((d) => d.data)).toEqual(['2026-12-02']);
     expect(ambos.selecao).toMatchObject({ precoTotalCentavos: 9000, servicos: [{ id: c.A, nome: 'A' }, { id: c.C, nome: 'C' }] });
 
-    const ultima = await passo(c, { s: c.A, de: '2027-01-10' });
-    if (ultima.passo !== 'data') throw new Error('passo inesperado');
-    expect(ultima.dias.at(-1)?.data).toBe('2027-01-19');
-    expect(ultima.proxima).toBeNull();
-    expect(ultima.anterior).toBe('2026-12-27');
+    // Janela de 60 dias: a 9ª semana tem 5 dias e termina na última data.
+    const ultima = dia(await passo(c, { s: c.A, de: '2027-01-10' }));
+    expect([ultima.faixa.inicio, ultima.faixa.fim, ultima.faixa.dias.length, ultima.faixa.proxima, ultima.faixa.anterior]).toEqual([
+      '2027-01-08',
+      '2027-01-14',
+      7,
+      '2027-01-15',
+      '2027-01-01',
+    ]);
+    const nona = dia(await passo(c, { s: c.A, de: '2030-01-01' }));
+    expect([nona.faixa.inicio, nona.faixa.fim, nona.faixa.dias.length, nona.faixa.proxima, nona.faixa.anterior]).toEqual([
+      '2027-01-15',
+      '2027-01-19',
+      5,
+      null,
+      '2027-01-08',
+    ]);
   });
 });
 

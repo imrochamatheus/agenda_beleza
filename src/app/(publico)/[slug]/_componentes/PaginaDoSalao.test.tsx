@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { montarSemana } from '@/server/semana/montagem';
 import type { PerfilPublico } from '@/server/repos/publico';
 import { valorDoItem } from '@/server/reserva-publica/passos';
-import type { ItemEscolhido, VisaoDoPasso } from '@/server/reserva-publica/tipos';
+import type { FaixaDaSemana, ItemEscolhido, VisaoDoPasso } from '@/server/reserva-publica/tipos';
 
 import { estadoInicialReserva } from '../estado';
 import { PaginaDoSalao } from './PaginaDoSalao';
@@ -152,6 +152,31 @@ const servico = (o: Partial<VisaoServico> = {}): VisaoServico => ({
   aviso: null,
   horarioPerdidoIso: null,
   consulta: { s: [S1, S2], data: '2026-12-01', h: [V0, null] },
+  faixa: null,
+  ...o,
+});
+/** Semana 0 de 29/11/2026 (domingo, hoje) a 05/12/2026; só terça (01/12) e quinta (03/12) com horário. */
+const FAIXA: FaixaDaSemana = {
+  hoje: '2026-11-29',
+  inicio: '2026-11-29',
+  fim: '2026-12-05',
+  dias: ['2026-11-29', '2026-11-30', '2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04', '2026-12-05'].map((data) => ({
+    data,
+    temHorarios: data === '2026-12-01' || data === '2026-12-03',
+  })),
+  anterior: null,
+  proxima: '2026-12-06',
+  selecionado: null,
+};
+type VisaoDia = Extract<VisaoDoPasso, { passo: 'dia' }>;
+const dia = (o: Partial<VisaoDia> = {}): VisaoDia => ({
+  passo: 'dia',
+  s: [S1, S2],
+  selecao: SELECAO,
+  servico: SERVICOS[0],
+  total: 2,
+  faixa: FAIXA,
+  aviso: null,
   ...o,
 });
 const DADOS: VisaoDoPasso = {
@@ -187,23 +212,62 @@ describe('PaginaDoSalao: passos', () => {
     semModeloAntigo(container);
   });
 
-  it('data: dias com horários são links (s + data); sem horários são texto; navegação e "Alterar serviços"', () => {
-    const visao: VisaoDoPasso = {
-      passo: 'data', s: [S1, S2], selecao: SELECAO, de: '2026-12-01',
-      dias: [{ data: '2026-12-01', temHorarios: true }, { data: '2026-12-06', temHorarios: false }],
-      anterior: '2026-11-20', proxima: '2026-12-15', aviso: null,
-    };
-    const { container } = montar({ visao });
-    expect(screen.getByRole('link', { name: 'Terça-feira, 01/12/2026' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&data=2026-12-01`);
-    expect(screen.getByText('Domingo, 06/12/2026 (sem horários)')).toBeTruthy();
+  it('dia (D-051 CA-1, CA-2, CA-4): indicador, h2 do 1º serviço, resumo, régua e o estado "escolha um dia"', () => {
+    const { container } = montar({ visao: dia() });
+    const h2 = screen.getByRole('heading', { level: 2, name: 'Corte' });
+    expect(h2.id).toBe('reservar');
+    expect(document.getElementById(h2.getAttribute('aria-describedby')!)?.textContent).toBe('Serviço 1 de 2');
+    expect(screen.queryByRole('heading', { level: 2, name: 'Escolha o dia' })).toBeNull();
+    expect(screen.getByRole('heading', { level: 3, name: 'Escolha o dia' })).toBeTruthy();
     expect(screen.getByText('Corte · Escova')).toBeTruthy();
     expect(screen.getByText(/2 serviços · R\$\s120,00/)).toBeTruthy();
+    const regua = screen.getByRole('list', { name: 'Escolha o dia 29/11/2026 a 05/12/2026' });
+    expect(within(regua).getAllByRole('listitem')).toHaveLength(7);
+    // Só os dias com horário são links (s + data + #reservar); os outros são texto com "sem horários".
+    expect(within(regua).getAllByRole('link').map((l) => [l.textContent?.slice(0, 3), l.getAttribute('href')])).toEqual([
+      ['Ter', `/studio-bela?s=${S1}&s=${S2}&data=2026-12-01#reservar`],
+      ['Qui', `/studio-bela?s=${S1}&s=${S2}&data=2026-12-03#reservar`],
+    ]);
+    expect(screen.getByRole('link', { name: 'Terça-feira, 01/12/2026' })).toBeTruthy();
+    expect(screen.getByText('Domingo, 29/11/2026, hoje, sem horários').parentElement!.tagName).toBe('SPAN');
+    expect(within(regua).getAllByText('Hoje')).toHaveLength(1);
+    expect(container.querySelector('[aria-current]')).toBeNull();
+    // Semana 0: sem "Semana anterior"; "Próxima semana" leva a s + de.
+    expect(screen.queryByText(/Semana anterior/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Próxima semana' }).getAttribute('href')).toBe(
+      `/studio-bela?s=${S1}&s=${S2}&de=2026-12-06#reservar`,
+    );
     expect(screen.getByText('Um dia aparece disponível quando cada serviço tem ao menos um horário livre nele.')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Dias anteriores' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&de=2026-11-20`);
-    expect(screen.getByRole('link', { name: 'Próximos dias' }).getAttribute('href')).toContain('de=2026-12-15');
+    // Sem dia: estado vazio e nada de roteiro, filtro, grade, botão ou formulário (D6).
+    expect(screen.getByRole('heading', { level: 3, name: 'Escolha um dia para ver os horários' })).toBeTruthy();
+    expect(screen.getByText('Os horários de Corte aparecem aqui, separados por profissional.')).toBeTruthy();
+    expect(screen.queryByRole('list', { name: 'Seu dia' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Filtrar por profissional' })).toBeNull();
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(container.querySelector('form')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Escolher outro dia' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Alterar serviços' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&alterar=servicos`);
-    expect(container.textContent).not.toMatch(/Duração|1 h 15 min/);
+    expect(container.textContent).not.toMatch(/Duração|1 h 15 min|\(sem horários\)|Próximos dias|Dias anteriores/);
     semModeloAntigo(container);
+  });
+
+  it('dia: semana sem nenhum dia oferecido (CA-12) e aviso genérico antes da régua (RN-15)', () => {
+    const vazia = { ...FAIXA, dias: FAIXA.dias.map((d) => ({ ...d, temHorarios: false })) };
+    const { container, unmount } = montar({ visao: dia({ faixa: vazia, aviso: 'horario_indisponivel' }) });
+    expect(screen.queryAllByRole('link', { name: /\/2026/ })).toHaveLength(0);
+    expect(screen.getByRole('group', { name: 'Escolha o dia 29/11/2026 a 05/12/2026' }).getAttribute('tabindex')).toBe('0');
+    expect(screen.getByRole('heading', { level: 3, name: 'Nenhum dia desta semana tem horário' })).toBeTruthy();
+    expect(screen.getByText('Veja a próxima semana ou altere os serviços.')).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: 'Próxima semana' })).toHaveLength(1);
+    const alerta = screen.getByRole('status');
+    expect(alerta.textContent).toContain('Este horário não está mais disponível. Escolha outro horário.');
+    const regua = container.querySelector('ol')!;
+    expect(alerta.compareDocumentPosition(regua) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    unmount();
+    montar({ visao: dia({ faixa: { ...vazia, anterior: '2026-11-22', proxima: null } }) });
+    expect(screen.getByText('Esta é a última semana aberta para reservas. Volte à semana anterior ou altere os serviços.')).toBeTruthy();
+    expect(screen.queryByText(/Próxima semana/)).toBeNull();
   });
 
   it('serviço k de N: indicador no aria-describedby do h2, roteiro, filtro, grades num só name e ocultos', () => {
@@ -233,9 +297,65 @@ describe('PaginaDoSalao: passos', () => {
     expect(screen.getByText('10:00')).toBeTruthy();
     expect(ocultos(container)).toEqual([['s', S1], ['s', S2], ['data', '2026-12-01'], ['h0', V0], ['enviado', '1']]);
     expect(screen.getByRole('button', { name: 'Continuar para seus dados' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Escolher outro dia' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&de=2026-12-01`);
+    expect(screen.getByRole('link', { name: 'Escolher outro dia' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&de=2026-12-01#reservar`);
     expect(screen.getByRole('link', { name: 'Alterar serviços' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&alterar=servicos`);
+    // Passo k ≥ 1 (D-051 CA-6, critério 18): sem régua e sem resumo.
+    expect(screen.queryByRole('heading', { level: 3, name: 'Escolha o dia' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Serviços escolhidos' })).toBeNull();
     semModeloAntigo(container);
+  });
+
+  it('serviço 0 com dia (D-051 CA-5, CA-11): régua com o dia marcado, horários abaixo, aviso antes da régua', () => {
+    const { container } = montar({
+      visao: servico({
+        indice: 0, servico: SERVICOS[0], escolhidos: [], pendentes: [1], proximoEhDados: false, aviso: 'sem_selecao',
+        profissionais: [{ id: P1, nome: 'Ana', horarios: [H] }], opcoesDeFiltro: [{ id: P1, nome: 'Ana' }],
+        consulta: { s: [S1, S2], data: '2026-12-01', h: [null, null] },
+        faixa: { ...FAIXA, selecionado: '2026-12-01' },
+      }),
+    });
+    expect(document.getElementById(screen.getByRole('heading', { level: 2, name: 'Corte' }).getAttribute('aria-describedby')!)?.textContent).toBe(
+      'Serviço 1 de 2',
+    );
+    const marcado = screen.getByRole('link', { name: 'Terça-feira, 01/12/2026' });
+    expect(marcado.getAttribute('aria-current')).toBe('date');
+    expect(container.querySelectorAll('[aria-current="date"]')).toHaveLength(1);
+    expect(screen.getByRole('group', { name: 'Serviços escolhidos' })).toBeTruthy();
+    // Ordem no DOM: aviso → resumo → régua → roteiro → grade → Continuar.
+    const ordem = [
+      screen.getByRole('status'),
+      screen.getByRole('group', { name: 'Serviços escolhidos' }),
+      container.querySelector('ol')!,
+      screen.getByRole('list', { name: 'Seu dia' }),
+      screen.getByRole('radio'),
+      screen.getByRole('button', { name: 'Continuar' }),
+    ];
+    for (let k = 1; k < ordem.length; k++) {
+      expect(ordem[k - 1].compareDocumentPosition(ordem[k]) & Node.DOCUMENT_POSITION_FOLLOWING, String(k)).toBeTruthy();
+    }
+    expect(screen.getByRole('status').textContent).toContain('Escolha um horário para Corte.');
+    expect((screen.getByRole('radio') as HTMLInputElement).name).toBe('h0');
+    // O passo 0 não tem "Escolher outro dia" (a régua cumpre o papel); "Alterar serviços" fica.
+    expect(screen.queryByRole('link', { name: 'Escolher outro dia' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Alterar serviços' })).toBeTruthy();
+    expect(ocultos(container)).toEqual([['s', S1], ['s', S2], ['data', '2026-12-01'], ['enviado', '0']]);
+    // Links de dia e de semana descartam itens, filtro e aviso (CA-7).
+    for (const a of container.querySelectorAll('ol a, nav[aria-label="Semanas"] a')) {
+      expect(a.getAttribute('href')).toMatch(/#reservar$/);
+      expect(a.getAttribute('href')).not.toMatch(/h\d=|alterar|enviado|aviso|[?&]f=/);
+    }
+  });
+
+  it('serviço 0 marcado sem horário (RN-8, C5): o dia marcado é <span aria-current>', () => {
+    const { container } = montar({
+      visao: servico({ indice: 0, servico: SERVICOS[0], escolhidos: [], pendentes: [1], vazio: 'calendario',
+        consulta: { s: [S1, S2], data: '2026-11-30', h: [null, null] }, data: '2026-11-30',
+        faixa: { ...FAIXA, selecionado: '2026-11-30' } }),
+    });
+    const marcado = container.querySelector('[aria-current="date"]')!;
+    expect(marcado.tagName).toBe('SPAN');
+    expect(marcado.textContent).toContain('Segunda-feira, 30/11/2026, sem horários');
+    expect(screen.getByRole('heading', { level: 3, name: 'Nenhum horário para Corte neste dia.' })).toBeTruthy();
   });
 
   it('serviço com pendentes: parada "a escolher" e botão "Continuar"; filtro só com 2+ profissionais', () => {

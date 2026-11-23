@@ -2,14 +2,22 @@ import { describe, expect, it } from 'vitest';
 
 import { SEGMENTOS_RESERVADOS } from '@/config/navegacao';
 
+import { somarDias } from '@/server/tempo/fuso';
+import type { DataCivil } from '@/server/tempo/fuso';
+
 import {
+  ANCORA_RESERVA,
   camposOcultos,
   chaveDeData,
+  DIAS_POR_SEMANA,
   hrefAlterarItem,
   hrefAlterarServicos,
+  hrefDaSemana,
+  hrefDoDia,
   hrefFiltro,
   hrefOutroDia,
   hrefSeguirSem,
+  inicioDaSemana,
   lerAviso,
   lerData,
   lerHorario,
@@ -19,6 +27,7 @@ import {
   lerSelecao,
   lerServicoIds,
   lerUuid,
+  limitesDaSemana,
   montarHref,
   slugPlausivel,
   valorDoItem,
@@ -132,15 +141,28 @@ describe('lerPasso: parâmetro inválido volta ao passo válido mais avançado (
     expect(lerPasso({ s: [A, B], data: '2026-12-01', alterar: 'servicos' }, CTX)).toEqual({ passo: 'servicos', marcados: [A, B], aviso: null });
   });
 
-  it('data ausente, inválida ou fora da janela: data (com `de` ajustado)', () => {
-    expect(lerPasso({ s: A }, CTX)).toEqual({ passo: 'data', s: [A], de: HOJE, aviso: null });
-    expect(lerPasso({ s: A, data: '2026-02-30' }, CTX).passo).toBe('data');
-    expect(lerPasso({ s: A, data: '2026-11-19' }, CTX).passo).toBe('data');
+  it('data ausente, inválida ou fora da janela: dia (semana de `de` limitada e alinhada a hoje; D-051 RN-6)', () => {
+    expect(lerPasso({ s: A }, CTX)).toEqual({ passo: 'dia', s: [A], semana: HOJE, aviso: null });
+    expect(lerPasso({ s: A, data: '2026-02-30' }, CTX).passo).toBe('dia');
+    expect(lerPasso({ s: A, data: '2026-11-19' }, CTX).passo).toBe('dia');
     expect(lerPasso({ s: A, data: '2027-01-19' }, CTX).passo).toBe('servico');
-    expect(lerPasso({ s: A, data: '2027-01-20' }, CTX).passo).toBe('data');
-    expect(lerPasso({ s: A, de: '2026-01-01' }, CTX)).toMatchObject({ de: HOJE });
-    expect(lerPasso({ s: A, de: '2030-01-01' }, CTX)).toMatchObject({ de: { ano: 2027, mes: 1, dia: 19 } });
-    expect(lerPasso({ s: A, de: '2026-12-05' }, CTX)).toMatchObject({ de: { ano: 2026, mes: 12, dia: 5 } });
+    expect(lerPasso({ s: A, data: '2027-01-20' }, CTX).passo).toBe('dia');
+    expect(lerPasso({ s: A, de: '2026-01-01' }, CTX)).toMatchObject({ semana: HOJE });
+    // Além da última data: a semana que a contém (a 9ª, que começa em hoje + 56).
+    expect(lerPasso({ s: A, de: '2030-01-01' }, CTX)).toMatchObject({ semana: { ano: 2027, mes: 1, dia: 15 } });
+    // De no meio da semana 2 (hoje + 15): a semana 2 inteira, que começa em hoje + 14.
+    expect(lerPasso({ s: A, de: '2026-12-05' }, CTX)).toMatchObject({ semana: { ano: 2026, mes: 12, dia: 4 } });
+    expect(lerPasso({ s: A, de: 'abc' }, CTX)).toMatchObject({ semana: HOJE });
+    expect(lerPasso({ s: A, de: ['2026-12-05', '2026-11-20'] }, CTX)).toMatchObject({ semana: { ano: 2026, mes: 12, dia: 4 } });
+    // alterar=k sem data válida: os h são ignorados (§6 da spec).
+    expect(lerPasso({ s: [A, B], alterar: '0', h0: item(ANA, H9), h1: item(BIA, H10) }, CTX)).toEqual({
+      passo: 'dia',
+      s: [A, B],
+      semana: HOJE,
+      aviso: null,
+    });
+    // Aviso vindo do POST sem data (seleção adulterada): fica no passo dia, texto genérico.
+    expect(lerPasso({ s: A, aviso: 'horario_indisponivel' }, CTX)).toMatchObject({ passo: 'dia', aviso: 'horario_indisponivel' });
   });
 
   it('o primeiro h ausente ou inválido define o serviço; os itens válidos seguintes são preservados', () => {
@@ -236,11 +258,144 @@ describe('montarHref e links do fluxo', () => {
     expect(hrefFiltro('/x', q, BIA)).toBe(montarHref('/x', { ...q, f: BIA }));
     expect(hrefFiltro('/x', q, null)).toBe(montarHref('/x', q));
     expect(hrefFiltro('/x', q, BIA, 0)).toBe(montarHref('/x', { ...q, f: BIA, alterar: 0 }));
-    expect(hrefOutroDia('/x', q)).toBe(`/x?s=${A}&s=${B}&s=${C}&de=2026-12-01`);
-    expect(hrefOutroDia('/x', { s: [A] })).toBe(`/x?s=${A}`);
+    expect(hrefOutroDia('/x', q)).toBe(`/x?s=${A}&s=${B}&s=${C}&de=2026-12-01#reservar`);
+    expect(hrefOutroDia('/x', { s: [A] })).toBe(`/x?s=${A}#reservar`);
     expect(hrefAlterarServicos('/x', q)).toBe(`/x?s=${A}&s=${B}&s=${C}&alterar=servicos`);
     // Tira o serviço e o item dele, reindexando os demais.
     expect(hrefSeguirSem('/x', q, 1)).toBe(montarHref('/x', { s: [A, C], data: '2026-12-01', h: [item(ANA, H9), item(BIA, H15)] }));
     expect(hrefSeguirSem('/x', { s: [A], data: '2026-12-01', h: [null] }, 0)).toBe('/x');
+  });
+});
+
+/** Parâmetros de uma URL (como o Next entrega: valor único ou lista). O fragmento não vai ao servidor. */
+function paramsDe(href: string): Record<string, string | string[]> {
+  const url = new URL(href, 'http://l');
+  const params: Record<string, string | string[]> = {};
+  for (const k of new Set(url.searchParams.keys())) {
+    const v = url.searchParams.getAll(k);
+    params[k] = v.length === 1 ? v[0] : v;
+  }
+  return params;
+}
+
+const mais = (n: number): DataCivil => somarDias(HOJE, n);
+
+describe('semanas alinhadas a hoje (D-051 RN-3, CA-3)', () => {
+  it('inicioDaSemana: blocos de 7 dias a partir de hoje, limitados à janela', () => {
+    expect(DIAS_POR_SEMANA).toBe(7);
+    for (let n = 0; n <= 60; n++) {
+      expect(inicioDaSemana(mais(n), CTX), String(n)).toEqual(mais(7 * Math.floor(n / 7)));
+    }
+    expect(inicioDaSemana(somarDias(HOJE, -1), CTX)).toEqual(HOJE);
+    expect(inicioDaSemana(somarDias(HOJE, -400), CTX)).toEqual(HOJE);
+    expect(inicioDaSemana(mais(61), CTX)).toEqual(mais(56));
+    expect(inicioDaSemana(mais(5000), CTX)).toEqual(mais(56));
+  });
+
+  it('janela de 60: 9 semanas, a 9ª com 5 dias; anterior e próxima', () => {
+    const semanas: ReturnType<typeof limitesDaSemana>[] = [];
+    for (let k = 0; k < 9; k++) semanas.push(limitesDaSemana(mais(7 * k), CTX));
+    expect(semanas[0]).toEqual({ de: HOJE, ate: mais(6), anterior: null, proxima: mais(7) });
+    expect(semanas[3]).toEqual({ de: mais(21), ate: mais(27), anterior: mais(14), proxima: mais(28) });
+    expect(semanas[7]).toEqual({ de: mais(49), ate: mais(55), anterior: mais(42), proxima: mais(56) });
+    expect(semanas[8]).toEqual({ de: mais(56), ate: mais(60), anterior: mais(49), proxima: null });
+    // Encadeamento: a próxima de cada uma é a seguinte, até a última.
+    for (let k = 0; k < 8; k++) expect(semanas[k].proxima).toEqual(semanas[k + 1].de);
+  });
+
+  it('janela de 1: semana 0 com 2 dias, sem anterior nem próxima', () => {
+    const j = { hoje: HOJE, janelaDias: 1 };
+    expect(limitesDaSemana(inicioDaSemana(mais(1), j), j)).toEqual({ de: HOJE, ate: mais(1), anterior: null, proxima: null });
+  });
+
+  it('janela de 7: semana 0 com 7 dias e semana 1 com 1 dia (hoje + 7)', () => {
+    const j = { hoje: HOJE, janelaDias: 7 };
+    expect(limitesDaSemana(HOJE, j)).toEqual({ de: HOJE, ate: mais(6), anterior: null, proxima: mais(7) });
+    expect(inicioDaSemana(mais(7), j)).toEqual(mais(7));
+    expect(limitesDaSemana(mais(7), j)).toEqual({ de: mais(7), ate: mais(7), anterior: HOJE, proxima: null });
+  });
+
+  it('virada de ano e de mês (aritmética civil)', () => {
+    const j = { hoje: { ano: 2026, mes: 12, dia: 28 }, janelaDias: 60 };
+    expect(limitesDaSemana(j.hoje, j)).toMatchObject({ ate: { ano: 2027, mes: 1, dia: 3 }, proxima: { ano: 2027, mes: 1, dia: 4 } });
+    expect(inicioDaSemana({ ano: 2027, mes: 1, dia: 10 }, j)).toEqual({ ano: 2027, mes: 1, dia: 4 });
+  });
+});
+
+describe('links da régua (D-051 RN-10, RN-11, RN-14; CA-5, CA-7, CA-10, CA-16)', () => {
+  const S = [A, B, C];
+
+  it('hrefDoDia: só s + data + #reservar', () => {
+    expect(ANCORA_RESERVA).toBe('reservar');
+    expect(hrefDoDia('/x', S, '2026-12-01')).toBe(`/x?s=${A}&s=${B}&s=${C}&data=2026-12-01#reservar`);
+  });
+
+  it('hrefDaSemana: só s + de + #reservar', () => {
+    expect(hrefDaSemana('/x', S, '2026-11-27')).toBe(`/x?s=${A}&s=${B}&s=${C}&de=2026-11-27#reservar`);
+  });
+
+  it('ida e volta: o link da semana reproduz a semana e o do dia reproduz a data, sem item', () => {
+    for (let k = 0; k < 9; k++) {
+      const inicio = mais(7 * k);
+      expect(lerPasso(paramsDe(hrefDaSemana('/x', S, chaveDeData(inicio))), CTX)).toEqual({
+        passo: 'dia',
+        s: S,
+        semana: inicio,
+        aviso: null,
+      });
+    }
+    expect(lerPasso(paramsDe(hrefDoDia('/x', S, '2026-12-01')), CTX)).toMatchObject({
+      passo: 'servico',
+      indice: 0,
+      data: { ano: 2026, mes: 12, dia: 1 },
+      itens: [null, null, null],
+      preSelecionado: null,
+      alterando: false,
+      filtro: null,
+      aviso: null,
+    });
+  });
+
+  it('"Escolher outro dia" (CA-10): a semana que contém a data, sem dia marcado', () => {
+    const q = { s: S, data: chaveDeData(mais(17)), h: [item(ANA, H9), null, null] };
+    expect(lerPasso(paramsDe(hrefOutroDia('/x', q)), CTX)).toEqual({ passo: 'dia', s: S, semana: mais(14), aviso: null });
+  });
+
+  it('nenhuma chave fora de s|data|de e nenhum dado pessoal (CA-16)', () => {
+    const hrefs = [
+      hrefDoDia('/x', S, '2026-12-01'),
+      hrefDaSemana('/x', S, '2026-11-27'),
+      hrefOutroDia('/x', { s: S, data: '2026-12-01', h: [item(ANA, H9), null, null] }),
+    ];
+    for (const h of hrefs) {
+      expect(h.endsWith('#reservar'), h).toBe(true);
+      const chaves = new Set(new URL(h, 'http://l').searchParams.keys());
+      for (const k of chaves) expect(['s', 'data', 'de']).toContain(k);
+      expect(h).not.toMatch(/nome|telefone|aceite|consent|h\d=|alterar|enviado|aviso|[?&]f=/);
+    }
+  });
+});
+
+describe('compatibilidade das URLs antigas (D-051 RN-12, CA-8)', () => {
+  const S = [A, B];
+  const D = '2026-12-01';
+  const X = '2026-12-05';
+
+  it.each<[string, Record<string, string | string[]>, Record<string, unknown>]>([
+    ['?s=…', { s: S }, { passo: 'dia', semana: HOJE }],
+    ['?s=…&de=X', { s: S, de: X }, { passo: 'dia', semana: { ano: 2026, mes: 12, dia: 4 } }],
+    ['?s=…&data=D', { s: S, data: D }, { passo: 'servico', indice: 0, data: { ano: 2026, mes: 12, dia: 1 } }],
+    ['?s=…&data=D&de=X', { s: S, data: D, de: X }, { passo: 'servico', indice: 0, data: { ano: 2026, mes: 12, dia: 1 } }],
+    ['?s=…&data=D&h0', { s: S, data: D, h0: item(ANA, H9) }, { passo: 'servico', indice: 1 }],
+    [
+      '?s=…&data=D&h0&h1&alterar=0',
+      { s: S, data: D, h0: item(ANA, H9), h1: item(BIA, H10), alterar: '0' },
+      { passo: 'servico', indice: 0, alterando: true },
+    ],
+    ['?s=…&data=D&h0&h1&alterar=1', { s: S, data: D, h0: item(ANA, H9), h1: item(BIA, H10), alterar: '1' }, { passo: 'servico', indice: 1 }],
+    ['?s=…&data fora da janela', { s: S, data: '2027-03-01', de: X }, { passo: 'dia', semana: { ano: 2026, mes: 12, dia: 4 } }],
+    ['?s=…&data inválida', { s: S, data: 'x' }, { passo: 'dia', semana: HOJE }],
+  ])('%s', (_, params, esperado) => {
+    expect(lerPasso(params, CTX)).toMatchObject(esperado);
   });
 });

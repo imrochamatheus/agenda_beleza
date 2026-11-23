@@ -18,7 +18,7 @@ import type { AvaliacoesPublicas } from '@/server/avaliacoes/tipos';
 import type { AcaoDenunciar } from '../_denuncia/estado';
 import type { AcaoReservar, EstadoReserva } from '../estado';
 import { FormularioDados } from './FormularioDados';
-import { CabecalhoDados, PassoData, PassoServico, PassoServicos } from './Passos';
+import { CabecalhoDados, PassoDia, PassoServico, PassoServicos } from './Passos';
 import {
   Descricao,
   Equipe,
@@ -65,8 +65,8 @@ function PassoAtual({ props }: { props: PaginaDoSalaoProps }) {
       );
     case "servicos":
       return <PassoServicos base={base} servicos={servicos} visao={visao} />;
-    case "data":
-      return <PassoData base={base} visao={visao} />;
+    case "dia":
+      return <PassoDia base={base} visao={visao} />;
     case "servico":
       // Item que caiu (GET): sem JavaScript o POST do conflito, e o da confirmação, voltam à página neste passo;
       // o formulário assume com o estado da ação (D-036 DEF-1, D-050 CA-10). Sem estado, vale o passo.

@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { reservasDoTelefone, telefoneUnico } from './suporte/fixtures';
 import {
-  diaFuturo, linkDoDia, marcarComSetas, noPassoDoServico, paradasDoRoteiro, radioDoHorario, tabAte, verificarTela,
+  diaFuturo, irParaSemanaDoDia, linkDoDia, marcarComSetas, noPassoDoServico, paradasDoRoteiro, radioDoHorario, tabAte, verificarTela,
 } from './suporte/publico';
 
 // D-050 CA-12 e critérios visuais 6, 14 e 16 (D-036 CA-19/CA-22 revistos): o cenário do exemplo (Escova com Bia de
@@ -53,9 +53,11 @@ test('CA-12: o exemplo de 3 serviços em 3 profissionais, manhã e tarde, só co
   await tabAte(page, page.getByRole('button', { name: 'Continuar' }));
   await page.keyboard.press('Enter');
 
-  // 2. Dia: Tab até o link do dia, Enter.
-  await expect(page.getByRole('heading', { level: 2, name: 'Escolha o dia' })).toBeVisible();
-  await verificarTela(page, 'passo dia');
+  // 2. Dia (D-051: régua no passo do 1º serviço): "Próxima semana" por Tab + Enter até a semana do dia, depois
+  // Tab até o link do dia, Enter.
+  await noPassoDoServico(page, 'Escova', 1, 3);
+  await verificarTela(page, 'passo 0 sem dia');
+  await irParaSemanaDoDia(page, dia, { teclado: true });
   await tabAte(page, linkDoDia(page, dia));
   await page.keyboard.press('Enter');
 

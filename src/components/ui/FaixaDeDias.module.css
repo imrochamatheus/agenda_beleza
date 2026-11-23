@@ -1,0 +1,201 @@
+/* Régua da semana (D-051 web-design §3.3, §4.1, §5.5): sete colunas iguais, sem vão, separadas por traços finos. */
+.faixa {
+  display: grid;
+  gap: var(--espaco-3);
+  min-width: 0;
+}
+
+.cabecalho {
+  display: grid;
+  gap: var(--espaco-1);
+}
+
+.titulo {
+  margin: 0;
+}
+
+.periodo {
+  margin: 0;
+  font-size: var(--texto-sm);
+  line-height: 1.4;
+  color: var(--cor-texto-suave);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Salvaguarda (RN-18): só rola abaixo de ~340 px ou com texto ampliado; o documento nunca rola. A sangria
+ * (margem negativa) é decidida pelo contexto pela variável --faixa-sangria (padrão 0).
+ */
+.rolagem {
+  min-width: 0;
+  margin-inline: var(--faixa-sangria, 0);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  border-block: 1px solid var(--cor-borda-sutil);
+}
+
+/* Grupo focável da semana vazia (C2): contorno interno, que o próprio overflow não corta. */
+.rolagem:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: calc(-1 * var(--foco-largura));
+}
+
+.regua {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(var(--alvo-minimo), 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.item + .item {
+  border-inline-start: 1px solid var(--cor-borda-sutil);
+}
+
+.dia {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--alvo-minimo);
+  min-height: var(--alvo-minimo);
+  padding-block: var(--espaco-2);
+  padding-inline: var(--espaco-1);
+  background: var(--cor-superficie);
+  color: var(--cor-texto-suave);
+  text-align: center;
+  text-decoration: none;
+  transition:
+    background-color var(--duracao),
+    box-shadow var(--duracao);
+}
+
+.semana,
+.mes {
+  font-size: var(--texto-sm);
+  line-height: 1.3;
+}
+
+.semana {
+  font-weight: 600;
+}
+
+.numero {
+  font-family: var(--fonte-titulo), Georgia, serif;
+  font-optical-sizing: auto;
+  font-size: var(--texto-xl);
+  font-weight: 500;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+a.dia .numero {
+  color: var(--cor-primaria-forte);
+}
+
+a.dia:hover:not([aria-current='date']) {
+  box-shadow: inset 0 -3px 0 var(--cor-borda-controle);
+}
+
+a.dia:hover:not([aria-current='date']) .numero {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+/* Contorno interno: os dias são colados e o invólucro com overflow cortaria um contorno externo. */
+a.dia:focus-visible {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: calc(-1 * var(--foco-largura));
+}
+
+a.dia:active {
+  background: var(--cor-superficie-alt);
+}
+
+/* Selecionado: luminância, peso e barra na base (não depende só do matiz). */
+a.dia[aria-current='date'] {
+  background: var(--cor-primaria-forte);
+  color: var(--cor-sobre-primaria);
+  box-shadow: inset 0 -3px 0 var(--cor-sobre-primaria);
+}
+
+a.dia[aria-current='date'] .numero {
+  color: var(--cor-sobre-primaria);
+  font-weight: 600;
+}
+
+a.dia[aria-current='date']:focus-visible {
+  outline-color: var(--cor-sobre-primaria);
+}
+
+.semHorario {
+  background: var(--cor-superficie-alt);
+  cursor: default;
+}
+
+.semHorario .numero {
+  text-decoration: line-through 1px;
+}
+
+/* Marcado sem horário (RN-8): contorno interno de 3 px. */
+.semHorario[aria-current='date'] {
+  box-shadow: inset 0 0 0 3px var(--cor-primaria-forte);
+}
+
+.semanas ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-2) var(--espaco-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.semanas a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espaco-1);
+  min-height: var(--alvo-minimo);
+  font-weight: 600;
+}
+
+.proxima {
+  margin-inline-start: auto;
+}
+
+.apoio {
+  margin: 0;
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-suave);
+}
+
+@media (min-width: 48rem) {
+  .cabecalho {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--espaco-1) var(--espaco-4);
+    max-width: 36rem;
+  }
+
+  .rolagem {
+    max-width: 36rem;
+    border: 1px solid var(--cor-borda-sutil);
+    border-radius: var(--raio);
+    overflow: hidden;
+  }
+
+  .semanas,
+  .apoio {
+    max-width: 36rem;
+  }
+}

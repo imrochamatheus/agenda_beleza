@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { diaFuturo, linkDoDia, marcarComSetas, noPassoDoServico, paradasDoRoteiro, radioDoHorario, tabAte } from './suporte/publico';
+import { diaFuturo, irParaSemanaDoDia, linkDoDia, marcarComSetas, noPassoDoServico, paradasDoRoteiro, radioDoHorario, tabAte } from './suporte/publico';
 import { analisarComAxe, semRolagemHorizontal } from './suporte/vitrine';
 
 // D-026 CA-12 e D-050 critérios visuais 3–6, 9, 10, 12, 15 e 16: o fluxo da página pública de reserva só com o
@@ -45,8 +45,10 @@ test.describe('CA-12: reserva completa só com o teclado (375×812)', () => {
     await tabAte(page, page.getByRole('button', { name: 'Continuar' }));
     await page.keyboard.press('Enter');
 
-    await expect(page.getByRole('heading', { level: 2, name: 'Escolha o dia' })).toBeVisible();
-    await verificar(page, 'passo dia');
+    // D-051: a régua fica no passo do 1º serviço; a semana do dia é alcançada por "Próxima semana" (Tab + Enter).
+    await noPassoDoServico(page, 'Escova', 1, 3);
+    await verificar(page, 'passo 0 sem dia');
+    await irParaSemanaDoDia(page, dia, { teclado: true });
     await tabAte(page, linkDoDia(page, dia));
     await page.keyboard.press('Enter');
 
@@ -168,6 +170,8 @@ test.describe('CA-12: reserva completa só com o teclado (375×812)', () => {
     await abrir(page, '?s=lixo&p=x&data=2026-02-30&h0=amanha');
     await expect(page.getByRole('heading', { level: 2, name: 'Serviços' })).toBeVisible();
     await abrir(page, '?s=11111111-1111-4111-8111-111111111111&data=nao&h0=x');
-    await expect(page.getByRole('heading', { level: 2, name: 'Escolha o dia' })).toBeVisible();
+    // D-051: sem data válida, o passo do 1º serviço sem dia (régua e "escolha um dia").
+    await expect(page.getByRole('heading', { level: 2, name: 'Escova' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 3, name: 'Escolha um dia para ver os horários' })).toBeVisible();
   });
 });

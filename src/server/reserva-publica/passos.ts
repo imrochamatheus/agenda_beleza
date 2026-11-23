@@ -3,14 +3,14 @@
 // vira erro 500. O estado inteiro fica na query (GET, sem JavaScript e sem dado pessoal):
 //   s       serviços, repetido, na ordem de escolha (1..10, UUID, sem repetição)
 //   data    AAAA-MM-DD, dentro de [hoje, hoje + janela]
-//   de      início da página de dias (passo "data")
+//   de      dia dentro da semana a exibir no passo "dia" (D-051: a semana alinhada a hoje que o contém)
 //   h0..h9  item do serviço s[k]: `<profissionalId>_<isoUTC>`
 //   f       filtro de profissional do passo atual
 //   alterar `servicos` ou o índice do item a alterar
 //   enviado índice do passo cujo formulário foi enviado (aviso "Escolha um horário para X")
 //   aviso   código fechado (`CODIGOS_AVISO`)
 import { SEGMENTOS_RESERVADOS } from '@/config/navegacao';
-import { compararDatas, ehDataCivilValida, somarDias } from '@/server/tempo/fuso';
+import { compararDatas, diferencaEmDias, ehDataCivilValida, somarDias } from '@/server/tempo/fuso';
 import type { DataCivil } from '@/server/tempo/fuso';
 
 import { CODIGOS_AVISO } from './tipos';
@@ -21,7 +21,10 @@ export type ParametrosBrutos = Record<string, string | string[] | undefined>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/;
-export const DIAS_POR_PAGINA = 14;
+/** Dias de uma semana da régua (D-051 RN-3). */
+export const DIAS_POR_SEMANA = 7;
+/** `id` do `h2` de todos os passos: fragmento dos links de dia, de semana e de "Escolher outro dia" (D-051 RN-11). */
+export const ANCORA_RESERVA = 'reservar';
 export const LIMITE_ITENS = 10;
 /** Separador entre o profissional e o instante no valor do item (`h<k>` e rádio do `SlotGrid`). */
 export const SEPARADOR_ITEM = '_';
@@ -113,10 +116,44 @@ export function lerItens(params: ParametrosBrutos, n: number): (ItemDaUrl | null
 export const chaveDeData = (d: DataCivil): string =>
   `${String(d.ano).padStart(4, '0')}-${String(d.mes).padStart(2, '0')}-${String(d.dia).padStart(2, '0')}`;
 
+/** "Hoje" no fuso do salão e a janela (dias corridos depois de hoje). */
+export type Janela = { hoje: DataCivil; janelaDias: number };
+
+/**
+ * Início da semana que contém `d` (D-051 RN-3, RN-6): `d` é limitado a [hoje, hoje + janela] e as semanas são
+ * blocos fixos de 7 dias civis a partir de hoje (não a semana do calendário). Aritmética de datas civis, sem
+ * `Date` local: não depende do fuso do processo.
+ */
+export function inicioDaSemana(d: DataCivil, j: Janela): DataCivil {
+  const ultima = somarDias(j.hoje, j.janelaDias);
+  const limitada = compararDatas(d, j.hoje) < 0 ? j.hoje : compararDatas(d, ultima) > 0 ? ultima : d;
+  return somarDias(j.hoje, DIAS_POR_SEMANA * Math.floor(diferencaEmDias(j.hoje, limitada) / DIAS_POR_SEMANA));
+}
+
+/**
+ * Limites da semana de um início JÁ alinhado (`inicioDaSemana`): `ate` = min(inicio + 6, última data da
+ * janela); `anterior`/`proxima` = início da semana vizinha, ou null fora da janela (RN-5).
+ */
+export function limitesDaSemana(
+  inicio: DataCivil,
+  j: Janela,
+): { de: DataCivil; ate: DataCivil; anterior: DataCivil | null; proxima: DataCivil | null } {
+  const ultima = somarDias(j.hoje, j.janelaDias);
+  const fim = somarDias(inicio, DIAS_POR_SEMANA - 1);
+  const proxima = somarDias(inicio, DIAS_POR_SEMANA);
+  return {
+    de: inicio,
+    ate: compararDatas(fim, ultima) > 0 ? ultima : fim,
+    anterior: compararDatas(inicio, j.hoje) > 0 ? somarDias(inicio, -DIAS_POR_SEMANA) : null,
+    proxima: compararDatas(proxima, ultima) <= 0 ? proxima : null,
+  };
+}
+
 type Aviso = { aviso: CodigoAviso | null };
 export type PassoLido =
   | ({ passo: 'servicos'; marcados: string[] } & Aviso)
-  | ({ passo: 'data'; s: string[]; de: DataCivil } & Aviso)
+  /** Passo do serviço 0 sem dia escolhido (D-051): a régua na semana que começa em `semana` (já alinhada). */
+  | ({ passo: 'dia'; s: string[]; semana: DataCivil } & Aviso)
   | ({
       passo: 'servico';
       s: string[];
@@ -134,12 +171,13 @@ export type PassoLido =
 
 /**
  * Passo mais avançado cujos parâmetros estão todos válidos. A data precisa estar em [hoje, hoje + janela]
- * (dias civis do salão); `de` (início da lista de dias) é ajustado ao intervalo. O primeiro `h<k>` ausente ou
+ * (dias civis do salão); sem ela o passo é `'dia'`, na semana que contém `de` (ou hoje), limitada à janela e
+ * alinhada a hoje (D-051 RN-6; com `data` válida, `de` é ignorado). O primeiro `h<k>` ausente ou
  * inválido define o passo do serviço k; `alterar=k` força o passo k com o item atual pré-selecionado.
  * A data de cada item NÃO é conferida aqui (a função não conhece o fuso): `carregarPasso` só oferece
  * horários da `data`, então um item de outro dia volta ao seu passo.
  */
-export function lerPasso(params: ParametrosBrutos, ctx: { hoje: DataCivil; janelaDias: number }): PassoLido {
+export function lerPasso(params: ParametrosBrutos, ctx: Janela): PassoLido {
   const aviso = lerAviso(params.aviso);
   const s = lerServicoIds(params.s);
   if (s === null) return { passo: 'servicos', marcados: [], aviso };
@@ -149,11 +187,7 @@ export function lerPasso(params: ParametrosBrutos, ctx: { hoje: DataCivil; janel
   const ultima = somarDias(ctx.hoje, ctx.janelaDias);
   const data = lerData(params.data);
   if (data === null || compararDatas(data, ctx.hoje) < 0 || compararDatas(data, ultima) > 0) {
-    const bruto = lerData(params.de);
-    let de = bruto ?? ctx.hoje;
-    if (compararDatas(de, ctx.hoje) < 0) de = ctx.hoje;
-    if (compararDatas(de, ultima) > 0) de = ultima;
-    return { passo: 'data', s, de, aviso };
+    return { passo: 'dia', s, semana: inicioDaSemana(lerData(params.de) ?? ctx.hoje, ctx), aviso };
   }
 
   const itens = lerItens(params, s.length);
@@ -239,9 +273,22 @@ export const hrefFiltro = (base: string, q: ConsultaDaUrl, filtro: string | null
     ...(alterando !== null && { alterar: alterando }),
   });
 
-/** "Escolher outro dia": lista de dias a partir da data atual; os horários escolhidos caem (eram do dia). */
+const ancorar = (href: string): string => `${href}#${ANCORA_RESERVA}`;
+
+/** Dia da régua (D-051 RN-10): só `s` + `data` (a semana sai da data); todos os horários e o filtro caem. */
+export const hrefDoDia = (base: string, s: readonly string[], data: string): string =>
+  ancorar(montarHref(base, { s, data }));
+
+/** Semana da régua (D-051 RN-10): `s` + `de` = início da semana de destino; o dia marcado e os horários caem. */
+export const hrefDaSemana = (base: string, s: readonly string[], inicio: string): string =>
+  ancorar(montarHref(base, { s, de: inicio }));
+
+/**
+ * "Escolher outro dia" (passos k ≥ 1 e reescolha): a régua na semana que contém a data atual, sem dia marcado;
+ * os horários escolhidos caem (eram do dia). Com a âncora, a página abre na régua (D-051 RN-14, D4).
+ */
 export const hrefOutroDia = (base: string, q: ConsultaDaUrl): string =>
-  montarHref(base, { s: q.s, ...(q.data !== undefined && { de: q.data }) });
+  ancorar(montarHref(base, { s: q.s, ...(q.data !== undefined && { de: q.data }) }));
 
 /** "Alterar serviços": primeiro passo com os serviços marcados. */
 export const hrefAlterarServicos = (base: string, q: ConsultaDaUrl): string =>
