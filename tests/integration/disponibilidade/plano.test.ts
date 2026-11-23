@@ -10,9 +10,10 @@ import { conectar } from '../../support/sql';
 import { criarCenario, inserirProfissional, inserirCliente } from './apoio';
 import type { Cenario } from './apoio';
 
-// D-018 T-3 (CA-25, dba.md): plano da consulta de ocupação com volume (2 salões × 10 profissionais ×
-// 5.000 reservas) e do `lerRegras` com COLUNAS_FUNCIONAMENTO. O plano é impresso com o prefixo [CA-25]
-// (evidência de dev.md). Sem DROP INDEX nem enable_seqscan = off: só ANALYZE.
+// D-018 T-3 (CA-25), reescrito na D-050 T-3 (CA-3, dba.md Q6): plano da consulta de ocupação sobre
+// `reserva_item` com volume (2 salões × 10 profissionais × 5.000 itens = 100.000 itens, em reservas de
+// 2 itens com profissionais diferentes) e do `lerRegras` com COLUNAS_FUNCIONAMENTO. O plano é impresso
+// com o prefixo [CA-3] (evidência de dev.md). Sem DROP INDEX nem enable_seqscan = off: só ANALYZE.
 
 let c: pg.Client;
 let sal: { cenario: Cenario; profissionais: string[]; cliente: string }[];
@@ -30,23 +31,36 @@ beforeAll(async () => {
     const profissionais = [cenario.ana, cenario.bia];
     for (let k = 3; k <= 10; k++) profissionais.push(await inserirProfissional(c, cenario.s.salaoId, `Prof ${k}`));
     const cliente = await inserirCliente(c, cenario.s.salaoId);
-    // Uma reserva de 30 min a cada 7 h por profissional (sem sobreposição), 10% canceladas.
+    // Um item de 30 min a cada 7 h por profissional (sem sobreposição), 10% cancelados. Cada reserva tem
+    // 2 itens em sequência: o do profissional k (0..4) e, logo depois, o do profissional k + 5 (A e B).
+    // Os derivados da reserva não importam aqui (só reserva_item é lido).
+    const BASE_SQL = `
+      SELECT md5($1::text || ':' || k || ':' || g)::uuid AS rid, k, g, $2::timestamptz + g * interval '7 hours' AS t,
+             (CASE WHEN g % 10 = 0 THEN 'cancelado'
+                   WHEN g % 3 = 0 THEN 'concluido'
+                   WHEN g % 3 = 1 THEN 'confirmado'
+                   ELSE 'nao_compareceu' END)::status_reserva AS st
+        FROM generate_series(0, 4) AS k CROSS JOIN generate_series(0, 4999) AS g`;
     await c.query(
-      `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-       SELECT $1::uuid, p, $2::uuid, t, t + interval '30 minutes', t + interval '30 minutes',
-              (CASE WHEN g % 10 = 0 THEN 'cancelado'
-                    WHEN g % 3 = 0 THEN 'concluido'
-                    WHEN g % 3 = 1 THEN 'confirmado'
-                    ELSE 'nao_compareceu' END)::status_reserva,
-              'equipe'
-         FROM unnest($3::uuid[]) AS p
-         CROSS JOIN generate_series(0, 4999) AS g
-         CROSS JOIN LATERAL (SELECT $4::timestamptz + g * interval '7 hours' AS t) AS x`,
-      [cenario.s.salaoId, cliente, profissionais, BASE],
+      `INSERT INTO reserva (id, salao_id, cliente_id, inicio, fim, status, origem, cancelada_em)
+       SELECT b.rid, $1::uuid, $3::uuid, b.t, b.t + interval '60 minutes', b.st, 'equipe',
+              CASE WHEN b.st = 'cancelado' THEN b.t END
+         FROM (${BASE_SQL}) b`,
+      [cenario.s.salaoId, BASE, cliente],
+    );
+    await c.query(
+      `INSERT INTO reserva_item (salao_id, reserva_id, servico_id, profissional_id, ordem, preco_centavos, duracao_min,
+                                 inicio, fim, ocupado_ate, status)
+       SELECT $1::uuid, b.rid, x.servico, ($3::uuid[])[x.p + 1], x.ordem, 5000, 30, x.t, x.t + interval '30 minutes',
+              x.t + interval '30 minutes', b.st
+         FROM (${BASE_SQL}) b
+         CROSS JOIN LATERAL (VALUES (b.k, $4::uuid, 0, b.t), (b.k + 5, $5::uuid, 1, b.t + interval '30 minutes'))
+           AS x(p, servico, ordem, t)`,
+      [cenario.s.salaoId, BASE, profissionais, cenario.A, cenario.B],
     );
     sal.push({ cenario, profissionais, cliente });
   }
-  await c.query('ANALYZE reserva');
+  await c.query('ANALYZE reserva; ANALYZE reserva_item');
 }, 120_000);
 
 afterAll(async () => {
@@ -82,14 +96,19 @@ async function planoGenerico(sql: Prisma.Sql): Promise<string> {
   }
 }
 
-const SEM_SEQ = /Seq Scan on reserva\b/;
-const COM_INDICE = /(Index Scan|Bitmap Index Scan)( using| on) reserva_sem_sobreposicao/;
+const SEM_SEQ = /Seq Scan on reserva_item\b/;
+const COM_INDICE = /(Index Scan|Bitmap Index Scan)( using| on) reserva_item_sem_sobreposicao/;
 const tempo = (plano: string) => /Execution Time: ([\d.]+) ms/.exec(plano)?.[1];
 
-describe('CA-25: plano da consulta de ocupação com volume', () => {
-  it('o volume foi carregado (2 × 10 × 5.000 reservas)', async () => {
+describe('CA-3: plano da consulta de ocupação sobre reserva_item com volume', () => {
+  it('o volume foi carregado (2 × 10 × 5.000 itens, em 50.000 reservas de 2 itens)', async () => {
+    const { rows: reservas } = await c.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM reserva WHERE salao_id = ANY($1::uuid[])',
+      [sal.map((x) => x.cenario.s.salaoId)],
+    );
+    expect(reservas[0].n).toBe(50_000);
     const { rows } = await c.query<{ n: number; ativas: number }>(
-      `SELECT count(*)::int AS n, count(*) FILTER (WHERE status <> 'cancelado')::int AS ativas FROM reserva WHERE salao_id = ANY($1::uuid[])`,
+      `SELECT count(*)::int AS n, count(*) FILTER (WHERE status <> 'cancelado')::int AS ativas FROM reserva_item WHERE salao_id = ANY($1::uuid[])`,
       [sal.map((x) => x.cenario.s.salaoId)],
     );
     expect(rows[0].n).toBe(100_000);
@@ -98,19 +117,21 @@ describe('CA-25: plano da consulta de ocupação com volume', () => {
 
   it('o texto mantém o literal de status e a expressão da constraint', () => {
     const q = consultaOcupacoes(sal[0].cenario.s.salaoId, sal[0].profissionais, PERIODO_LONGO);
-    expect(q.text).toContain("r.status IN ('confirmado', 'concluido', 'nao_compareceu')");
-    expect(q.text).toContain("tstzrange(r.inicio, r.ocupado_ate, '[)')");
+    expect(q.text).toContain("i.status IN ('confirmado', 'concluido', 'nao_compareceu')");
+    expect(q.text).toContain("tstzrange(i.inicio, i.ocupado_ate, '[)')");
+    expect(q.text).toMatch(/FROM reserva_item i\b/);
+    expect(q.text).not.toMatch(/FROM reserva\b(?!_)/);
     expect(q.text).not.toMatch(/telefone|cliente_id/i);
   });
 
   it.each([
     ['10 profissionais × 61 dias', PERIODO_LONGO, 10],
     ['1 profissional × 1 dia', PERIODO_CURTO, 1],
-  ])('plano custom (%s): índice reserva_sem_sobreposicao e nenhum Seq Scan em reserva', async (nome, periodo, n) => {
+  ])('plano custom (%s): índice reserva_item_sem_sobreposicao e nenhum Seq Scan em reserva_item', async (nome, periodo, n) => {
     const { cenario, profissionais } = sal[0];
     const sql = consultaOcupacoes(cenario.s.salaoId, profissionais.slice(0, n), periodo);
     const plano = await planoCustom(sql);
-    console.log(`[CA-25] custom ${nome} (ms=${tempo(plano)})\n${plano}`);
+    console.log(`[CA-3] custom ${nome} (ms=${tempo(plano)})\n${plano}`);
     expect(plano).not.toMatch(SEM_SEQ);
     expect(plano).toMatch(COM_INDICE);
   }, 60_000);
@@ -118,11 +139,11 @@ describe('CA-25: plano da consulta de ocupação com volume', () => {
   it.each([
     ['10 profissionais × 61 dias', PERIODO_LONGO, 10],
     ['1 profissional × 1 dia', PERIODO_CURTO, 1],
-  ])('plano genérico (%s): índice reserva_sem_sobreposicao e nenhum Seq Scan em reserva', async (nome, periodo, n) => {
+  ])('plano genérico (%s): índice reserva_item_sem_sobreposicao e nenhum Seq Scan em reserva_item', async (nome, periodo, n) => {
     const { cenario, profissionais } = sal[1];
     const sql = consultaOcupacoes(cenario.s.salaoId, profissionais.slice(0, n), periodo);
     const plano = await planoGenerico(sql);
-    console.log(`[CA-25] genérico ${nome} (ms=${tempo(plano)})\n${plano}`);
+    console.log(`[CA-3] genérico ${nome} (ms=${tempo(plano)})\n${plano}`);
     expect(plano).toContain('$');
     expect(plano).not.toMatch(SEM_SEQ);
     expect(plano).toMatch(COM_INDICE);
@@ -132,12 +153,12 @@ describe('CA-25: plano da consulta de ocupação com volume', () => {
     const { cenario, profissionais } = sal[0];
     const sql = consultaOcupacoes(cenario.s.salaoId, profissionais, PERIODO_LONGO);
     const { rows } = await c.query<{ profissional_id: string; inicio: Date }>(sql.text, sql.values as unknown[]);
-    // ~1464 h / 7 h ≈ 209 inícios por profissional; 10% cancelados.
+    // ~1464 h / 7 h ≈ 209 itens por profissional; 10% cancelados.
     expect(rows.length).toBeGreaterThan(1500);
     expect(rows.length).toBeLessThan(2100);
     expect(new Set(rows.map((r) => r.profissional_id))).toEqual(new Set(profissionais));
     const { rows: canceladas } = await c.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM reserva WHERE salao_id = $1 AND status = 'cancelado'
+      `SELECT count(*)::int AS n FROM reserva_item WHERE salao_id = $1 AND status = 'cancelado'
         AND tstzrange(inicio, ocupado_ate, '[)') && tstzrange($2::timestamptz, $3::timestamptz, '[)')`,
       [cenario.s.salaoId, PERIODO_LONGO.de, PERIODO_LONGO.ate],
     );
@@ -170,7 +191,7 @@ describe('plano do lerRegras com COLUNAS_FUNCIONAMENTO (dba.md, pendência 6)', 
 
   it('funcionamento informado: acessa salao por salao_pkey e salao_funcionamento por salao_id', async () => {
     const plano = await planoCustom(regras(definido));
-    console.log(`[CA-25] lerRegras (funcionamento informado)\n${plano}`);
+    console.log(`[CA-3] lerRegras (funcionamento informado)\n${plano}`);
     expect(plano).toMatch(/Index Scan using salao_pkey on salao s/);
     expect(plano).toMatch(/salao_funcionamento_sem_sobreposicao/);
     expect(plano).not.toMatch(/Seq Scan on salao_funcionamento/);
@@ -179,7 +200,7 @@ describe('plano do lerRegras com COLUNAS_FUNCIONAMENTO (dba.md, pendência 6)', 
 
   it('não informado: a subconsulta de salao_funcionamento não executa (never executed)', async () => {
     const plano = await planoCustom(regras(naoDefinido));
-    console.log(`[CA-25] lerRegras (não informado)\n${plano}`);
+    console.log(`[CA-3] lerRegras (não informado)\n${plano}`);
     expect(plano).toMatch(/Index Scan using salao_pkey on salao s/);
     expect(plano).toMatch(/salao_funcionamento[^\n]*\(never executed\)/);
   }, 60_000);

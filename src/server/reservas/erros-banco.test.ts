@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { RESTRICAO_SOBREPOSICAO, ehConflitoDeSobreposicao } from './erros-banco';
 
-// CA-18 (D-025): só o 23P01 COM o nome reserva_sem_sobreposicao é reconhecido. A fixture REAL_P2010 é
+// CA-18 (D-025) e D-050 §3.3: só o 23P01 COM o nome reserva_item_sem_sobreposicao é reconhecido. A fixture REAL_P2010 é
 // a forma capturada de um INSERT bruto contra o PostgreSQL com Prisma 7 (ver erros-banco.ts).
 
 const MENSAGEM = `conflicting key value violates exclusion constraint "${RESTRICAO_SOBREPOSICAO}"`;
@@ -55,6 +55,21 @@ describe('ehConflitoDeSobreposicao', () => {
     expect(
       ehConflitoDeSobreposicao(comCausa({ originalCode: '23P01', originalMessage: 'violates exclusion constraint "outra_exclusao"' })),
     ).toBe(false);
+  });
+
+  it('D-050: o nome ANTIGO reserva_sem_sobreposicao não é mais reconhecido', () => {
+    const antigo = 'conflicting key value violates exclusion constraint "reserva_sem_sobreposicao"';
+    expect(RESTRICAO_SOBREPOSICAO).toBe('reserva_item_sem_sobreposicao');
+    expect(ehConflitoDeSobreposicao({ code: '23P01', constraint: 'reserva_sem_sobreposicao' })).toBe(false);
+    expect(ehConflitoDeSobreposicao(comCausa({ originalCode: '23P01', originalMessage: antigo, message: antigo }))).toBe(false);
+  });
+
+  it('D-050: reserva_item_mesma_reserva_sem_sobreposicao NUNCA é reconhecida (indica falha de conferirItens)', () => {
+    const nome = 'reserva_item_mesma_reserva_sem_sobreposicao';
+    const msg = `conflicting key value violates exclusion constraint "${nome}"`;
+    expect(ehConflitoDeSobreposicao({ code: '23P01', constraint: nome })).toBe(false);
+    expect(ehConflitoDeSobreposicao(comCausa({ originalCode: '23P01', code: '23P01', originalMessage: msg, message: msg }))).toBe(false);
+    expect(ehConflitoDeSobreposicao({ code: 'P2010', meta: { code: '23P01' }, message: msg })).toBe(false);
   });
 
   it('23P01 sem nome (nenhuma evidência da restrição) não é reconhecido', () => {

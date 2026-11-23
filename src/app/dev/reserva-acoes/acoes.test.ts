@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { estadoCancelarInicial, estadoMarcarInicial, estadoRemarcarInicial } from '@/app/painel/agenda/reservas/[id]/estado';
+import { estadoCancelarTodosInicial, estadoDoItemInicial, estadoRemarcarInicial } from '@/app/painel/agenda/reservas/[id]/estado';
 
-import { demonstrarCancelarAcao, demonstrarMarcarAcao, demonstrarRemarcarAcao } from './acoes';
-import { ANA_DEMO, SERVICOS_DEMO } from '@/app/dev/reserva-nova/demonstracao';
+import { demonstrarCancelarAcao, demonstrarCancelarTodosAcao, demonstrarMarcarAcao, demonstrarRemarcarAcao } from './acoes';
+import { idDaReservaDemo } from './demonstracao';
 
-// D-030: as ações de demonstração só validam; desligada a vitrine, não processam nada.
+// D-030/D-050: as ações de demonstração só validam; desligada a vitrine, não processam nada. PRG na mesma vista.
 afterEach(() => vi.unstubAllEnvs());
 
 const formulario = (campos: Record<string, string>) => {
@@ -14,37 +14,65 @@ const formulario = (campos: Record<string, string>) => {
   return f;
 };
 const redireciona = (destino: string) => ({ digest: expect.stringContaining(`NEXT_REDIRECT;replace;${destino}`) });
-const valores = { data: '', hora: '', profissionalId: '', servicoIds: [], confirmarEncaixe: false };
+const valores = { servicoId: '', profissionalId: '', data: '', hora: '', confirmarEncaixe: false };
+const futura = idDaReservaDemo('futura');
+const iniciada = idDaReservaDemo('iniciada');
 
 describe('ações de /dev/reserva-acoes', () => {
   it('vitrine desligada: devolvem o estado anterior', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('VITRINE_COMPONENTES', 'false');
-    const r = estadoRemarcarInicial(valores);
+    const r = estadoRemarcarInicial(null, valores);
     expect(await demonstrarRemarcarAcao(r, formulario({}))).toBe(r);
-    expect(await demonstrarCancelarAcao(estadoCancelarInicial, formulario({ passo: 'cancelar' }))).toBe(estadoCancelarInicial);
-    expect(await demonstrarMarcarAcao(estadoMarcarInicial, formulario({ para: 'concluido' }))).toBe(estadoMarcarInicial);
+    expect(await demonstrarCancelarAcao(estadoDoItemInicial, formulario({}))).toBe(estadoDoItemInicial);
+    expect(await demonstrarMarcarAcao(estadoDoItemInicial, formulario({ destino: 'concluido' }))).toBe(estadoDoItemInicial);
+    expect(await demonstrarCancelarTodosAcao(estadoCancelarTodosInicial, formulario({}))).toBe(estadoCancelarTodosInicial);
   });
 
-  it('remarcar: erros voltam no estado; sucesso é PRG', async () => {
+  it('remarcar: erros voltam no estado com o item; sucesso é PRG com o item e a hora anterior', async () => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
-    const e = await demonstrarRemarcarAcao(estadoRemarcarInicial(valores), formulario({ data: 'x' }));
-    expect(Object.keys(e.erros).length).toBeGreaterThan(0);
-    const fd = formulario({ reservaId: 'x', data: '2099-12-01', hora: '10:00', profissionalId: ANA_DEMO.id, s: SERVICOS_DEMO[0].id });
-    await expect(demonstrarRemarcarAcao(estadoRemarcarInicial(valores), fd)).rejects.toMatchObject(redireciona('/dev/reserva-acoes?resultado=remarcada'));
+    const e = await demonstrarRemarcarAcao(estadoRemarcarInicial(null, valores), formulario({ reservaId: futura, itemId: 'item-escova', hora: 'x' }));
+    expect(e).toMatchObject({ itemId: 'item-escova', erros: { hora: expect.any(String) } });
+    const fd = formulario({ reservaId: futura, itemId: 'item-escova', hora: '10:00', de: '09:00' });
+    await expect(demonstrarRemarcarAcao(estadoRemarcarInicial(null, valores), fd)).rejects.toMatchObject(
+      redireciona('/dev/reserva-acoes?vista=futura&resultado=remarcado&item=item-escova&de=09%3A00#resultado'),
+    );
   });
 
-  it('cancelar em dois passos', async () => {
+  it('cancelar: item cancelável → PRG; item já cancelado → recusa na parada', async () => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
-    expect(await demonstrarCancelarAcao(estadoCancelarInicial, formulario({ passo: 'confirmar' }))).toEqual({ mensagem: null, confirmando: true });
-    expect(await demonstrarCancelarAcao(estadoCancelarInicial, formulario({ passo: 'voltar' }))).toEqual({ mensagem: null, confirmando: false });
-    await expect(demonstrarCancelarAcao(estadoCancelarInicial, formulario({ passo: 'cancelar' }))).rejects.toMatchObject(redireciona('/dev/reserva-acoes?resultado=cancelada'));
+    await expect(demonstrarCancelarAcao(estadoDoItemInicial, formulario({ reservaId: futura, itemId: 'item-manicure' }))).rejects.toMatchObject(
+      redireciona('/dev/reserva-acoes?vista=futura&resultado=cancelado&item=item-manicure#resultado'),
+    );
+    expect(await demonstrarCancelarAcao(estadoDoItemInicial, formulario({ reservaId: futura, itemId: 'item-hidratacao' }))).toEqual({
+      itemId: 'item-hidratacao',
+      mensagem: 'Esta ação não é possível para a situação atual do serviço.',
+    });
   });
 
-  it('marcar: destinos válidos redirecionam; inválido recusa', async () => {
+  it('marcar: só o que a máquina permite agora', async () => {
     vi.stubEnv('VITRINE_COMPONENTES', 'true');
-    await expect(demonstrarMarcarAcao(estadoMarcarInicial, formulario({ para: 'concluido' }))).rejects.toMatchObject(redireciona('/dev/reserva-acoes?resultado=concluida'));
-    await expect(demonstrarMarcarAcao(estadoMarcarInicial, formulario({ para: 'nao_compareceu' }))).rejects.toMatchObject(redireciona('/dev/reserva-acoes?resultado=nao_compareceu'));
-    expect((await demonstrarMarcarAcao(estadoMarcarInicial, formulario({ para: 'cancelado' }))).mensagem).toBeTruthy();
+    await expect(demonstrarMarcarAcao(estadoDoItemInicial, formulario({ reservaId: iniciada, itemId: 'item-escova', destino: 'concluido' }))).rejects.toMatchObject(
+      redireciona('/dev/reserva-acoes?vista=iniciada&resultado=concluido&item=item-escova#resultado'),
+    );
+    await expect(demonstrarMarcarAcao(estadoDoItemInicial, formulario({ reservaId: iniciada, itemId: 'item-escova', destino: 'nao_compareceu' }))).rejects.toMatchObject(
+      redireciona('/dev/reserva-acoes?vista=iniciada&resultado=nao_compareceu&item=item-escova#resultado'),
+    );
+    expect((await demonstrarMarcarAcao(estadoDoItemInicial, formulario({ reservaId: futura, itemId: 'item-escova', destino: 'concluido' }))).mensagem).toBe(
+      'Só é possível marcar o resultado depois do início do serviço.',
+    );
+    expect((await demonstrarMarcarAcao(estadoDoItemInicial, formulario({ reservaId: futura, itemId: 'x', destino: 'cancelado' }))).mensagem).toBe(
+      'Esta ação não é possível para a situação atual do serviço.',
+    );
+  });
+
+  it('cancelar todos: PRG com a quantidade; sem cancelável → recusa', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await expect(demonstrarCancelarTodosAcao(estadoCancelarTodosInicial, formulario({ reservaId: futura }))).rejects.toMatchObject(
+      redireciona('/dev/reserva-acoes?vista=futura&resultado=todos_cancelados&n=2#resultado'),
+    );
+    expect(await demonstrarCancelarTodosAcao(estadoCancelarTodosInicial, formulario({ reservaId: idDaReservaDemo('cancelada') }))).toEqual({
+      mensagem: 'Nenhum serviço desta reserva pode ser cancelado agora.',
+    });
   });
 });

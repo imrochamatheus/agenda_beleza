@@ -93,7 +93,9 @@ const ENUMS: Record<string, string[]> = {
 
 // [nome, tabela, contype]
 const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
-  ['reserva_sem_sobreposicao', 'reserva', 'x'],
+  // D-050: a exclusion saiu de reserva e foi para reserva_item (mais a da mesma reserva, RN-8).
+  ['reserva_item_sem_sobreposicao', 'reserva_item', 'x'],
+  ['reserva_item_mesma_reserva_sem_sobreposicao', 'reserva_item', 'x'],
   ['jornada_sem_sobreposicao', 'jornada', 'x'],
   ['reserva_ordem_chk', 'reserva', 'c'],
   ['cliente_anonimizacao_chk', 'cliente', 'c'],
@@ -110,6 +112,12 @@ const CONSTRAINTS_SQL_BRUTO: [string, string, 'x' | 'c'][] = [
   ['servico_duracao_chk', 'servico', 'c'],
   ['reserva_item_preco_chk', 'reserva_item', 'c'],
   ['reserva_item_duracao_chk', 'reserva_item', 'c'],
+  // D-050 (migração 20261127000000_reserva_item_autonomo)
+  ['reserva_item_ordem_chk', 'reserva_item', 'c'],
+  ['reserva_item_fim_chk', 'reserva_item', 'c'],
+  ['reserva_item_duracao_teto_chk', 'reserva_item', 'c'],
+  ['reserva_item_revisao_chk', 'reserva_item', 'c'],
+  ['mensagem_item_tipo_chk', 'mensagem', 'c'],
   ['assinatura_pagamento_valor_chk', 'assinatura_pagamento', 'c'],
   ['bloqueio_ordem_chk', 'bloqueio', 'c'],
   // D-007 (migração 20261119000000_simuladores_integracao, parte 2)
@@ -186,7 +194,8 @@ const TRIGGERS: [string, string, number][] = [
 ];
 
 const FKS_COMPOSTAS = [
-  'reserva_salao_id_profissional_id_fkey',
+  // D-050: o profissional é do item.
+  'reserva_item_salao_id_profissional_id_fkey',
   'reserva_salao_id_cliente_id_fkey',
   'reserva_item_salao_id_reserva_id_fkey',
   'reserva_item_salao_id_servico_id_fkey',
@@ -274,15 +283,31 @@ describe('CA-1: catálogo depois do migrate deploy', () => {
     ]);
   });
 
-  it('CA-1 (RN-7): reserva_sem_sobreposicao usa tstzrange(inicio, ocupado_ate) e só os status ativos', async () => {
+  it('CA-1 (RN-7; D-050 RN-15): reserva_item_sem_sobreposicao usa tstzrange(inicio, ocupado_ate) e só os status ativos', async () => {
     const [r] = await linhas<{ def: string }>(
-      "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'reserva_sem_sobreposicao'",
+      "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'reserva_item_sem_sobreposicao'",
     );
     expect(r.def).toContain('EXCLUDE USING gist (profissional_id WITH =, tstzrange(inicio, ocupado_ate, \'[)\'::text) WITH &&)');
     expect(r.def).toContain("'confirmado'::status_reserva");
     expect(r.def).toContain("'concluido'::status_reserva");
     expect(r.def).toContain("'nao_compareceu'::status_reserva");
     expect(r.def).not.toContain("'cancelado'");
+  });
+
+  it('D-050 (RN-8): reserva_item_mesma_reserva_sem_sobreposicao usa (reserva_id, tstzrange(inicio, fim)) e só os status ativos', async () => {
+    const [r] = await linhas<{ def: string }>(
+      "SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'reserva_item_mesma_reserva_sem_sobreposicao'",
+    );
+    expect(r.def).toContain('EXCLUDE USING gist (reserva_id WITH =, tstzrange(inicio, fim, \'[)\'::text) WITH &&)');
+    expect(r.def).toContain("'nao_compareceu'::status_reserva");
+    expect(r.def).not.toContain("'cancelado'");
+  });
+
+  it('D-050: a exclusion por profissional tem OID menor que a da mesma reserva (é a que dispara primeiro)', async () => {
+    const r = await linhas<{ conname: string }>(
+      `SELECT conname FROM pg_constraint WHERE conrelid = 'reserva_item'::regclass AND contype = 'x' ORDER BY conindid`,
+    );
+    expect(r.map((x) => x.conname)).toEqual(['reserva_item_sem_sobreposicao', 'reserva_item_mesma_reserva_sem_sobreposicao']);
   });
 
   it('CA-1: cada índice de SQL bruto existe pelo nome, na tabela certa e com a unicidade certa', async () => {
@@ -365,12 +390,14 @@ describe('CA-1: o Prisma não acusa drift', () => {
 });
 
 describe('CA-15: integridade referencial e identificadores', () => {
-  it('CA-15: as 46 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
+  it('CA-15: as 47 FKs de public são ON DELETE RESTRICT e ON UPDATE RESTRICT', async () => {
     const r = await linhas<{ nome: string; del: string; upd: string }>(
       `SELECT conname AS nome, confdeltype::text AS del, confupdtype::text AS upd
        FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace`,
     );
-    expect(r).toHaveLength(46); // 37 até a D-007 + salao_funcionamento_salao_id_fkey (D-020) + salao_foto_salao_id_fkey (D-021) + 5 da D-032 + 2 da D-035
+    // 37 até a D-007 + salao_funcionamento_salao_id_fkey (D-020) + salao_foto_salao_id_fkey (D-021) + 5 da D-032 + 2 da D-035
+    // + D-050: sai reserva_salao_id_profissional_id_fkey; entram reserva_item_salao_id_profissional_id_fkey e a de mensagem → item.
+    expect(r).toHaveLength(47);
     expect(r.filter((f) => f.del !== 'r' || f.upd !== 'r')).toEqual([]);
   });
 
@@ -387,6 +414,21 @@ describe('CA-15: integridade referencial e identificadores', () => {
       expect(f.colunas).toHaveLength(2);
       expect(f.colunas[0]).toBe('salao_id');
     }
+  });
+
+  it('D-050: mensagem → reserva_item é a FK de 3 colunas (salao_id, reserva_id, reserva_item_id) → (salao_id, reserva_id, id), MATCH SIMPLE', async () => {
+    const r = await linhas<{ def: string; match: string }>(
+      `SELECT pg_get_constraintdef(oid) AS def, confmatchtype::text AS match FROM pg_constraint
+        WHERE conname = 'mensagem_salao_id_reserva_id_reserva_item_id_fkey'`,
+    );
+    expect(r).toEqual([
+      {
+        def: 'FOREIGN KEY (salao_id, reserva_id, reserva_item_id) REFERENCES reserva_item(salao_id, reserva_id, id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+        match: 's',
+      },
+    ]);
+    const antiga = await linhas("SELECT 1 FROM pg_constraint WHERE conname = 'reserva_salao_id_profissional_id_fkey'");
+    expect(antiga).toEqual([]);
   });
 
   it('CA-15 (RN-3): toda coluna id é uuid com default gen_random_uuid()', async () => {
@@ -445,6 +487,7 @@ describe('CA-22: o reset desta execução não depende de TRUNCATE', () => {
       { migration_name: '20261124000000_avaliacao_denuncia', antes: false, ok: true },
       { migration_name: '20261125000000_convite_pendente_unico', antes: false, ok: true },
       { migration_name: '20261126000000_sim_mp_operacao_atualizar_meio_pagamento', antes: false, ok: true },
+      { migration_name: '20261127000000_reserva_item_autonomo', antes: false, ok: true },
     ]);
     const [velhas] = await linhas<{ n: number }>('SELECT count(*)::int AS n FROM auditoria WHERE ocorrido_em < $1', [
       inicio,

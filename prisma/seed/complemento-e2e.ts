@@ -55,14 +55,19 @@ const SERVICOS = [
   { chave: 'corte', nome: 'Corte', precoCentavos: 9000, duracaoMin: 60 },
   { chave: 'escova', nome: 'Escova', precoCentavos: 5500, duracaoMin: 30 },
   { chave: 'hidratacao', nome: 'Hidratação', precoCentavos: 8000, duracaoMin: 45 },
+  { chave: 'manicure', nome: 'Manicure', precoCentavos: 4500, duracaoMin: 45 },
 ] as const;
 
-/** Corte + Escova: Ana e Bia. Corte + Hidratação: só Ana. Hidratação: Ana e Cris (vínculos parciais). */
+/**
+ * Corte + Escova: Ana e Bia. Corte + Hidratação: só Ana. Hidratação: Ana e Cris (vínculos parciais).
+ * Manicure: só Duda (D-050: o exemplo escova + hidratação + manicure exige ao menos dois profissionais).
+ */
 const jornadaLarga = dias(TODOS, [h(8), h(12)], [h(13), h(20)]);
 const PROFISSIONAIS = [
   { chave: 'ana', nome: 'Ana', servicos: ['corte', 'escova', 'hidratacao'], jornada: jornadaLarga },
   { chave: 'bia', nome: 'Bia', servicos: ['corte', 'escova'], jornada: jornadaLarga },
   { chave: 'cris', nome: 'Cris', servicos: ['hidratacao'], jornada: jornadaLarga },
+  { chave: 'duda', nome: 'Duda', servicos: ['manicure'], jornada: jornadaLarga },
 ] as const;
 
 export function salaoE2eReservas(n: number): SalaoSpec {

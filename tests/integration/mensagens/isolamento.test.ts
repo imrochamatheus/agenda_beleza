@@ -57,7 +57,7 @@ describe('CA-18: o worker só lê o salão da mensagem', () => {
     await esperarMensagem(r.mensagemId, 'enviada');
     const [c] = await chamadasDaChave(r.chave);
     expect(c.destinatario).toBe(telefone);
-    expect(c.parametros).toMatchObject({ salao: 'Salão Aurora Isolado', servicos: 'Corte Aurora', profissional: 'Ana Aurora' });
+    expect(c.parametros).toMatchObject({ salao: 'Salão Aurora Isolado', itens: expect.stringMatching(/ Corte Aurora com Ana Aurora$/) });
     expect(JSON.stringify(c.parametros)).not.toMatch(/Bromélia/);
     expect(await mensagensDaReservaDireto(s2.reservaId)).toEqual([]);
   });

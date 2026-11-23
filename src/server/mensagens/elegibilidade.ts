@@ -39,21 +39,26 @@ export function decidirElegibilidade(e: EntradaElegibilidade): Decisao {
 }
 
 /**
- * RN-16: a mensagem ainda descreve o estado da reserva? `confirmacao`/`remarcacao`: mesma revisão e
- * reserva `confirmado`; `cancelamento`: mesma revisão e `cancelado`; `convite_avaliacao`: `concluido`.
+ * Vigência (D-050 RN-30, §3.7; dba.md M-4). Mesma regra de `PREDICADO_VIGENTE` (repos/mensagem.ts), com
+ * teste de paridade: `confirmacao` → status derivado `confirmado` (sem comparar revisão: a confirmação é
+ * montada no envio com o estado atual); `convite_avaliacao` → `concluido`; `remarcacao` → existe item com
+ * `revisao = m.revisao` ainda `confirmado`; `cancelamento` → existe item com `revisao = m.revisao` ainda
+ * `cancelado`. Uma remarcação posterior do mesmo item sobe a revisão do item e torna a anterior obsoleta.
  */
 export function conferirVigencia(
   tipo: TipoMensagem,
   m: { revisao: number },
-  r: { revisao: number; status: StatusReserva },
+  r: { status: StatusReserva; itens: readonly { revisao: number; status: StatusReserva }[] },
 ): 'vigente' | 'obsoleta' {
+  const existeItem = (status: StatusReserva) => r.itens.some((i) => i.revisao === m.revisao && i.status === status);
   switch (tipo) {
     case 'confirmacao':
-    case 'remarcacao':
-      return m.revisao === r.revisao && r.status === 'confirmado' ? 'vigente' : 'obsoleta';
-    case 'cancelamento':
-      return m.revisao === r.revisao && r.status === 'cancelado' ? 'vigente' : 'obsoleta';
+      return r.status === 'confirmado' ? 'vigente' : 'obsoleta';
     case 'convite_avaliacao':
       return r.status === 'concluido' ? 'vigente' : 'obsoleta';
+    case 'remarcacao':
+      return existeItem('confirmado') ? 'vigente' : 'obsoleta';
+    case 'cancelamento':
+      return existeItem('cancelado') ? 'vigente' : 'obsoleta';
   }
 }

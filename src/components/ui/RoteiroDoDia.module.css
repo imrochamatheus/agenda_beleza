@@ -1,0 +1,221 @@
+/* Roteiro do dia (D-050 web-design §4.1): coluna de horários de 4,5rem, régua decorativa e paradas. */
+.bloco {
+  max-width: 36rem;
+  margin-block-end: var(--espaco-4);
+}
+
+.titulo {
+  margin: 0 0 var(--espaco-3);
+  font-family: var(--fonte-titulo), Georgia, serif;
+  font-size: var(--texto-xl);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.roteiro {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.parada {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4.5rem 0.75rem minmax(0, 1fr);
+  column-gap: var(--espaco-3);
+  /* Respiro e borda (transparente) iguais em todas as paradas: a faixa do destaque não desalinha a régua. */
+  padding: var(--espaco-2);
+  border-inline-start: 3px solid transparent;
+  border-radius: var(--raio);
+  scroll-margin-top: var(--espaco-4);
+}
+
+.parada + .parada {
+  margin-block-start: var(--espaco-2);
+}
+
+/* Régua: liga o ponto desta parada ao da próxima. Decorativa (contraste não exigido). */
+.parada:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  inset-block: calc(var(--espaco-2) + 1rem) calc(-1 * var(--espaco-2));
+  inset-inline-start: calc(var(--espaco-2) + 4.5rem + var(--espaco-3) + 0.375rem - 1px);
+  width: 2px;
+  background: var(--cor-borda-sutil);
+}
+
+.hora {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  font-family: var(--fonte-titulo), Georgia, serif;
+  font-size: var(--texto-lg);
+  font-weight: 500;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.fim {
+  display: block;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
+.ponto {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-block-start: 0.3rem;
+  border-radius: 50%;
+  background: var(--cor-primaria);
+}
+
+.corpo {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+  min-width: 0;
+}
+
+.servico {
+  margin: 0;
+  font-weight: 600;
+  line-height: var(--altura-linha);
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.etiquetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-1);
+  margin: 0;
+}
+
+/* inline-flex: a etiqueta nunca herda o riscado da parada cancelada (mesmo truque da D-043). */
+.etiqueta {
+  display: inline-flex;
+  padding: var(--espaco-1) var(--espaco-2);
+  border-radius: var(--raio);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.etiquetaConfirmado {
+  background: var(--cor-info-fundo);
+  color: var(--cor-info-texto);
+}
+
+.etiquetaConcluido {
+  background: var(--cor-sucesso-fundo);
+  color: var(--cor-sucesso-texto);
+}
+
+.etiquetaNaoCompareceu {
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro-texto);
+}
+
+.etiquetaCancelado,
+.etiquetaNeutra {
+  border: 1px solid var(--cor-borda-sutil);
+  background: var(--cor-superficie);
+  color: var(--cor-texto-suave);
+}
+
+.etiquetaEncaixe {
+  background: var(--cor-aviso-fundo);
+  color: var(--cor-aviso-texto);
+}
+
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-2);
+}
+
+.rodape {
+  margin-block-start: var(--espaco-3);
+  padding-block-start: var(--espaco-3);
+  border-block-start: 1px solid var(--cor-borda-sutil);
+}
+
+/* Estados. */
+.escolhida .ponto {
+  background: var(--cor-primaria);
+}
+
+.pendente .ponto {
+  border: 2px solid var(--cor-borda-controle);
+  background: transparent;
+}
+
+.pendente .hora {
+  color: var(--cor-texto-suave);
+}
+
+.destaque {
+  border-inline-start-color: var(--cor-aviso-texto);
+  background: var(--cor-aviso-fundo);
+  color: var(--cor-aviso-texto);
+}
+
+.destaque .meta,
+.destaque .fim {
+  color: var(--cor-aviso-texto);
+}
+
+.destaque .etiquetaEncaixe {
+  border: 1px solid var(--cor-aviso-texto);
+}
+
+.cancelada .riscavel {
+  text-decoration: line-through;
+}
+
+.cancelada .servico,
+.cancelada .hora {
+  color: var(--cor-texto-suave);
+}
+
+.cancelada .ponto {
+  border: 2px solid var(--cor-borda-controle);
+  background: transparent;
+}
+
+/* Texto só para leitor de tela (sem cor, sem token). */
+.somenteLeitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Desktop: serviço, detalhe e etiquetas na mesma linha quando cabem; ações à direita. */
+@media (min-width: 48rem) {
+  .corpo {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--espaco-3);
+  }
+
+  .acoes {
+    margin-inline-start: auto;
+  }
+}

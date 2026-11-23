@@ -57,6 +57,6 @@ export function rotuloDaMensagem(e: EntradaDeRotulo): { rotulo: string; motivo: 
     case 'substituida':
       return e.erroCodigo === 'obsoleta'
         ? { rotulo: `${titulo} ${f ? 'não enviada' : 'não enviado'}: a reserva mudou antes do envio`, motivo: null }
-        : { rotulo: `${titulo} ${f ? 'substituída' : 'substituído'} por remarcação posterior`, motivo: null };
+        : { rotulo: `${titulo} ${f ? 'substituída' : 'substituído'} por alteração posterior`, motivo: null };
   }
 }

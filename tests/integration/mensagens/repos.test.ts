@@ -18,6 +18,8 @@ import {
 } from '../../support/mensagens';
 import { conectar } from '../../support/sql';
 
+import { itensDa } from './apoio';
+
 // D-024 T-3: repositórios de mensagem (tenant e sistema) contra o PostgreSQL real.
 
 const AGORA = new Date('2026-11-21T12:00:00Z');
@@ -85,36 +87,22 @@ describe('inserir', () => {
   });
 });
 
-describe('substituirPendentes', () => {
-  it('só pendentes dos tipos e revisões pedidos, da mesma reserva e salão', async () => {
-    const s = await criarCenarioMensagem();
-    const outra = await criarCenarioMensagem();
-    const conf = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'confirmacao', revisao: 0, destinatarioE164: s.telefone });
-    const rem1 = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 1, destinatarioE164: s.telefone });
-    const rem2 = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 2 });
-    const enviada = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 0, estado: 'enviada' });
-    const convite = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'convite_avaliacao', revisao: 0 });
-    const alheia = await criarMensagem({ salaoId: outra.salaoId, reservaId: outra.reservaId, tipo: 'confirmacao', revisao: 0 });
-
-    const n = await repos().mensagens.substituirPendentes(
-      ctxDe(s.salaoId),
-      { reservaId: s.reservaId, tipos: ['confirmacao', 'remarcacao'], revisaoMenorQue: 2 },
-      AGORA,
-    );
-    expect(n).toBe(2);
-    expect((await lerMensagem(conf)).estado).toBe('substituida');
-    const r1 = await lerMensagem(rem1);
-    expect(r1).toMatchObject({ estado: 'substituida', erroCodigo: 'substituida', destinatarioE164: null, atualizadoEm: AGORA });
-    for (const id of [rem2, convite, alheia]) expect((await lerMensagem(id)).estado).toBe('pendente');
-    expect((await lerMensagem(enviada)).estado).toBe('enviada');
+describe('inserir com item (D-050 A-4)', () => {
+  it('grava e devolve reservaItemId; a repetição devolve a existente com o mesmo item', async () => {
+    const s = await criarCenarioMensagem({ revisao: 1 });
+    const [x] = await itensDa(s.reservaId);
+    const nova = { reservaId: s.reservaId, reservaItemId: x.id, tipo: 'remarcacao' as const, revisao: 1, estado: 'pendente' as const, erroCodigo: null, destinatarioE164: s.telefone };
+    const um = await repos().mensagens.inserir(ctxDe(s.salaoId), nova, AGORA);
+    const dois = await repos().mensagens.inserir(ctxDe(s.salaoId), { ...nova, reservaItemId: null }, AGORA);
+    expect(um).toMatchObject({ criada: true, mensagem: { reservaItemId: x.id, tipo: 'remarcacao', revisao: 1 } });
+    expect(dois).toMatchObject({ criada: false, mensagem: { id: um.mensagem.id, reservaItemId: x.id } });
   });
 
-  it('sem limite de revisão (cancelamento) e sem tipos', async () => {
+  it('CHECK mensagem_item_tipo_chk: confirmação com item é recusada pelo banco', async () => {
     const s = await criarCenarioMensagem();
-    const rem = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 5 });
-    expect(await repos().mensagens.substituirPendentes(ctxDe(s.salaoId), { reservaId: s.reservaId, tipos: [], revisaoMenorQue: null }, AGORA)).toBe(0);
-    expect(await repos().mensagens.substituirPendentes(ctxDe(s.salaoId), { reservaId: s.reservaId, tipos: ['remarcacao'], revisaoMenorQue: null }, AGORA)).toBe(1);
-    expect((await lerMensagem(rem)).estado).toBe('substituida');
+    const [x] = await itensDa(s.reservaId);
+    const nova = { reservaId: s.reservaId, reservaItemId: x.id, tipo: 'confirmacao' as const, revisao: 0, estado: 'pendente' as const, erroCodigo: null, destinatarioE164: null };
+    await expect(repos().mensagens.inserir(ctxDe(s.salaoId), nova, AGORA)).rejects.toThrow(/mensagem_item_tipo_chk/);
   });
 });
 
@@ -137,9 +125,19 @@ describe('reenviar', () => {
     expect((await lerMensagem(id)).estado).toBe(estado);
   });
 
-  it('revisão divergente → obsoleta e a linha continua falhou', async () => {
-    const s = await criarCenarioMensagem({ revisao: 1 });
+  it('confirmação falhou de reserva remarcada continua vigente (D-050 R-4)', async () => {
+    const s = await criarCenarioMensagem({ revisao: 2 });
     const id = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, estado: 'falhou', revisao: 0 });
+    expect(await rodar(s.salaoId, id)).toMatchObject({ resultado: 'reenfileirada' });
+  });
+
+  it('não vigente (remarcação sem item na revisão; confirmação de reserva cancelada) → obsoleta e continua falhou', async () => {
+    const s = await criarCenarioMensagem({ revisao: 2 });
+    const rem = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', estado: 'falhou', revisao: 1 });
+    expect(await rodar(s.salaoId, rem)).toEqual({ resultado: 'recusada', motivo: 'obsoleta' });
+    expect((await lerMensagem(rem)).estado).toBe('falhou');
+    const id = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, estado: 'falhou', revisao: 0 });
+    await mudarReserva(s.reservaId, { status: 'cancelado' });
     expect(await rodar(s.salaoId, id)).toEqual({ resultado: 'recusada', motivo: 'obsoleta' });
     expect((await lerMensagem(id)).estado).toBe('falhou');
   });
@@ -174,9 +172,9 @@ describe('listarDaReserva', () => {
     });
     const lista = await repos().mensagens.listarDaReserva(ctxDe(s.salaoId), s.reservaId);
     expect(lista.map((m) => m.id)).toEqual([primeira, segunda]);
-    expect(lista[0]).toEqual({ id: primeira, tipo: 'confirmacao', revisao: 0, estado: 'enviada', enviadaEm: t0, erroCodigo: null, tentativas: 2, ultimaTentativaEm: t1 });
+    expect(lista[0]).toEqual({ id: primeira, reservaItemId: null, tipo: 'confirmacao', revisao: 0, estado: 'enviada', enviadaEm: t0, erroCodigo: null, tentativas: 2, ultimaTentativaEm: t1 });
     expect(lista[1]).toMatchObject({ tentativas: 0, ultimaTentativaEm: null });
-    expect(Object.keys(lista[0]).sort()).toEqual(['enviadaEm', 'erroCodigo', 'estado', 'id', 'revisao', 'tentativas', 'tipo', 'ultimaTentativaEm']);
+    expect(Object.keys(lista[0]).sort()).toEqual(['enviadaEm', 'erroCodigo', 'estado', 'id', 'reservaItemId', 'revisao', 'tentativas', 'tipo', 'ultimaTentativaEm']);
   });
 
   it('reserva de outro salão → NaoEncontrado', async () => {
@@ -206,10 +204,20 @@ describe('sistema.iniciarEnvio', () => {
       return { acao: 'enviar' };
     });
     expect(r).toMatchObject({ resultado: 'enviar', numero: 1, destinatarioE164: s.telefone, tipo: 'confirmacao', revisao: 0, reservaId: s.reservaId });
+    const meia = 30 * 60_000;
     expect(visto).toEqual({
       tipo: 'confirmacao', mensagemRevisao: 0, reservaId: s.reservaId,
-      reserva: { revisao: 0, status: 'confirmado', inicio: s.inicio },
-      salaoNome: s.salaoNome, fuso: s.fuso, profissionalNome: s.profissionalNome, servicos: s.servicoNomes,
+      reserva: { revisao: 0, status: 'confirmado' },
+      // D-050: itens por (inicio, id) com os nomes atuais de serviço e profissional.
+      itens: s.servicoNomes.map((servicoNome, i) => ({
+        inicio: new Date(s.inicio.getTime() + i * meia),
+        fim: new Date(s.inicio.getTime() + (i + 1) * meia),
+        status: 'confirmado',
+        revisao: 0,
+        servicoNome,
+        profissionalNome: s.profissionalNome,
+      })),
+      salaoNome: s.salaoNome, fuso: s.fuso,
       clienteAnonimizada: false, telefone: s.telefone, consentimentoMensagens: true, consentimentoConvite: false,
     });
     expect(await lerMensagem(id)).toMatchObject({ estado: 'enviando', destinatarioE164: s.telefone, atualizadoEm: AGORA });
@@ -280,7 +288,10 @@ describe('sistema.iniciarEnvio', () => {
       visto = ctx;
       return { acao: 'terminal', estado: 'substituida', erroCodigo: 'obsoleta' };
     });
-    expect(visto).toMatchObject({ profissionalNome: s.profissionalNome, servicos: s.servicoNomes, reserva: { status: 'cancelado', revisao: 3 }, mensagemRevisao: 3 });
+    expect(visto).toMatchObject({ reserva: { status: 'cancelado', revisao: 3 }, mensagemRevisao: 3 });
+    expect(visto?.itens.map((i) => [i.servicoNome, i.profissionalNome, i.status, i.revisao])).toEqual(
+      s.servicoNomes.map((n) => [n, s.profissionalNome, 'cancelado', 3]),
+    );
     expect(await lerMensagem(id)).toMatchObject({ estado: 'substituida', erroCodigo: 'obsoleta' });
   });
 });

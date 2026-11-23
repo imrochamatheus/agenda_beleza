@@ -324,6 +324,43 @@ a.evento:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* Detalhe (D-050 web-design §5.10): coluna de 40rem; resultado do PRG; total e notas suaves. */
+.servicos {
+  display: grid;
+  gap: var(--espaco-3);
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.resultado {
+  margin: 0;
+  max-width: 40rem;
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  font-weight: 600;
+  scroll-margin-top: var(--espaco-4);
+}
+
+.resultado:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.total {
+  margin: 0;
+  font-size: var(--texto-lg);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.nota {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+}
+
 @media (min-width: 48rem) {
   .colunas {
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));

@@ -141,7 +141,7 @@ describe('FormularioBloqueio: envio', () => {
       ...estadoInicial(),
       salvo: {
         periodo: '25/12/2026 (dia inteiro)',
-        aviso: { total: 1, reservas: [{ id: 'r1', profissionalNome: 'Ana', inicioLocal: '25/12/2026 14:00', fimLocal: '25/12/2026 15:00', cliente: 'Joana' }] },
+        aviso: { total: 1, reservas: [{ id: 'r1', itemId: 'i1', profissionalNome: 'Ana', inicioLocal: '25/12/2026 14:00', fimLocal: '25/12/2026 15:00', cliente: 'Joana' }] },
       },
     });
     render(<FormularioBloqueio acao={acao} opcoesAlvo={OPCOES} rotuloEnviar="Salvar bloqueio" />);

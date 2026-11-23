@@ -1,4 +1,4 @@
-import { formatarDataHora, formatarDuracao, formatarMoeda, formatarTelefone } from '@/lib/format';
+import { formatarDataHora, formatarHora, formatarMoeda, formatarTelefone } from '@/lib/format';
 import { exigirPermissao } from '@/server/auth/permissoes';
 import { repos } from '@/server/repos';
 import { ehUuid } from '@/server/repos/ids';
@@ -69,18 +69,28 @@ export async function listar(ctx: TenantContext, entrada: { q?: unknown; pagina?
   return { itens: itens.map(paraVisao), total, pagina, porPagina: LIMITES_CLIENTE.porPagina, q: busca.q };
 }
 
-function paraItemHistorico(r: ReservaHistoricoDTO, fuso: string): ItemHistorico {
-  const duracao = r.itens.reduce((t, i) => t + i.duracaoMin, 0);
-  const preco = r.itens.reduce((t, i) => t + i.precoCentavos, 0);
+/**
+ * D-050 RN-35: total = soma dos snapshots dos itens não cancelados; numa reserva toda cancelada, soma de
+ * todos (com o rótulo de cancelada). Itens em (inicio, id), cada um com profissional e status próprios.
+ */
+export function paraItemHistorico(r: ReservaHistoricoDTO, fuso: string): ItemHistorico {
+  const ativos = r.itens.filter((i) => i.status !== 'cancelado');
+  const totalDaCancelada = r.itens.length > 0 && ativos.length === 0;
+  const somados = totalDaCancelada ? r.itens : ativos;
   return {
     id: r.id,
     inicioLocal: formatarDataHora(r.inicio, fuso),
     status: ROTULO_STATUS[r.status],
-    profissional: r.profissionalNome,
-    servicos: r.itens.map((i) => i.servicoNome),
-    // Toda reserva tem itens (E3.2); sem eles (dado externo) não há duração a formatar.
-    duracaoTotal: duracao > 0 ? formatarDuracao(duracao) : '—',
-    precoTotal: formatarMoeda(preco),
+    servicos: r.itens.map((i) => ({
+      servico: i.servicoNome,
+      profissional: i.profissionalNome,
+      horaLocal: formatarHora(i.inicio, fuso),
+      status: ROTULO_STATUS[i.status],
+      cancelado: i.status === 'cancelado',
+      preco: formatarMoeda(i.precoCentavos),
+    })),
+    precoTotal: formatarMoeda(somados.reduce((t, i) => t + i.precoCentavos, 0)),
+    totalDaCancelada,
   };
 }
 

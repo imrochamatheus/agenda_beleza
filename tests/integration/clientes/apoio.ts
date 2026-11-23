@@ -1,6 +1,6 @@
 import type pg from 'pg';
 
-import { telefoneNovo } from '../../support/sql';
+import { inserirReservaComItens, telefoneNovo } from '../../support/sql';
 
 export { credGestor, credProfissional, ctxDoGestor, ctxDoProfissional, MANAUS, SP, UUID_INEXISTENTE } from '../salao/apoio';
 export { ACESSO_NEGADO, NAO_AUTENTICADO, NAO_ENCONTRADO } from '../salao/apoio';
@@ -36,32 +36,39 @@ export async function contarClientes(c: pg.Client, salaoId: string, telefone?: s
   return Number(rows[0].n);
 }
 
+type StatusSql = 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
+
 export type ReservaComPreco = {
   salaoId: string;
+  /** Profissional padrão dos itens. */
   profissionalId: string;
   clienteId: string;
   inicio: Date;
-  status: 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
-  itens: { servicoId: string; precoCentavos: number; duracaoMin: number }[];
+  /** Status padrão dos itens (o da reserva é DERIVADO, D-050 A-1). */
+  status: StatusSql;
+  /** Itens encadeados a partir de `inicio`, cada um podendo ter profissional e status próprios (D-050). */
+  itens: { servicoId: string; precoCentavos: number; duracaoMin: number; profissionalId?: string; status?: StatusSql }[];
+  /** Revisão da reserva e dos itens (padrão 0). */
+  revisao?: number;
 };
 
-/** Reserva com itens de snapshot explícito. Devolve o id. */
+/** Reserva com itens de snapshot explícito (D-050: derivados coerentes via `inserirReservaComItens`). Devolve o id. */
 export async function inserirReservaComPreco(c: pg.Client, r: ReservaComPreco): Promise<string> {
-  const minutos = r.itens.reduce((t, i) => t + i.duracaoMin, 0);
-  const fim = new Date(r.inicio.getTime() + minutos * 60_000);
-  const { rows } = await c.query<{ id: string }>(
-    `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-     VALUES ($1, $2, $3, $4, $5, $5, $6, 'equipe') RETURNING id::text AS id`,
-    [r.salaoId, r.profissionalId, r.clienteId, r.inicio, fim, r.status],
-  );
-  for (const [ordem, i] of r.itens.entries()) {
-    await c.query(
-      `INSERT INTO reserva_item (salao_id, reserva_id, servico_id, ordem, preco_centavos, duracao_min)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [r.salaoId, rows[0].id, i.servicoId, ordem, i.precoCentavos, i.duracaoMin],
-    );
-  }
-  return rows[0].id;
+  let t = r.inicio.getTime();
+  const itens = r.itens.map((i) => {
+    const inicio = new Date(t);
+    t += i.duracaoMin * 60_000;
+    return {
+      profissionalId: i.profissionalId ?? r.profissionalId,
+      inicio,
+      duracaoMin: i.duracaoMin,
+      status: i.status ?? r.status,
+      servicoId: i.servicoId,
+      precoCentavos: i.precoCentavos,
+    };
+  });
+  const { reservaId } = await inserirReservaComItens(c, { salaoId: r.salaoId, clienteId: r.clienteId, itens, origem: 'equipe', revisao: r.revisao });
+  return reservaId;
 }
 
 /** Fotografia (to_jsonb) de reserva, reserva_item e mensagem do salão (RN-13). */

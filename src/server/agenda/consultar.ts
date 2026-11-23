@@ -3,6 +3,7 @@ import { lerBloqueios } from '@/server/bloqueios/leitura';
 import { lerContatoDaCliente } from '@/server/clientes/leitura';
 import { repos } from '@/server/repos';
 import type { LinhaAgenda } from '@/server/repos/agenda';
+import { acoesPermitidas } from '@/server/reservas/status';
 import { lerFuncionamento } from '@/server/salao/funcionamento-leitura';
 import { montarSemana } from '@/server/semana/montagem';
 import type { SemanaHoraria } from '@/server/semana/tipos';
@@ -13,18 +14,21 @@ import { NaoEncontrado } from '@/server/tenant/erros';
 import { montarPeriodo } from './periodo';
 import { montarVista } from './montagem';
 import { LIMITES_AGENDA } from './tipos';
-import type { AgendaVista, DetalheDaReserva, ReservaDaAgenda } from './tipos';
+import type { AgendaVista, BlocoDaAgenda, DetalheDaReserva, ItemDoDetalhe, TotalDoDetalhe } from './tipos';
 import { lerParametros } from './validacao';
 import type { ParametrosBrutos } from './validacao';
 
-// Leitura da agenda da equipe (D-028 §3). SOMENTE LEITURA e sem checagem de suspensão (RN-4, CA-10):
-// a futura E6.x mantém `agenda.ver` liberada. Seis instruções SQL por consulta, qualquer que seja o
-// número de reservas, datas e profissionais (CA-16): fuso, profissionais, reservas, bloqueios,
-// jornadas e funcionamento. Não importado pela página pública (CA-17).
+// Leitura da agenda da equipe (D-028 §3; D-050 §3.9). SOMENTE LEITURA e sem checagem de suspensão (RN-4,
+// CA-10): a política mantém `agenda.ver` liberada. Seis instruções SQL por consulta, qualquer que seja o
+// número de itens, reservas, datas e profissionais (CA-16; D-050 CA-34): fuso, profissionais, itens,
+// bloqueios, jornadas e funcionamento. Não importado pela página pública (CA-17).
+// D-050: um bloco por ITEM na coluna do profissional do item (RN-36); o profissional só recebe os
+// próprios itens, sem o marcador "n de N" (CA-33/C4).
 
-function paraReserva(l: LinhaAgenda): ReservaDaAgenda {
+function paraBloco(l: LinhaAgenda): BlocoDaAgenda {
   return {
-    id: l.id,
+    itemId: l.itemId,
+    reservaId: l.reservaId,
     profissionalId: l.profissionalId,
     inicio: l.inicio,
     fim: l.fim,
@@ -32,8 +36,11 @@ function paraReserva(l: LinhaAgenda): ReservaDaAgenda {
     origem: l.origem,
     encaixe: l.encaixe,
     clienteNome: l.clienteNome,
+    servicoNome: l.servicoNome,
+    precoCentavos: l.precoCentavos,
+    duracaoMin: l.duracaoMin,
     temFalhaDeMensagem: l.temFalhaDeMensagem,
-    itens: l.itens,
+    posicao: l.posicao,
   };
 }
 
@@ -68,11 +75,13 @@ export async function consultarAgenda(
   }
 
   const periodo = montarPeriodo(parametros.data, parametros.visao, fuso);
-  const [{ reservas, truncada }, bloqueios, jornadas, funcionamento] = await Promise.all([
+  const [{ blocos, truncada }, bloqueios, jornadas, funcionamento] = await Promise.all([
     r.agenda.listarAgenda(ctx, {
       periodo: { de: periodo.de, ate: periodo.ate },
       profissionalId: filtro,
-      limite: LIMITES_AGENDA.reservas,
+      limite: LIMITES_AGENDA.itens,
+      // C4/CA-33: o "n de N" é só do gestor (o do profissional sugeriria serviços de outras pessoas).
+      comPosicao: !('profissionalId' in escopo),
     }),
     lerBloqueios(ctx, { de: periodo.de, ate: periodo.ate }, filtro === null ? {} : { profissionalId: filtro }),
     r.agenda.listarJornadas(ctx, filtro),
@@ -96,7 +105,7 @@ export async function consultarAgenda(
     filtro,
     colunaSempre: filtro !== null,
     comOpcoes: !('profissionalId' in escopo),
-    reservas: reservas.map(paraReserva),
+    blocos: blocos.map(paraBloco),
     bloqueios,
     jornadas: semanas,
     funcionamento,
@@ -105,14 +114,35 @@ export async function consultarAgenda(
 }
 
 /**
- * Detalhe somente leitura de uma reserva (RN-10, RN-11). Reserva inexistente, malformada, de outro
- * salão ou de outro profissional → NaoEncontrado, sempre o mesmo. O telefone vem de lerContatoDaCliente
- * (operação `cliente.contato`); se essa leitura falhar, o detalhe abre sem o telefone. As mensagens vêm de consultarMensagensDaReserva
- * (D-043); aqui só o indicador de falha vigente.
+ * RN-35: gestor e profissional somam os itens VISÍVEIS não cancelados (`reserva` / `seus_servicos`); com o
+ * status derivado `cancelado` (todos os itens cancelados), a soma de todos os visíveis, rótulo `cancelada`.
  */
-export async function lerReservaDaAgenda(ctx: TenantContext, id: unknown): Promise<DetalheDaReserva> {
+export function totalDoDetalhe(
+  itens: readonly Pick<ItemDoDetalhe, 'status' | 'precoCentavos'>[],
+  statusDaReserva: DetalheDaReserva['status'],
+  papel: DetalheDaReserva['papel'],
+): TotalDoDetalhe {
+  const cancelada = statusDaReserva === 'cancelado';
+  const somados = cancelada ? itens : itens.filter((i) => i.status !== 'cancelado');
+  return {
+    centavos: somados.reduce((t, i) => t + i.precoCentavos, 0),
+    servicos: somados.length,
+    rotulo: cancelada ? 'cancelada' : papel === 'gestor' ? 'reserva' : 'seus_servicos',
+  };
+}
+
+/**
+ * Detalhe somente leitura de uma reserva (D-028 RN-10/RN-11; D-050 §3.9). Reserva inexistente, malformada,
+ * de outro salão ou SEM ITEM do profissional logado → NaoEncontrado, sempre o mesmo. O profissional recebe
+ * só os próprios itens (CA-33): os dos outros nem chegam ao DTO, e o total soma só os dele. `acoes` de cada
+ * item vem da máquina de status (`acoesPermitidas`, por item) no instante `agora`. O telefone vem de
+ * lerContatoDaCliente (operação `cliente.contato`); se essa leitura falhar, o detalhe abre sem o telefone.
+ * As mensagens vêm de consultarMensagensDaReserva (D-043); aqui só o indicador de falha vigente.
+ */
+export async function lerReservaDaAgenda(ctx: TenantContext, id: unknown, agora: Date): Promise<DetalheDaReserva> {
   exigirPermissao(ctx, 'agenda.ver');
   const escopo = filtroDeProfissional(ctx, 'agenda.ver');
+  const papel: DetalheDaReserva['papel'] = 'profissionalId' in escopo ? 'profissional' : 'gestor';
   const r = repos();
   const linha = await r.agenda.detalhe(ctx, id, 'profissionalId' in escopo ? escopo.profissionalId : null);
   const fuso = await r.bloqueios.fusoDoSalao(ctx);
@@ -125,21 +155,28 @@ export async function lerReservaDaAgenda(ctx: TenantContext, id: unknown): Promi
       contato = null;
     }
   }
+  const itens: ItemDoDetalhe[] = linha.itens.map((i) => ({
+    ...i,
+    acoes: acoesPermitidas({ status: i.status, inicio: i.inicio, fim: i.fim, agora }),
+  }));
+  const cancelaveis = itens.filter((i) => i.acoes.cancelar).length;
   return {
     id: linha.id,
+    clienteId: linha.clienteId,
     fuso,
-    profissional: { id: linha.profissionalId, nome: linha.profissionalNome, ativo: linha.profissionalAtivo },
     clienteNome: linha.clienteNome,
     anonimizada: linha.clienteAnonimizada,
     contato,
-    inicio: linha.inicio,
-    fim: linha.fim,
+    data: partesLocais(linha.inicio, fuso).data,
     status: linha.status,
     origem: linha.origem,
-    encaixe: linha.encaixe,
     temFalhaDeMensagem: linha.temFalhaDeMensagem,
-    itens: linha.itens,
-    totalCentavos: linha.itens.reduce((t, i) => t + i.precoCentavos, 0),
-    duracaoTotalMin: linha.itens.reduce((t, i) => t + i.duracaoMin, 0),
+    itens,
+    total: totalDoDetalhe(itens, linha.status, papel),
+    temItemCancelado: itens.some((i) => i.status === 'cancelado'),
+    // A-14/ND-3: "Cancelar todos" é só do gestor (linha `reserva.cancelar_todos` = salao/negado) e só com 2+
+    // itens canceláveis; a ação da T-6 continua sendo a guarda real.
+    podeCancelarTodos: papel === 'gestor' && cancelaveis >= 2,
+    papel,
   };
 }

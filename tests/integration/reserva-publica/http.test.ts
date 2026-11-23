@@ -64,9 +64,9 @@ const pegar = (caminho: string) => fetch(`${base}${caminho}`, { redirect: 'manua
 describe('CA-3: respostas HTTP reais', () => {
   it('slug histórico: 308 com Location do slug atual e a query preservada', async () => {
     const c = await criarCenarioReserva();
-    const r = await pegar(`/${c.s.slugHistorico}?s=${c.A}&p=qualquer`);
+    const r = await pegar(`/${c.s.slugHistorico}?s=${c.A}&data=2026-12-01`);
     expect(r.status).toBe(308);
-    expect(r.headers.get('location')).toBe(`/${c.s.slugAtual}?s=${c.A}&p=qualquer`);
+    expect(r.headers.get('location')).toBe(`/${c.s.slugAtual}?s=${c.A}&data=2026-12-01`);
     const semQuery = await pegar(`/${c.s.slugHistorico}`);
     expect(semQuery.status).toBe(308);
     expect(semQuery.headers.get('location')).toBe(`/${c.s.slugAtual}`);

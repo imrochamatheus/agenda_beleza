@@ -71,14 +71,18 @@ export type TravaProfissional = {
   fusoSalao: string;
 };
 
-/** Reserva confirmada que impede a desativação do profissional (D-013 RN-2). */
+/**
+ * Item confirmado que impede a desativação do profissional (D-013 RN-2; D-050 RN-38: uma linha por
+ * ITEM). `id` = reserva; `itemId` = item; `inicio`/`fim` do item; `servicos` = [serviço do item].
+ */
 export type ReservaBloqueanteDTO = {
   id: string;
+  itemId: string;
   inicio: Date;
   fim: Date;
   /** null = cliente anonimizada. */
   clienteNome: string | null;
-  /** Nomes atuais dos serviços, na ordem dos itens (D-13). */
+  /** Nome atual do serviço do item (lista de um elemento, compatível com D-013). */
   servicos: string[];
 };
 
@@ -101,34 +105,60 @@ export type ConsentimentoDTO = {
   criadoEm: Date;
 };
 
-/** Reserva no histórico da cliente (D-022 §3.3): nomes atuais, preço e duração do snapshot dos itens. */
+/**
+ * Reserva no histórico da cliente (D-022 §3.3; D-050 RN-35): por reserva, com os itens (nomes atuais
+ * de serviço e profissional, status e início do item, snapshot de preço e duração), por (inicio, id).
+ * O total é calculado no serviço.
+ */
 export type ReservaHistoricoDTO = {
   id: string;
   inicio: Date;
   status: StatusReserva;
-  profissionalNome: string;
-  itens: { servicoNome: string; ordem: number; precoCentavos: number; duracaoMin: number }[];
+  itens: {
+    servicoNome: string;
+    profissionalNome: string;
+    status: StatusReserva;
+    inicio: Date;
+    precoCentavos: number;
+    duracaoMin: number;
+  }[];
 };
 
-export type ReservaItemDTO = {
-  servicoId: string;
-  ordem: number;
-  precoCentavos: number;
-  duracaoMin: number;
-};
-
-export type ReservaDTO = {
+/**
+ * Item de reserva (D-050 §3.1): a unidade de agenda. `fim = inicio + duracaoMin`; `ocupadoAte = fim +
+ * intervalo do salão` na gravação.
+ */
+export type ItemDeReservaDTO = {
   id: string;
+  servicoId: string;
   profissionalId: string;
-  clienteId: string;
+  /** Posição na escolha (0, 1, …); a exibição é por (inicio, id). */
+  ordem: number;
   inicio: Date;
   fim: Date;
   ocupadoAte: Date;
   status: StatusReserva;
-  origem: OrigemReserva;
   encaixe: boolean;
+  /** Revisão da reserva na última mudança do item que gerou mensagem (0 ao criar). */
   revisao: number;
-  itens: ReservaItemDTO[];
+  precoCentavos: number;
+  duracaoMin: number;
+};
+
+/**
+ * Reserva (agendamento da cliente). `status`, `inicio` e `fim` são DERIVADOS dos itens
+ * (`derivarReserva`, A-1/A-2). Itens por (inicio, id).
+ */
+export type ReservaDTO = {
+  id: string;
+  clienteId: string;
+  inicio: Date;
+  fim: Date;
+  status: StatusReserva;
+  origem: OrigemReserva;
+  revisao: number;
+  canceladaEm: Date | null;
+  itens: ItemDeReservaDTO[];
 };
 
 /** Período semiaberto [de, ate) (sobre `reserva.inicio` em listarPorPeriodo; intersecção nos demais usos). */
@@ -153,9 +183,10 @@ export type BloqueioDTO = {
 /** Profissional como alvo de bloqueio (ativo ou inativo, D-016 RN-14). */
 export type ProfissionalAlvoDTO = { id: string; nome: string; ativo: boolean };
 
-/** Reserva confirmada sob um bloqueio (D-016 RN-8). O telefone nunca é lido. */
+/** Item confirmado sob um bloqueio (D-016 RN-8; D-050 RN-38: uma linha por ITEM; `id` = reserva). O telefone nunca é lido. */
 export type ReservaCobertaDTO = {
   id: string;
+  itemId: string;
   profissionalId: string;
   profissionalNome: string;
   inicio: Date;
@@ -232,6 +263,11 @@ export type EstadoInicialMensagem = 'pendente' | 'nao_enviada' | 'cancelada_anon
 /** Mensagem a gravar no registro: só `pendente` leva o telefone (RN-15). */
 export type NovaMensagem = {
   reservaId: string;
+  /**
+   * D-050 A-4: item da MESMA reserva (só `remarcacao`/`cancelamento` de um item; CHECK
+   * `mensagem_item_tipo_chk`). Ausente/null = confirmação, convite, "cancelar todos" e antigas.
+   */
+  reservaItemId?: string | null;
   tipo: TipoMensagemDTO;
   revisao: number;
   estado: EstadoInicialMensagem;
@@ -243,6 +279,8 @@ export type NovaMensagem = {
 export type MensagemLinhaDTO = {
   id: string;
   reservaId: string;
+  /** D-050 A-4: item da mensagem (null = sem item). */
+  reservaItemId: string | null;
   tipo: TipoMensagemDTO;
   revisao: number;
   estado: EstadoMensagemDTO;
@@ -259,11 +297,16 @@ export type ContextoDeRegistroDTO = {
   consentimentoConvite: boolean;
 };
 
-/** Parâmetros de conferência de vigência (RN-16), puros, injetados pelo serviço. */
+/**
+ * Conferência de vigência (RN-16; D-050 §3.7, dba.md M-4), pura, injetada pelo serviço:
+ * confirmacao → r.status = 'confirmado'; convite_avaliacao → r.status = 'concluido';
+ * remarcacao → ∃ item com revisao = m.revisao e 'confirmado'; cancelamento → ∃ item com
+ * revisao = m.revisao e 'cancelado'. Paridade obrigatória com `PREDICADO_VIGENTE` (repos/mensagem.ts).
+ */
 export type ConferirVigenciaFn = (
   tipo: TipoMensagemDTO,
   m: { revisao: number },
-  r: { revisao: number; status: StatusReserva },
+  r: { status: StatusReserva; itens: readonly { revisao: number; status: StatusReserva }[] },
 ) => 'vigente' | 'obsoleta';
 
 export type ResultadoReenvioRepo =
@@ -273,6 +316,8 @@ export type ResultadoReenvioRepo =
 /** Situação de envio (RN-23): nunca destinatário, parâmetros nem provedor. */
 export type MensagemDaReservaRepoDTO = {
   id: string;
+  /** D-050 A-4: item da mensagem (null = sem item); serve à exibição e ao filtro por papel (RN-37). */
+  reservaItemId: string | null;
   tipo: TipoMensagemDTO;
   revisao: number;
   estado: EstadoMensagemDTO;
@@ -282,17 +327,25 @@ export type MensagemDaReservaRepoDTO = {
   ultimaTentativaEm: Date | null;
 };
 
-/** Tudo que o envio lê da reserva no mesmo comando (A-5): sem trava. */
+/**
+ * Tudo que o envio lê da reserva no mesmo comando (D-024 A-5): sem trava. D-050 §3.1: saem
+ * `profissionalNome`/`servicos`/`reserva.inicio`; entram os itens (nomes atuais), por (inicio, id).
+ */
 export type ContextoDeEnvio = {
   tipo: TipoMensagemDTO;
   mensagemRevisao: number;
   reservaId: string;
-  reserva: { revisao: number; status: StatusReserva; inicio: Date };
+  reserva: { revisao: number; status: StatusReserva };
+  itens: {
+    inicio: Date;
+    fim: Date;
+    status: StatusReserva;
+    revisao: number;
+    servicoNome: string;
+    profissionalNome: string;
+  }[];
   salaoNome: string;
   fuso: string;
-  profissionalNome: string | null;
-  /** Nomes atuais dos serviços, na ordem dos itens. */
-  servicos: string[];
   clienteAnonimizada: boolean;
   telefone: string | null;
   consentimentoMensagens: boolean;

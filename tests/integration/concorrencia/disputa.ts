@@ -8,7 +8,7 @@ import { criarPoolPg } from '../../support/sql';
 // fábricas (1–2 conexões do Prisma), e só então o pool de N conexões dispara as transações.
 //
 // Achado da T-5 (registrado em dev.md): com N transações abertas inserindo ao mesmo tempo no mesmo
-// profissional, a exclusion `reserva_sem_sobreposicao` faz cada INSERT esperar pelas outras transações em
+// profissional, a exclusion `reserva_sem_sobreposicao` (D-050: `reserva_item_sem_sobreposicao`) faz cada INSERT esperar pelas outras transações em
 // curso que conflitam com ele; duas que esperam uma pela outra formam um deadlock, que o PostgreSQL
 // desfaz após `deadlock_timeout` (1 s) abortando uma com 40P01. Medido: ~50% das execuções com 12
 // transações idênticas tiveram 40P01 em vez de 23P01. A garantia (nunca duas aceitas) se mantém; o CÓDIGO
@@ -57,16 +57,19 @@ async function reservar(c: pg.PoolClient, t: Tentativa, travar: boolean): Promis
         t.profissionalId,
       ]);
     }
+    // D-050: a reserva guarda o envelope derivado; o item tem profissional, período e status, e é ele
+    // que a exclusion `reserva_item_sem_sobreposicao` confere.
     const r = await c.query<{ id: string }>(
-      `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-       VALUES ($1, $2, $3, $4, $5, $5, 'confirmado', 'equipe') RETURNING id`,
-      [t.salaoId, t.profissionalId, t.clienteId, t.inicio, fim],
+      `INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem)
+       VALUES ($1, $2, $3, $4, 'confirmado', 'equipe') RETURNING id`,
+      [t.salaoId, t.clienteId, t.inicio, fim],
     );
     const reservaId = r.rows[0].id;
     await c.query(
-      `INSERT INTO reserva_item (salao_id, reserva_id, servico_id, ordem, preco_centavos, duracao_min)
-       VALUES ($1, $2, $3, 0, 8000, $4)`,
-      [t.salaoId, reservaId, t.servicoId, t.duracaoMin],
+      `INSERT INTO reserva_item (salao_id, reserva_id, servico_id, profissional_id, ordem, preco_centavos, duracao_min,
+                                 inicio, fim, ocupado_ate, status)
+       VALUES ($1, $2, $3, $4, 0, 8000, $5, $6, $7, $7, 'confirmado')`,
+      [t.salaoId, reservaId, t.servicoId, t.profissionalId, t.duracaoMin, t.inicio, fim],
     );
     await c.query('COMMIT');
     return { aceita: true, reservaId };

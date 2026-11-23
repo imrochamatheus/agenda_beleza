@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { StatusReserva } from '@/server/repos/tipos';
 
-import { acoesPermitidas, decidirTransicao, podeRemarcar } from './status';
+import { acoesPermitidas, decidirTransicao, itensCancelaveis, podeCancelarTodos, podeRemarcar } from './status';
 
 const inicio = new Date('2026-12-01T13:00:00Z');
 const fim = new Date('2026-12-01T14:00:00Z');
@@ -13,7 +13,7 @@ const TODOS: StatusReserva[] = ['confirmado', 'cancelado', 'concluido', 'nao_com
 
 describe('decidirTransicao (CA-4, CA-7)', () => {
   it('cancelado é final: toda transição recusada', () => {
-    for (const para of TODOS) expect(T('cancelado', para, durante)).toEqual({ ok: false, motivo: 'reserva_final' });
+    for (const para of TODOS) expect(T('cancelado', para, durante)).toEqual({ ok: false, motivo: 'item_final' });
   });
   it('mesma-para-mesma é recusada', () => {
     for (const s of ['confirmado', 'concluido', 'nao_compareceu'] as const) {
@@ -60,5 +60,26 @@ describe('podeRemarcar e acoesPermitidas (CA-13)', () => {
     expect(acoesPermitidas({ status: 'confirmado', inicio, fim, agora: fim })).toEqual({ remarcar: true, cancelar: false, concluir: true, naoCompareceu: true });
     expect(acoesPermitidas({ status: 'concluido', inicio, fim, agora: fim })).toEqual({ remarcar: false, cancelar: false, concluir: false, naoCompareceu: true });
     expect(acoesPermitidas({ status: 'cancelado', inicio, fim, agora: antes })).toEqual({ remarcar: false, cancelar: false, concluir: false, naoCompareceu: false });
+  });
+});
+
+describe('D-050 RN-24: itensCancelaveis e podeCancelarTodos', () => {
+  const item = (status: StatusReserva, i: Date, f: Date) => ({ status, inicio: i, fim: f });
+  const depois = new Date('2026-12-01T15:00:00Z');
+  const tarde = { i: new Date('2026-12-01T16:00:00Z'), f: new Date('2026-12-01T17:00:00Z') };
+
+  it('só confirmados com agora < fim, na ordem recebida', () => {
+    const itens = [item('confirmado', tarde.i, tarde.f), item('concluido', inicio, fim), item('confirmado', inicio, fim), item('cancelado', tarde.i, tarde.f)];
+    expect(itensCancelaveis(itens, antes)).toEqual([itens[0], itens[2]]);
+    // O item das 13:00–14:00 já terminou às 15:00: fica como está.
+    expect(itensCancelaveis(itens, depois)).toEqual([itens[0]]);
+    expect(itensCancelaveis([], antes)).toEqual([]);
+  });
+
+  it('o botão exige 2+ canceláveis', () => {
+    expect(podeCancelarTodos([item('confirmado', inicio, fim), item('confirmado', tarde.i, tarde.f)], antes)).toBe(true);
+    expect(podeCancelarTodos([item('confirmado', inicio, fim), item('confirmado', tarde.i, tarde.f)], depois)).toBe(false);
+    expect(podeCancelarTodos([item('confirmado', inicio, fim), item('concluido', tarde.i, tarde.f)], antes)).toBe(false);
+    expect(podeCancelarTodos([], antes)).toBe(false);
   });
 });

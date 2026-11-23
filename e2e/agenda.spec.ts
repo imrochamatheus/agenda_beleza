@@ -2,9 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { analisarComAxe, semRolagemHorizontal } from './suporte/vitrine';
 
-// D-028 CA-4, CA-7, CA-8, CA-12: agenda da equipe em /dev/agenda (mesmos componentes da página real,
-// dados em memória relativos a hoje, sem banco), viewport 375×812: sem rolagem horizontal, axe 4.14.0
-// sem violações e navegação só com o teclado. "Terça" fixa (02/03/2027) para as faixas de fundo.
+// D-028 CA-4, CA-7, CA-8, CA-12 e D-050 CA-32/CA-36 e critérios 3, 4, 17–19: agenda da equipe em /dev/agenda
+// (mesmos componentes da página real, dados em memória relativos a hoje, sem banco), viewport 375×812: sem rolagem
+// horizontal, axe 4.14.0 sem violações e navegação só com o teclado. Cada bloco é um ITEM (status no masculino) e
+// leva ao detalhe com a âncora do item. "Terça" fixa (02/03/2027) para as faixas de fundo.
 
 const TERCA = '2027-03-02';
 
@@ -46,6 +47,8 @@ test.describe('CA-4: 375×812 sem rolagem horizontal e sem violações do axe', 
     ['semana', '?visao=semana'],
     ['detalhe', '?reserva=demo-r2'],
     ['detalhe anonimizada', '?reserva=demo-r5'],
+    ['detalhe com 3 itens', '?reserva=demo-r9'],
+    ['semana com a reserva de 3 itens', '?visao=semana&profissional=demo-bia'],
     ['faixas de fundo (terça)', `?data=${TERCA}`],
   ] as const) {
     test(nome, async ({ page }) => {
@@ -82,17 +85,62 @@ test.describe('CA-7, CA-8: faixas de fundo com texto, distintas entre si', () =>
 });
 
 test.describe('CA-12: status por texto', () => {
-  test('cada reserva do dia mostra o rótulo do status (cancelada, concluída, não compareceu, confirmada)', async ({ page }) => {
+  test('cada item do dia mostra o rótulo do status do ITEM, no masculino', async ({ page }) => {
     await abrir(page);
-    for (const [id, rotulo] of [
-      ['demo-r1', 'Confirmada'],
-      ['demo-r2', 'Concluída'],
-      ['demo-r4', 'Cancelada'],
-      ['demo-r5', 'Não compareceu'],
+    for (const [item, rotulo] of [
+      ['demo-r1-i1', 'Confirmado'],
+      ['demo-r2-i1', 'Concluído'],
+      ['demo-r2-i2', 'Cancelado'],
+      ['demo-r4-i1', 'Cancelado'],
+      ['demo-r5-i1', 'Não compareceu'],
     ] as const) {
-      await expect(page.locator(`a[href$="reserva=${id}"]`).first()).toContainText(rotulo);
+      await expect(page.locator(`a[data-item="${item}"]`)).toContainText(rotulo);
     }
-    await expect(page.locator('a[href$="reserva=demo-r5"]').first()).toContainText('cliente removida');
+    await expect(page.locator('a[data-item="demo-r5-i1"]')).toContainText('cliente removida');
+  });
+});
+
+test.describe('D-050 CA-32: a reserva de 3 serviços em 3 profissionais', () => {
+  test('3 blocos (Ana, Bia, Carla) com "n de 3", altura pela duração do item e todos levando ao mesmo detalhe', async ({ page }) => {
+    await abrir(page);
+    const blocos = page.locator('a[data-item^="demo-r9-"]');
+    await expect(blocos).toHaveCount(3);
+    const dados = await blocos.evaluateAll((els) =>
+      els.map((e) => ({
+        item: e.getAttribute('data-item'),
+        href: e.getAttribute('href'),
+        texto: (e as HTMLElement).innerText.replace(/\s+/g, ' '),
+        altura: e.getBoundingClientRect().height,
+        coluna: e.closest('section')?.querySelector('h3')?.textContent ?? null,
+      })),
+    );
+    dados.sort((a, b) => a.item!.localeCompare(b.item!));
+    expect(dados.map((d) => d.href)).toEqual([1, 2, 3].map((n) => `/dev/agenda?reserva=demo-r9#item-demo-r9-i${n}`));
+    expect(dados.map((d) => d.texto)).toEqual([
+      expect.stringMatching(/11:00–11:30 Lúcia Prado · Escova · Confirmado · 1 de 3/),
+      expect.stringMatching(/11:30–12:10 Lúcia Prado · Hidratação · Confirmado · 2 de 3/),
+      expect.stringMatching(/12:30–13:15 Lúcia Prado · Manicure · Confirmado · Encaixe · 3 de 3/),
+    ]);
+    // Altura = duração do item × 0,1 rem (16 px por rem): 30, 40 e 45 min.
+    expect(dados.map((d) => Math.round(d.altura))).toEqual([48, 64, 72]);
+    expect(dados.map((d) => d.coluna)).toEqual([
+      expect.stringMatching(/^Ana/),
+      expect.stringMatching(/^Bia/),
+      expect.stringMatching(/^Carla/),
+    ]);
+    await expect(page.getByRole('link', { name: /serviço 2 de 3 do agendamento/ })).toHaveCount(1);
+  });
+
+  test('detalhe: 3 paradas por horário, com profissional, status e "Encaixe"; dl sem Profissional/Início/Fim', async ({ page }) => {
+    await abrir(page, '?reserva=demo-r9');
+    await expect(page.getByRole('term')).toHaveText(['Cliente', 'Telefone', 'Data', 'Situação', 'Origem']);
+    const itens = page.getByRole('list', { name: 'Serviços da reserva' }).locator(':scope > li');
+    await expect(itens).toHaveCount(3);
+    await expect(itens.nth(0)).toContainText('Escova');
+    await expect(itens.nth(0)).toContainText('Ana Demonstração');
+    await expect(itens.nth(1)).toContainText('Hidratação');
+    await expect(itens.nth(2)).toContainText('Encaixe');
+    for (const n of [1, 2, 3]) await expect(page.locator(`li#item-demo-r9-i${n}`)).toHaveCount(1);
   });
 });
 
@@ -108,9 +156,9 @@ test.describe('CA-4: teclado', () => {
     await tabAte(page, (f) => f.tag === 'SELECT');
     await tabAte(page, (f) => f.tag === 'BUTTON' && f.texto === 'Filtrar');
     const f = await tabAte(page, (x) => x.tag === 'A' && /Maria Souza/.test(x.texto));
-    expect(f.texto).toContain('Confirmada');
+    expect(f.texto).toContain('Confirmado');
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/reserva=demo-r1$/);
+    await expect(page).toHaveURL(/reserva=demo-r1#item-demo-r1-i1$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Reserva' })).toBeVisible();
     await expect(page.getByText('(11) 98765-4321')).toBeVisible();
     await tabAte(page, (x) => x.tag === 'A' && x.texto === 'Voltar para a agenda');

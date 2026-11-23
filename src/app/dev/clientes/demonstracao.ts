@@ -32,23 +32,27 @@ export const CLIENTE_EXISTENTE_DEMONSTRACAO = { id: 'demo-existente', nome: 'Yar
 
 export const CLIENTE_DETALHE_DEMONSTRACAO = { nome: 'Maria Souza', telefone: '+5511987654321' };
 
+/** D-050: uma reserva de dois serviços com profissionais diferentes (um cancelado) e uma toda cancelada. */
 export const HISTORICO_DEMONSTRACAO: ItemHistorico[] = [
   {
     id: 'h1',
-    inicioLocal: '12/07/2027 23:30',
+    inicioLocal: '12/07/2027 09:00',
     status: 'Confirmado',
-    profissional: 'Beatriz',
-    servicos: ['Corte feminino', 'Escova'],
-    duracaoTotal: '1 h 30 min',
-    precoTotal: 'R$ 145,00',
+    servicos: [
+      { servico: 'Corte feminino', profissional: 'Beatriz', horaLocal: '09:00', status: 'Confirmado', cancelado: false, preco: 'R$ 80,00' },
+      { servico: 'Escova', profissional: 'Carla', horaLocal: '14:00', status: 'Cancelado', cancelado: true, preco: 'R$ 65,00' },
+    ],
+    precoTotal: 'R$ 80,00',
+    totalDaCancelada: false,
   },
   {
     id: 'h2',
     inicioLocal: '10/05/2027 10:00',
     status: 'Cancelado',
-    profissional: 'Carla',
-    servicos: ['Coloração'],
-    duracaoTotal: '2 h',
-    precoTotal: 'R$ 180,00',
+    servicos: [
+      { servico: 'Coloração', profissional: 'Carla', horaLocal: '10:00', status: 'Cancelado', cancelado: true, preco: 'R$ 180,00' },
+    ],
+    precoTotal: 'R$ 180,00',
+    totalDaCancelada: true,
   },
 ];

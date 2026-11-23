@@ -14,12 +14,20 @@ Os nomes abaixo são sugestões; o que valer na Meta vai nas variáveis `WHATSAP
 
 ## Modelos
 
-### `confirmacao` (`WHATSAPP_TEMPLATE_CONFIRMACAO`, sugestão `agenda_confirmacao`)
-Texto: `Olá! Seu horário no {{1}} está confirmado: {{2}} com {{3}}, em {{4}} às {{5}}.`
+### `confirmacao` (`WHATSAPP_TEMPLATE_CONFIRMACAO`, sugestão `agenda_confirmacao_itens`)
+Texto: `Olá! Seu horário no {{1}} está confirmado para {{2}}: {{3}}. Até lá!`
 
-Ordem das variáveis: confirmacao: salao, servicos, profissional, data, horario
+Ordem das variáveis: confirmacao: salao, data, itens
 
-Exemplo: `Studio Aurora`, `Corte feminino e escova`, `Marina`, `12/12/2026`, `14:30`.
+Exemplo: `Studio Aurora`, `12/12/2026`, `09:00 Escova com Ana; 10:00 Hidratação com Bia; 15:00 Manicure com Carla`.
+
+D-050 (serviços independentes): a confirmação é **uma por reserva** e lista, no envio, os itens não cancelados em ordem
+de início (hora, serviço e profissional de cada um, separados por `; `, numa linha só). Este modelo **substitui** o
+anterior (`agenda_confirmacao`, com salao, servicos, profissional, data e horario): cadastre-o e aprove-o na Meta e
+aponte `WHATSAPP_TEMPLATE_CONFIRMACAO` para ele **antes** de publicar a versão. Com o modelo antigo a Meta recusa o
+envio por quantidade de parâmetros (`parametros_invalidos`, falha permanente: a confirmação fica `falhou` e a reserva
+não muda). Remarcação e cancelamento continuam com os modelos abaixo, agora referentes a um item (ou, em "cancelar
+todos", a todos os itens cancelados juntos).
 
 ### `remarcacao` (`WHATSAPP_TEMPLATE_REMARCACAO`, sugestão `agenda_remarcacao`)
 Texto: `Olá! Seu horário no {{1}} foi remarcado: {{2}} com {{3}}, agora em {{4}} às {{5}}.`

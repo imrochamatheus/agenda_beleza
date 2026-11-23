@@ -4,7 +4,7 @@ import { repos } from '@/server/repos';
 import { obterPrisma } from '@/server/repos/db';
 
 import { AGORA, DIA, criarCenarioReserva, sp } from '../../support/reservas';
-import { inserirReservaDireta } from '../../support/reservas';
+import { ocupar } from '../reservas/apoio-itens';
 
 // D-027: `contarFuturasDaCliente` em isolamento (escopo por salão, status, instante, chave ignorada).
 const hora = (h: number) => sp(DIA, `${String(h).padStart(2, '0')}:00`);
@@ -13,7 +13,7 @@ describe('RepoReserva.contarFuturasDaCliente', () => {
   it('conta só confirmadas futuras da cliente neste salão; ignora a chave; outro salão ou id inválido → 0', async () => {
     const c = await criarCenarioReserva();
     const outro = await criarCenarioReserva();
-    const a = await inserirReservaDireta(c, { inicio: hora(10), fim: hora(11) });
+    const a = await ocupar(c, { inicio: hora(10), fim: hora(11) });
     const clienteId = (await repos().reservas.buscarPorId(c.ctxSistema, a)).clienteId;
     expect(await repos().reservas.contarFuturasDaCliente(c.ctxSistema, { clienteId, agora: AGORA, ignorarChave: null })).toBe(1);
     // Outro salão com o id da cliente: não existe lá.

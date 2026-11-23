@@ -67,8 +67,8 @@ describe('paraAviso', () => {
       {
         total: 5,
         reservas: [
-          { id: 'r1', profissionalId: ANA, profissionalNome: 'Ana', inicio: new Date('2026-12-25T17:00:00Z'), fim: new Date('2026-12-25T18:00:00Z'), clienteNome: 'Joana' },
-          { id: 'r2', profissionalId: BIA, profissionalNome: 'Bia', inicio: new Date('2026-12-26T01:00:00Z'), fim: new Date('2026-12-26T02:00:00Z'), clienteNome: null },
+          { id: 'r1', itemId: 'i1', profissionalId: ANA, profissionalNome: 'Ana', inicio: new Date('2026-12-25T17:00:00Z'), fim: new Date('2026-12-25T18:00:00Z'), clienteNome: 'Joana' },
+          { id: 'r2', itemId: 'i2', profissionalId: BIA, profissionalNome: 'Bia', inicio: new Date('2026-12-26T01:00:00Z'), fim: new Date('2026-12-26T02:00:00Z'), clienteNome: null },
         ],
       },
       SP,
@@ -76,10 +76,26 @@ describe('paraAviso', () => {
     expect(aviso).toEqual({
       total: 5,
       reservas: [
-        { id: 'r1', profissionalNome: 'Ana', inicioLocal: '25/12/2026 14:00', fimLocal: '25/12/2026 15:00', cliente: 'Joana' },
-        { id: 'r2', profissionalNome: 'Bia', inicioLocal: '25/12/2026 22:00', fimLocal: '25/12/2026 23:00', cliente: 'cliente removida' },
+        { id: 'r1', itemId: 'i1', profissionalNome: 'Ana', inicioLocal: '25/12/2026 14:00', fimLocal: '25/12/2026 15:00', cliente: 'Joana' },
+        { id: 'r2', itemId: 'i2', profissionalNome: 'Bia', inicioLocal: '25/12/2026 22:00', fimLocal: '25/12/2026 23:00', cliente: 'cliente removida' },
       ],
     });
+  });
+  it('D-050 RN-38: dois itens da mesma reserva viram duas linhas, cada uma com o período do item', () => {
+    const aviso = paraAviso(
+      {
+        total: 2,
+        reservas: [
+          { id: 'r1', itemId: 'i1', profissionalId: ANA, profissionalNome: 'Ana', inicio: new Date('2026-12-25T17:00:00Z'), fim: new Date('2026-12-25T18:00:00Z'), clienteNome: 'Joana' },
+          { id: 'r1', itemId: 'i2', profissionalId: BIA, profissionalNome: 'Bia', inicio: new Date('2026-12-25T18:00:00Z'), fim: new Date('2026-12-25T18:30:00Z'), clienteNome: 'Joana' },
+        ],
+      },
+      SP,
+    );
+    expect(aviso.reservas.map((x) => [x.id, x.itemId, x.profissionalNome, x.inicioLocal, x.fimLocal])).toEqual([
+      ['r1', 'i1', 'Ana', '25/12/2026 14:00', '25/12/2026 15:00'],
+      ['r1', 'i2', 'Bia', '25/12/2026 15:00', '25/12/2026 15:30'],
+    ]);
   });
 });
 

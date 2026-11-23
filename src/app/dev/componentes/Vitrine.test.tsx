@@ -31,6 +31,7 @@ describe('Vitrine (RN-17)', () => {
       'Estados',
       'Lista de dados',
       'Grade de horários',
+      'Roteiro do dia',
       'Diálogos',
     ]);
     const contato = screen.getByLabelText('E-mail de contato');
@@ -69,6 +70,31 @@ describe('Vitrine (RN-17)', () => {
     expect(screen.getByTestId('horario-escolhido').textContent).toBe('Horário escolhido: nenhum');
     fireEvent.click(screen.getByRole('radio', { name: '10:30' }));
     expect(screen.getByTestId('horario-escolhido').textContent).toBe('Horário escolhido: 10/03/2026 10:30');
+  });
+
+  it('D-050: duas grades de um serviço partilham o name, com prefixo por profissional e legenda discreta', () => {
+    render(<Vitrine />);
+    const p1 = screen.getByRole('group', { name: 'Horários de Profissional 1' });
+    const p2 = screen.getByRole('group', { name: 'Horários de Profissional 2' });
+    const valores = [p1, p2].flatMap((g) => within(g).getAllByRole('radio').map((r) => (r as HTMLInputElement).value));
+    expect(valores).toEqual([
+      'p1_2026-03-10T12:00:00.000Z',
+      'p1_2026-03-10T12:30:00.000Z',
+      'p2_2026-03-10T17:00:00.000Z',
+      'p2_2026-03-10T17:30:00.000Z',
+    ]);
+    const nomes = [p1, p2].flatMap((g) => within(g).getAllByRole('radio').map((r) => (r as HTMLInputElement).name));
+    expect(new Set(nomes)).toEqual(new Set(['h_escova']));
+    expect(p1.querySelector('legend')!.className).toContain('legendaDiscreta');
+  });
+
+  it('D-050: roteiro do dia com os quatro estados, total e um link "Alterar" nomeado', () => {
+    render(<Vitrine />);
+    const secao = screen.getByRole('region', { name: 'Terça-feira, 10/03/2026' });
+    const paradas = within(within(secao).getByRole('list', { name: 'Serviços do dia' })).getAllByRole('listitem');
+    expect(paradas.map((p) => p.getAttribute('data-estado'))).toEqual(['escolhida', 'destaque', 'cancelada', 'pendente']);
+    expect(within(secao).getByRole('link', { name: 'Alterar Escova às 09:00 com Profissional 1' })).toBeTruthy();
+    expect(secao.querySelector('[class*="rodape"]')!.textContent).toBe('Total: R$\u00a0130,00');
   });
 
   it('"Tentar novamente" incrementa o contador', () => {

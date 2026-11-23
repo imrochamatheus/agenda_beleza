@@ -3,6 +3,9 @@
 // transações do mesmo número se serializam aí (mesmo com profissionais diferentes) e a segunda enxerga a
 // reserva comitada da primeira (READ COMMITTED: um snapshot por comando). Sem lock novo.
 // A requisição repetida (mesma chave) nunca é recusada: o INSERT depois a responde como `repetida`.
+// D-050 RN-18: conta RESERVAS, não itens: uma reserva é futura se tem ao menos um item `confirmado` com
+// `inicio > agora` (regra em `RepoReserva.contarFuturasDaCliente`); a reserva nova conta como uma só,
+// qualquer que seja o número de itens.
 import type { DependenciasCriarReserva } from '@/server/reservas/tipos';
 
 import { MAXIMO_FUTURAS_POR_NUMERO, MENSAGENS_PROTECAO } from './tipos';

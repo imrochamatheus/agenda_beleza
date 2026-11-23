@@ -1,78 +1,95 @@
-// Núcleo comum de cancelar e marcar status (D-030 RN-3, RN-6, RN-8, RN-9). Uma transação READ COMMITTED:
-// salão FOR SHARE → profissional FOR NO KEY UPDATE → cliente FOR KEY SHARE → reserva FOR UPDATE → UPDATE do
-// status → mensagem (outbox, sempre por último). `enfileirarMensagens` só depois do commit.
-import { exigirPermissao } from '@/server/auth/permissoes';
+// Núcleo de cancelar item e marcar status do item (D-030 RN-3/RN-6/RN-8/RN-9; D-050 §3.6, RN-20, RN-21,
+// RN-28, RN-33). Uma transação READ COMMITTED: salão FOR SHARE → cliente FOR KEY SHARE → reserva FOR UPDATE →
+// itens (UPDATE) → derivados da reserva → mensagem (outbox, sempre por último). Nenhuma dessas transições torna
+// um item ocupante, por isso o profissional NÃO é travado (A-9, dba.md Q13). `enfileirarMensagens` só depois
+// do commit.
 import { enfileirarMensagens } from '@/server/mensagens/enfileirar';
-import { registrarMensagem } from '@/server/mensagens/registrar';
 import type { ResultadoRegistro } from '@/server/mensagens/tipos';
 import type { StatusReserva } from '@/server/repos/tipos';
 import { emTransacao } from '@/server/repos/transacao';
 import type { TenantContext } from '@/server/tenant/context';
 
-import { aplicarPolitica, DesfazerAlteracao, localizarReserva, registrarEvento, sair } from './alteracao-comum';
+import {
+  aplicarPolitica,
+  DesfazerAlteracao,
+  fecharAlteracao,
+  itemTravado,
+  localizarItem,
+  paraMensagens,
+  registrarEvento,
+  sair,
+} from './alteracao-comum';
 import { decidirTransicao } from './status';
-import type { DependenciasAlteracao, ResultadoStatus } from './tipos-alteracao';
+import type { DependenciasAlteracao, ResultadoStatusItem } from './tipos-alteracao';
 
-type Recusado = Extract<ResultadoStatus, { resultado: 'recusado' }>;
+type Recusado = Extract<ResultadoStatusItem, { resultado: 'recusado' }>;
+type Ok = { resultado: 'ok'; status: StatusReserva; revisao: number; registros: ResultadoRegistro[] };
 
-export async function alterarStatus(
+export async function alterarStatusDoItem(
   ctx: TenantContext,
-  { reservaId, destino, permitidos, operacao }: { reservaId: unknown; destino: unknown; permitidos: readonly StatusReserva[]; operacao: 'cancelar' | 'marcar_status' },
+  e: { reservaId: unknown; itemId: unknown; destino: unknown; permitidos: readonly StatusReserva[]; operacao: 'cancelar_item' | 'marcar_status_item' },
   agora: Date,
   deps: DependenciasAlteracao,
-): Promise<ResultadoStatus> {
-  const previa = await localizarReserva(ctx, reservaId);
+): Promise<ResultadoStatusItem> {
+  const previa = await localizarItem(ctx, e.reservaId, e.itemId);
   await aplicarPolitica(ctx, 'cancelar', deps, agora);
-  const para = permitidos.find((p) => p === destino);
+  const base = { operacao: e.operacao, salaoId: ctx.salaoId, reservaId: previa.id, itemId: previa.item.id };
+  const para = e.permitidos.find((p) => p === e.destino);
   if (para === undefined) {
     // Destino fora do que a operação aceita: recusado sem gravar (a máquina também recusaria).
-    registrarEvento({ operacao, salaoId: ctx.salaoId, reservaId: previa.id, resultado: 'recusado', motivo: 'transicao_invalida' });
+    registrarEvento({ ...base, resultado: 'recusado', motivo: 'transicao_invalida' });
     return { resultado: 'recusado', motivo: 'transicao_invalida' };
   }
 
-  let saida: Recusado | { resultado: 'ok'; revisao: number; registro: ResultadoRegistro | null };
+  let saida: Recusado | Ok;
   try {
     saida = await emTransacao(async (r) => {
       await r.saloes.travarParaLeitura(ctx);
-      await r.profissionais.travarParaReserva(ctx, previa.profissionalId);
       await deps.aposTravas?.();
       await r.reservasAlteracao.travarCliente(ctx, previa.clienteId);
       const atual = await r.reservasAlteracao.travarParaAlterar(ctx, previa.id);
-      exigirPermissao(ctx, 'reserva.alterar', { profissionalId: atual.profissionalId });
+      const itens = await r.reservasAlteracao.lerItens(ctx, atual.id);
+      const item = itemTravado(ctx, itens, previa.item.id);
 
-      const d = decidirTransicao({ de: atual.status, para, inicio: atual.inicio, fim: atual.fim, agora });
+      const d = decidirTransicao({ de: item.status, para, inicio: item.inicio, fim: item.fim, agora });
       if (!d.ok) return sair<Recusado>({ resultado: 'recusado', motivo: d.motivo });
 
-      await r.reservasAlteracao.atualizarStatus(ctx, atual.id, { de: atual.status, para, agora });
-
-      let registro: ResultadoRegistro | null = null;
-      if (para === 'cancelado') {
-        registro = await registrarMensagem(ctx, { reservaId: atual.id, tipo: 'cancelamento' }, agora, r);
-      } else if (para === 'concluido') {
-        // A volta (nao_compareceu → concluido) cai na chave única: não cria nem reenfileira (CA-R2).
-        registro = await registrarMensagem(ctx, { reservaId: atual.id, tipo: 'convite_avaliacao' }, agora, r);
-      } else if (atual.status === 'concluido') {
-        // concluido → nao_compareceu: só o convite ainda `pendente` é substituído; o `enviado` não muda.
-        await r.mensagens.substituirPendentes(ctx, { reservaId: atual.id, tipos: ['convite_avaliacao'], revisaoMenorQue: null }, agora);
-      }
-      return { resultado: 'ok' as const, revisao: atual.revisao, registro };
+      // RN-28: só o cancelamento gera mensagem para a cliente e por isso sobe a revisão (antes de registrar).
+      const cancelar = para === 'cancelado';
+      const revisao = cancelar ? atual.revisao + 1 : atual.revisao;
+      const n = await r.reservasAlteracao.atualizarStatusDosItens(ctx, atual.id, {
+        itemIds: [item.id],
+        de: [item.status],
+        para,
+        revisao: cancelar ? revisao : null,
+        agora,
+      });
+      // Sob a trava da reserva nenhum outro escritor muda o item: 0 linhas é erro de programação.
+      if (n !== 1) throw new Error('alterarStatusDoItem: item não atualizado sob a trava da reserva');
+      const fecho = await fecharAlteracao(ctx, r, atual, {
+        revisao,
+        eventos: cancelar ? [{ tipo: 'cancelamento', reservaItemId: item.id }] : [],
+        agora,
+      });
+      return { resultado: 'ok' as const, status: fecho.status, revisao, registros: fecho.registros };
     });
-  } catch (e) {
-    if (e instanceof DesfazerAlteracao) saida = e.saida as Recusado;
-    else throw e;
+  } catch (err) {
+    if (err instanceof DesfazerAlteracao) saida = err.saida as Recusado;
+    else throw err;
   }
 
-  const base = { operacao, salaoId: ctx.salaoId, reservaId: previa.id, para };
   if (saida.resultado === 'recusado') {
-    registrarEvento({ ...base, resultado: 'recusado', motivo: saida.motivo });
+    registrarEvento({ ...base, para, resultado: 'recusado', motivo: saida.motivo });
     return saida;
   }
-  if (saida.registro !== null) await enfileirarMensagens([saida.registro], { enfileirar: deps.enfileirar });
-  registrarEvento({ ...base, resultado: 'atualizada' });
+  await enfileirarMensagens(saida.registros, { enfileirar: deps.enfileirar });
+  registrarEvento({ ...base, para, resultado: 'atualizada', revisao: saida.revisao, statusReserva: saida.status });
   return {
     resultado: 'atualizada',
+    itemId: previa.item.id,
     status: para,
+    statusReserva: saida.status,
     revisao: saida.revisao,
-    mensagem: saida.registro === null ? null : { mensagemId: saida.registro.mensagemId, estado: saida.registro.estado },
+    mensagens: paraMensagens(saida.registros),
   };
 }

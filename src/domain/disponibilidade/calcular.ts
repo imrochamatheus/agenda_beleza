@@ -1,4 +1,4 @@
-// Cálculo de disponibilidade (D-018 §3.1). Puro: sem banco, sem relógio implícito (`agora` é entrada).
+// Cálculo de disponibilidade (D-018 §3.1; D-050: por serviço, com as ocupações da cliente). Puro: sem banco, sem relógio implícito (`agora` é entrada).
 // A grade do dia é montada UMA vez por data e compartilhada por todos os profissionais (CA-27/R-1):
 // nenhuma chamada a `fuso.ts` por (candidato × profissional).
 import { compararDatas, ehDataCivilValida, instanteDeHoraLocal, somarDias, validarFuso } from '@/server/tempo/fuso';
@@ -35,6 +35,11 @@ function validarEntrada(e: EntradaDeCalculo): void {
   exigirInteiro('intervaloMin', e.regras.intervaloMin, 0);
   exigirInteiro('duracaoMin', e.duracaoMin, 1);
   validarFuncionamento(e.funcionamento);
+  for (const o of e.ocupacoesDaCliente ?? []) {
+    if (!(o.inicio instanceof Date) || !(o.fim instanceof Date) || Number.isNaN(o.inicio.getTime()) || Number.isNaN(o.fim.getTime())) {
+      throw new RangeError('Ocupação da cliente inválida');
+    }
+  }
   let anterior: DataCivil | null = null;
   for (const d of e.datas) {
     if (!ehDataCivilValida(d)) throw new RangeError(`Data inválida: ${JSON.stringify(d)}`);
@@ -70,6 +75,8 @@ export function calcularDisponibilidade(e: EntradaDeCalculo): DisponibilidadeCal
   const { hoje, ultima } = limitesDaJanela(e.agora, regras);
 
   const bloqueiosSalao = e.bloqueiosDoSalao;
+  // D-050 RN-8: a cliente não pode estar em dois itens ao mesmo tempo (vale para todos os profissionais).
+  const daCliente = unirIntervalos(e.ocupacoesDaCliente ?? []);
   const funcionamentoPorDia: (readonly IntervaloMin[])[] | null = e.funcionamento.definido
     ? e.funcionamento.dias.map(unirMinutos)
     : null;
@@ -126,6 +133,7 @@ export function calcularDisponibilidade(e: EntradaDeCalculo): DisponibilidadeCal
               const t = c.instante;
               if (t < j0 || t + duracaoMs > j1 || t < limiteAntecedencia) continue;
               if (intersecta(p.bloqueios, t, t + duracaoMs)) continue;
+              if (intersecta(daCliente, t, t + duracaoMs)) continue;
               if (intersecta(p.ocupacoes, t, t + duracaoMs + intervaloMs)) continue;
               horariosDoDia[idxProf].push({
                 inicio: new Date(t),

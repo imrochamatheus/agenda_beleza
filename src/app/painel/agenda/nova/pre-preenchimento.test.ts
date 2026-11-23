@@ -11,19 +11,21 @@ const o = { profissionaisValidos: [A, B], fixo: null, hoje };
 describe('valoresIniciais', () => {
   it('usa profissional, data e hora válidos', () => {
     expect(valoresIniciais({ profissional: B.toUpperCase(), data: '2026-12-01', hora: '9:30' }, o)).toMatchObject({
-      profissionalId: B,
       data: '2026-12-01',
-      hora: '09:30',
+      itens: [{ servicoId: '', profissionalId: B, hora: '09:30' }],
     });
   });
   it('ausente, repetido, malformado ou de fora do salão vira vazio (data = hoje)', () => {
     const v = valoresIniciais({ profissional: [A, B], data: ['2026-12-01'], hora: '99:99' }, o);
-    expect(v).toMatchObject({ profissionalId: '', data: '2026-03-05', hora: '' });
-    expect(valoresIniciais({ profissional: '00000000-0000-4000-8000-0000000000ff', data: '2026-02-30' }, o)).toMatchObject({ profissionalId: '', data: '2026-03-05' });
-    expect(valoresIniciais({ profissional: 'abc' }, o).profissionalId).toBe('');
+    expect(v).toMatchObject({ data: '2026-03-05', itens: [{ profissionalId: '', hora: '' }] });
+    expect(valoresIniciais({ profissional: '00000000-0000-4000-8000-0000000000ff', data: '2026-02-30' }, o)).toMatchObject({
+      data: '2026-03-05',
+      itens: [{ profissionalId: '' }],
+    });
+    expect(valoresIniciais({ profissional: 'abc' }, o).itens[0].profissionalId).toBe('');
   });
   it('o profissional fixo vence o que veio na query', () => {
-    expect(valoresIniciais({ profissional: B }, { ...o, fixo: A }).profissionalId).toBe(A);
+    expect(valoresIniciais({ profissional: B }, { ...o, fixo: A }).itens[0].profissionalId).toBe(A);
   });
   it('formatadores com zeros à esquerda', () => {
     expect(dataIso({ ano: 2026, mes: 1, dia: 2 })).toBe('2026-01-02');

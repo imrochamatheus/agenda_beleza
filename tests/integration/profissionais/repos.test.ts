@@ -238,17 +238,21 @@ describe('listarBloqueantesDeDesativacao (CA-3, CA-15)', () => {
     await inserirReservaComItens(c, { ...base, inicio: em(400), fim: em(430), status: 'nao_compareceu' });
 
     const r = await repos().reservas.listarBloqueantesDeDesativacao(ctxDoGestor(s), p.id, agora);
-    expect(r.map((x) => x.id)).toEqual([emAndamento, futura, futuraAnon]);
+    // D-050 RN-38: uma linha por ITEM; emAndamento tem 2 itens ([0, 1) serv2 e [1, 2) serv1).
+    expect(r.map((x) => x.id)).toEqual([emAndamento, emAndamento, futura, futuraAnon]);
     expect(r.map((x) => x.id)).not.toContain(passada);
     expect(r.map((x) => x.id)).not.toContain(terminaAgora);
+    const itens = await c.query<{ id: string }>('SELECT id::text AS id FROM reserva_item WHERE reserva_id = $1 ORDER BY inicio', [emAndamento]);
     expect(r[0]).toEqual({
       id: emAndamento,
+      itemId: itens.rows[0].id,
       inicio: em(0),
       fim: em(1),
       clienteNome: s.clientes.nomeAtiva,
-      servicos: [s.servicos.nomes[1], s.servicos.nomes[0]],
+      servicos: [s.servicos.nomes[1]],
     });
-    expect(r[2].clienteNome).toBeNull();
+    expect(r[1]).toMatchObject({ id: emAndamento, itemId: itens.rows[1].id, inicio: em(1), fim: em(2), servicos: [s.servicos.nomes[0]] });
+    expect(r[3].clienteNome).toBeNull();
     expect(JSON.stringify(r)).not.toContain(s.clientes.telefoneAtiva);
     // Outro salão com o id deste profissional: nada (o filtro é pelo salão do contexto).
     expect(await repos().reservas.listarBloqueantesDeDesativacao(ctxDoGestor(b), p.id, agora)).toEqual([]);

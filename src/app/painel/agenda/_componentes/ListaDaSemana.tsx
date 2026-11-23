@@ -4,13 +4,14 @@ import { MENSAGENS_AGENDA } from '@/server/agenda/tipos';
 import type { AgendaVista, FaixaDoDia } from '@/server/agenda/tipos';
 
 import estilos from './Agenda.module.css';
-import { ConteudoDaReserva, MarcaDeFalha, rotuloDoBloqueio } from './Eventos';
+import { ConteudoDoBloco, hrefDoBloco, MarcaDeFalha, rotuloDoBloqueio } from './Eventos';
 
 type Props = { vista: AgendaVista; hrefReserva: (id: string) => string };
 
 /**
  * Visão por semana: lista empilhada por dia (sem grade horizontal, R-4), com os profissionais que têm
- * algo no dia. Os horários são recortados ao dia (reserva que cruza a meia-noite aparece nos dois).
+ * algo no dia. Uma linha por ITEM (D-050). Os horários são recortados ao dia (item que cruza a meia-noite
+ * aparece nos dois).
  */
 export function ListaDaSemana({ vista, hrefReserva }: Props) {
   return (
@@ -19,12 +20,12 @@ export function ListaDaSemana({ vista, hrefReserva }: Props) {
         const porColuna = vista.colunas
           .map((c) => {
             const itens: ({ chave: string; faixa: FaixaDoDia } & (
-              | { tipo: 'reserva'; i: number }
+              | { tipo: 'item'; i: number }
               | { tipo: 'bloqueio'; i: number }
             ))[] = [];
-            c.reservas.forEach((r, i) => {
-              const faixa = recortarNoDia(r.inicio, r.fim, dia, vista.fuso);
-              if (faixa) itens.push({ chave: `r${r.id}`, faixa, tipo: 'reserva', i });
+            c.blocos.forEach((b, i) => {
+              const faixa = recortarNoDia(b.inicio, b.fim, dia, vista.fuso);
+              if (faixa) itens.push({ chave: `i${b.itemId}`, faixa, tipo: 'item', i });
             });
             c.bloqueios.forEach((b, i) => {
               const faixa = recortarNoDia(b.inicio, b.fim, dia, vista.fuso);
@@ -49,21 +50,21 @@ export function ListaDaSemana({ vista, hrefReserva }: Props) {
                 </h4>
                 <ul className={estilos.lista}>
                   {itens.map((it) => {
-                    if (it.tipo === 'reserva') {
-                      const r = coluna.reservas[it.i];
+                    if (it.tipo === 'item') {
+                      const b = coluna.blocos[it.i];
                       return (
-                        <li key={it.chave} className={`${estilos.item} ${estilos[r.status]}`}>
-                          <a href={hrefReserva(r.id)}>
-                            <ConteudoDaReserva reserva={r} faixa={it.faixa} />
-                            {r.temFalhaDeMensagem ? <MarcaDeFalha variante="lista" /> : null}
+                        <li key={it.chave} className={`${estilos.item} ${estilos[b.status]}`}>
+                          <a href={hrefDoBloco(hrefReserva, b)}>
+                            <ConteudoDoBloco bloco={b} faixa={it.faixa} />
+                            {b.temFalhaDeMensagem ? <MarcaDeFalha variante="lista" /> : null}
                           </a>
                         </li>
                       );
                     }
-                    const b = coluna.bloqueios[it.i];
+                    const bq = coluna.bloqueios[it.i];
                     return (
                       <li key={it.chave} className={`${estilos.item} ${estilos.bloqueio}`}>
-                        <strong>{formatarFaixaDeMinutos(it.faixa.inicioMin, it.faixa.fimMin)}</strong> {rotuloDoBloqueio(b)}
+                        <strong>{formatarFaixaDeMinutos(it.faixa.inicioMin, it.faixa.fimMin)}</strong> {rotuloDoBloqueio(bq)}
                       </li>
                     );
                   })}

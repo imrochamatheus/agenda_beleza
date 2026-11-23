@@ -11,7 +11,7 @@ import type { SalaoCompleto, SobrescritasSalao } from '../../support/factories';
 
 export { ctxDoGestor } from '../profissionais/apoio';
 
-// Apoio local aos testes de tests/integration/disponibilidade (D-018). Não é arquivo de teste (o glob
+// Apoio local aos testes de tests/integration/disponibilidade (D-018; D-050: por serviço). Não é arquivo de teste (o glob
 // do Vitest só pega *.test.ts). SQL direto pelo driver `pg` na base deste worker, sem mocks de banco.
 // Relógio sempre injetado: AGORA fixo, antes do período consultado (DIA, uma terça-feira).
 
@@ -175,26 +175,10 @@ export async function inserirCliente(c: pg.Client, salaoId: string, anonimizada 
   return rows[0].id;
 }
 
-export type NovaReserva = {
-  salaoId: string;
-  profissionalId: string;
-  clienteId: string;
-  inicio: Date;
-  fim: Date;
-  /** Padrão: `fim`. */
-  ocupadoAte?: Date;
-  status?: 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
-  encaixe?: boolean;
-};
-
-export async function inserirReserva(c: pg.Client, r: NovaReserva): Promise<string> {
-  const { rows } = await c.query<{ id: string }>(
-    `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem, encaixe)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'equipe', $8) RETURNING id::text AS id`,
-    [r.salaoId, r.profissionalId, r.clienteId, r.inicio, r.fim, r.ocupadoAte ?? r.fim, r.status ?? 'confirmado', r.encaixe ?? false],
-  );
-  return rows[0].id;
-}
+// D-050: a ocupação é do ITEM. `inserirReserva` (formato antigo: reserva de 1 item) e
+// `inserirReservaComItens` vêm do suporte comum (tests/support/sql.ts), sem cópia.
+export { inserirReserva, inserirReservaComItens } from '../../support/sql';
+export type { NovaReserva } from '../../support/sql';
 
 /** Cliente Prisma próprio, com o evento `query` capturado (A-6). `encerrar()` ao fim. */
 export function criarClienteComLog(): { cliente: PrismaClient; consultas: string[]; encerrar(): Promise<void> } {
@@ -212,17 +196,38 @@ export function criarClienteComLog(): { cliente: PrismaClient; consultas: string
 export const rotulo = (minutos: number): string =>
   `${String(Math.floor(minutos / 60)).padStart(2, '0')}:${String(minutos % 60).padStart(2, '0')}`;
 
-/** Rótulos locais 'HH:MM' dos inícios do `idx`-ésimo profissional na `dia`-ésima data de um resultado 'ok'. */
-export function rotulos(
-  r: {
-    resultado: string;
-    profissionais?: readonly { dias: readonly { horarios: readonly { local: { minutosDoDia: number } }[] }[] }[];
-  },
-  idx = 0,
-  dia = 0,
-): string[] {
-  if (r.resultado !== 'ok' || !r.profissionais) throw new Error(`resultado inesperado: ${r.resultado}`);
-  return r.profissionais[idx].dias[dia].horarios.map((h) => rotulo(h.local.minutosDoDia));
+type ResultadoComServicos = {
+  resultado: string;
+  servicos?: readonly {
+    servicoId: string;
+    profissionais: readonly { profissionalId: string; dias: readonly { horarios: readonly { local: { minutosDoDia: number } }[] }[] }[];
+  }[];
+};
+
+/**
+ * Rótulos locais 'HH:MM' dos inícios do `idx`-ésimo profissional na `dia`-ésima data de um resultado
+ * 'ok', no `servico`-ésimo serviço calculado (padrão o primeiro).
+ */
+export function rotulos(r: ResultadoComServicos, idx = 0, dia = 0, servico = 0): string[] {
+  if (r.resultado !== 'ok' || !r.servicos) throw new Error(`resultado inesperado: ${r.resultado}`);
+  return r.servicos[servico].profissionais[idx].dias[dia].horarios.map((h) => rotulo(h.local.minutosDoDia));
+}
+
+/** Rótulos do profissional `profissionalId` no serviço `servicoId` (vazio se ele não é oferecido). */
+export function rotulosDe(r: ResultadoComServicos, servicoId: string, profissionalId: string, dia = 0): string[] {
+  if (r.resultado !== 'ok' || !r.servicos) throw new Error(`resultado inesperado: ${r.resultado}`);
+  const s = r.servicos.find((x) => x.servicoId === servicoId);
+  if (!s) throw new Error(`serviço ${servicoId} não calculado`);
+  const p = s.profissionais.find((x) => x.profissionalId === profissionalId);
+  return p ? p.dias[dia].horarios.map((h) => rotulo(h.local.minutosDoDia)) : [];
+}
+
+/** Ids dos profissionais oferecidos para `servicoId`, na ordem do resultado. */
+export function profissionaisDe(r: ResultadoComServicos, servicoId: string): string[] {
+  if (r.resultado !== 'ok' || !r.servicos) throw new Error(`resultado inesperado: ${r.resultado}`);
+  const s = r.servicos.find((x) => x.servicoId === servicoId);
+  if (!s) throw new Error(`serviço ${servicoId} não calculado`);
+  return s.profissionais.map((p) => p.profissionalId);
 }
 
 export function faixa(a: string, b: string, passo = 15): string[] {

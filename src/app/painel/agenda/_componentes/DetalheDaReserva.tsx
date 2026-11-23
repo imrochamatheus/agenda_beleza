@@ -1,5 +1,8 @@
-import { formatarDataHora, formatarDuracao, formatarMoeda, formatarTelefone } from '@/lib/format';
+import type { ReactNode } from 'react';
+
 import { SituacaoMensagens } from '@/components/agenda/SituacaoMensagens';
+import { RoteiroDoDia } from '@/components/ui/RoteiroDoDia';
+import { formatarTelefone } from '@/lib/format';
 import { rotuloDaOrigem, rotuloDoStatus } from '@/server/agenda/rotulos';
 import { MENSAGENS_AGENDA } from '@/server/agenda/tipos';
 import type { DetalheDaReserva as Detalhe } from '@/server/agenda/tipos';
@@ -7,11 +10,31 @@ import { TEXTO_CLIENTE_REMOVIDA } from '@/server/clientes/tipos';
 import type { MensagemSituacao } from '@/server/mensagens/situacao-tipos';
 
 import estilos from './Agenda.module.css';
+import { paradasDaReserva, ROTULO_DO_ROTEIRO, textoDaData } from './roteiro';
+import { TotalDaReserva } from './TotalDaReserva';
 
-type Props = { reserva: Detalhe; hrefVoltar: string; mensagens: readonly MensagemSituacao[] };
+/** `id` do resultado do PRG: o redirect leva `#resultado` e o navegador põe o foco nele (sem JavaScript). */
+export const ID_DO_RESULTADO = 'resultado';
 
-/** Detalhe somente leitura (RN-10) com a situação das mensagens (D-043); telefone só se `contato` veio. */
-export function DetalheDaReserva({ reserva, hrefVoltar, mensagens }: Props) {
+type Props = {
+  reserva: Detalhe;
+  hrefVoltar: string;
+  mensagens: readonly MensagemSituacao[];
+  /** Texto do resultado do PRG (já montado a partir da lista fechada); null = nenhum. */
+  resultado?: string | null;
+  /**
+   * Roteiro interativo (ações por item, ver `reservas/[id]/AcoesDaReserva`). Sem ele, o roteiro é somente
+   * leitura (vitrine /dev/agenda).
+   */
+  roteiro?: ReactNode;
+};
+
+/**
+ * Detalhe da reserva (D-028 RN-10; D-050 web-design §5.10): dados da cliente e do agendamento na `dl` (Data
+ * substitui Início/Fim; profissional e horário vão para cada serviço), o roteiro dos serviços com status por
+ * item e o total, e a situação das mensagens (D-043). Telefone só se `contato` veio.
+ */
+export function DetalheDaReserva({ reserva, hrefVoltar, mensagens, resultado = null, roteiro }: Props) {
   const r = reserva;
   return (
     <div className={estilos.pagina}>
@@ -19,12 +42,12 @@ export function DetalheDaReserva({ reserva, hrefVoltar, mensagens }: Props) {
       <p>
         <a href={hrefVoltar}>Voltar para a agenda</a>
       </p>
+      {resultado ? (
+        <p id={ID_DO_RESULTADO} role="status" tabIndex={-1} className={estilos.resultado}>
+          {resultado}
+        </p>
+      ) : null}
       <dl className={estilos.detalhe}>
-        <dt>Profissional</dt>
-        <dd>
-          {r.profissional.nome}
-          {r.profissional.ativo ? null : ` (${MENSAGENS_AGENDA.inativo})`}
-        </dd>
         <dt>Cliente</dt>
         <dd>{r.clienteNome ?? TEXTO_CLIENTE_REMOVIDA}</dd>
         {r.contato !== null ? (
@@ -33,33 +56,17 @@ export function DetalheDaReserva({ reserva, hrefVoltar, mensagens }: Props) {
             <dd>{formatarTelefone(r.contato.telefoneE164)}</dd>
           </>
         ) : null}
-        <dt>Início</dt>
-        <dd>{formatarDataHora(r.inicio, r.fuso)}</dd>
-        <dt>Fim</dt>
-        <dd>{formatarDataHora(r.fim, r.fuso)}</dd>
+        <dt>Data</dt>
+        <dd>{textoDaData(r.data)}</dd>
         <dt>Situação</dt>
         <dd>{rotuloDoStatus(r.status)}</dd>
         <dt>Origem</dt>
-        <dd>
-          {rotuloDaOrigem(r.origem)}
-          {r.encaixe ? ` · ${MENSAGENS_AGENDA.encaixe}` : ''}
-        </dd>
+        <dd>{rotuloDaOrigem(r.origem)}</dd>
       </dl>
-      <section aria-labelledby="reserva-itens">
+      <section aria-labelledby="reserva-itens" className={estilos.servicos}>
         <h2 id="reserva-itens">Serviços</h2>
-        <ul className={estilos.lista}>
-          {r.itens.map((i, n) => (
-            <li key={n} className={estilos.item}>
-              <span>{i.nome}</span>
-              <span>
-                {formatarMoeda(i.precoCentavos)} · {formatarDuracao(i.duracaoMin)}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <p>
-          <strong>Total: {formatarMoeda(r.totalCentavos)}</strong> · {formatarDuracao(r.duracaoTotalMin)}
-        </p>
+        {r.papel === 'profissional' ? <p className={estilos.nota}>{MENSAGENS_AGENDA.apenasSeusServicos}</p> : null}
+        {roteiro ?? <RoteiroDoDia rotulo={ROTULO_DO_ROTEIRO} paradas={paradasDaReserva(r)} rodape={<TotalDaReserva reserva={r} />} />}
       </section>
       <SituacaoMensagens mensagens={mensagens} fuso={r.fuso} />
     </div>

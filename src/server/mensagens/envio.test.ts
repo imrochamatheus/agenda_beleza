@@ -20,11 +20,13 @@ const contexto = (o: Partial<ContextoDeEnvio> = {}): ContextoDeEnvio => ({
   tipo: 'confirmacao',
   mensagemRevisao: 0,
   reservaId: RESERVA,
-  reserva: { revisao: 0, status: 'confirmado', inicio: new Date('2026-11-25T13:00:00Z') },
+  reserva: { revisao: 0, status: 'confirmado' },
+  itens: [
+    { inicio: new Date('2026-11-25T13:00:00Z'), fim: new Date('2026-11-25T13:30:00Z'), status: 'confirmado', revisao: 0, servicoNome: 'Corte', profissionalNome: 'Marina' },
+    { inicio: new Date('2026-11-25T13:30:00Z'), fim: new Date('2026-11-25T14:00:00Z'), status: 'confirmado', revisao: 0, servicoNome: 'Escova', profissionalNome: 'Bia' },
+  ],
   salaoNome: 'Studio Terra',
   fuso: 'America/Sao_Paulo',
-  profissionalNome: 'Marina',
-  servicos: ['Corte', 'Escova'],
   clienteAnonimizada: false,
   telefone: TEL,
   consentimentoMensagens: true,
@@ -114,7 +116,7 @@ describe('enviarMensagem: sucesso (CA-1)', () => {
         destinatarioE164: TEL,
         modelo: 'confirmacao',
         chaveIdempotencia: `${RESERVA}:confirmacao:0`,
-        parametros: { salao: 'Studio Terra', servicos: 'Corte e Escova', profissional: 'Marina', data: '25/11/2026', horario: '10:00' },
+        parametros: { salao: 'Studio Terra', data: '25/11/2026', itens: '10:00 Corte com Marina; 10:30 Escova com Bia' },
       },
     ]);
     expect(m.concluidos).toEqual([{ resultado: 'sucesso', provedorMensagemId: 'wamid.1' }]);
@@ -238,13 +240,13 @@ describe('decidirNoEnvio (RN-8, RN-12, RN-16)', () => {
   });
 
   it('anonimizada vence a vigência e o consentimento', () => {
-    expect(decidirNoEnvio(contexto({ clienteAnonimizada: true, telefone: null, consentimentoMensagens: false, reserva: { revisao: 9, status: 'cancelado', inicio: AGORA } }))).toEqual({
+    expect(decidirNoEnvio(contexto({ clienteAnonimizada: true, telefone: null, consentimentoMensagens: false, reserva: { revisao: 9, status: 'cancelado' } }))).toEqual({
       acao: 'terminal', estado: 'cancelada_anonimizacao', erroCodigo: null,
     });
   });
 
   it('obsoleta vence a falta de consentimento', () => {
-    expect(decidirNoEnvio(contexto({ consentimentoMensagens: false, mensagemRevisao: 0, reserva: { revisao: 1, status: 'confirmado', inicio: AGORA } }))).toEqual({
+    expect(decidirNoEnvio(contexto({ tipo: 'remarcacao', consentimentoMensagens: false, mensagemRevisao: 1 }))).toEqual({
       acao: 'terminal', estado: 'substituida', erroCodigo: 'obsoleta',
     });
   });
@@ -254,7 +256,7 @@ describe('decidirNoEnvio (RN-8, RN-12, RN-16)', () => {
   });
 
   it('convite exige a finalidade do convite e reserva concluída', () => {
-    const c = { tipo: 'convite_avaliacao' as const, reserva: { revisao: 0, status: 'concluido' as const, inicio: AGORA } };
+    const c = { tipo: 'convite_avaliacao' as const, reserva: { revisao: 0, status: 'concluido' as const } };
     expect(decidirNoEnvio(contexto(c))).toEqual({ acao: 'enviar' });
     expect(decidirNoEnvio(contexto({ ...c, consentimentoConvite: false }))).toMatchObject({ estado: 'nao_enviada' });
     expect(decidirNoEnvio(contexto({ ...c, reserva: { ...c.reserva, status: 'confirmado' } }))).toMatchObject({ estado: 'substituida' });

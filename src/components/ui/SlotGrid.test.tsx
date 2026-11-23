@@ -126,6 +126,73 @@ describe('SlotGrid (CA-17, CA-8, RN-21)', () => {
     expect(grupo.matches(':disabled')).toBe(true);
   });
 
+  it('D-050 C1: prefixoDoValor vai antes do ISO no value; o callback recebe só o instante', () => {
+    const onSelecionar = vi.fn();
+    render(
+      <SlotGrid
+        rotuloGrupo="Horários de Ana"
+        fuso={SP}
+        name="h_s1"
+        prefixoDoValor="p-ana_"
+        selecionadoInicial={d('2026-03-10T13:30:00Z')}
+        onSelecionar={onSelecionar}
+        instantes={[d('2026-03-10T13:00:00Z'), d('2026-03-10T13:30:00Z')]}
+      />,
+    );
+    expect(radios().map((r) => r.value)).toEqual(['p-ana_2026-03-10T13:00:00.000Z', 'p-ana_2026-03-10T13:30:00.000Z']);
+    expect(radios().map((r) => r.checked)).toEqual([false, true]);
+    fireEvent.click(screen.getByText('10:00'));
+    expect((onSelecionar.mock.calls[0][0] as Date).toISOString()).toBe('2026-03-10T13:00:00.000Z');
+  });
+
+  it('D-050 C1: grades com o mesmo name e prefixos distintos formam um único grupo (uma só marcação)', () => {
+    const instantes = [d('2026-03-10T13:00:00Z'), d('2026-03-10T13:30:00Z')];
+    render(
+      <form aria-label="f">
+        <SlotGrid rotuloGrupo="Horários de Ana" fuso={SP} name="h_s1" prefixoDoValor="ana_" instantes={instantes} selecionadoInicial={instantes[0]} />
+        <SlotGrid rotuloGrupo="Horários de Bia" fuso={SP} name="h_s1" prefixoDoValor="bia_" instantes={instantes} />
+      </form>,
+    );
+    const ana = within(screen.getByRole('group', { name: 'Horários de Ana' })).getAllByRole('radio') as HTMLInputElement[];
+    const bia = within(screen.getByRole('group', { name: 'Horários de Bia' })).getAllByRole('radio') as HTMLInputElement[];
+    expect(new Set([...ana, ...bia].map((r) => r.name))).toEqual(new Set(['h_s1']));
+    expect(ana[0].checked).toBe(true);
+    fireEvent.click(bia[1]);
+    expect(radios().filter((r) => r.checked).map((r) => r.value)).toEqual(['bia_2026-03-10T13:30:00.000Z']);
+    const dados = new FormData(screen.getByRole('form', { name: 'f' }) as HTMLFormElement);
+    expect(dados.getAll('h_s1')).toEqual(['bia_2026-03-10T13:30:00.000Z']);
+    fireEvent.click(ana[1]);
+    expect(radios().filter((r) => r.checked).map((r) => r.value)).toEqual(['ana_2026-03-10T13:30:00.000Z']);
+  });
+
+  it('controlado com prefixo: compara pelo instante e mantém o prefixo no value', () => {
+    render(
+      <SlotGrid
+        rotuloGrupo="G"
+        prefixoDoValor="x_"
+        instantes={[d('2026-03-10T13:00:00Z')]}
+        selecionado={d('2026-03-10T13:00:00Z')}
+        onSelecionar={() => {}}
+      />,
+    );
+    expect(radios()[0].checked).toBe(true);
+    expect(radios()[0].value).toBe('x_2026-03-10T13:00:00.000Z');
+  });
+
+  it('nivelLegenda: forte por padrão; discreta acrescenta a classe, mantendo a legenda visível e o nome do grupo', () => {
+    const { unmount } = render(<SlotGrid rotuloGrupo="Horários de Ana" instantes={[d('2026-03-10T13:00:00Z')]} />);
+    const forte = screen.getByText('Horários de Ana');
+    expect(forte.tagName).toBe('LEGEND');
+    expect(forte.className).not.toContain('legendaDiscreta');
+    unmount();
+    render(<SlotGrid rotuloGrupo="Horários de Ana" nivelLegenda="discreta" instantes={[d('2026-03-10T13:00:00Z')]} />);
+    const discreta = screen.getByText('Horários de Ana');
+    expect(discreta.tagName).toBe('LEGEND');
+    expect(discreta.className).toContain('legendaDiscreta');
+    expect(discreta.className).toContain('legenda');
+    expect(screen.getByRole('group', { name: 'Horários de Ana' })).toBeTruthy();
+  });
+
   it('Date inválido é erro de programação (RangeError)', () => {
     expect(() => montarHorarios([new Date('x')], SP)).toThrow(RangeError);
   });

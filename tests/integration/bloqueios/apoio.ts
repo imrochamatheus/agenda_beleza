@@ -4,6 +4,7 @@ import type { Credencial } from '@/server/tenant/sessao';
 
 import { criarSessao } from '../../support/auth';
 import type { SalaoCompleto } from '../../support/factories';
+import { inserirReserva } from '../../support/sql';
 
 export { ctxDoGestor, ctxDoProfissional } from '../profissionais/apoio';
 
@@ -122,7 +123,10 @@ export async function anonimizarCliente(c: pg.Client, clienteId: string): Promis
   await c.query('UPDATE cliente SET nome = NULL, telefone_e164 = NULL, anonimizada_em = now() WHERE id = $1', [clienteId]);
 }
 
-/** Reserva sem itens, por SQL, no status pedido. Devolve o id. */
+/**
+ * Reserva de UM item (D-050: o item tem o profissional, o período e o status; derivados coerentes),
+ * por SQL, no status pedido. Devolve o id da reserva (o do item sai por `itemDe`).
+ */
 export async function criarReservaEm(
   c: pg.Client,
   d: {
@@ -135,11 +139,13 @@ export async function criarReservaEm(
     status?: 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
   },
 ): Promise<string> {
-  const { rows } = await c.query<{ id: string }>(
-    `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'equipe') RETURNING id::text AS id`,
-    [d.salaoId, d.profissionalId, d.clienteId, d.inicio, d.fim, d.ocupadoAte ?? d.fim, d.status ?? 'confirmado'],
-  );
+  return inserirReserva(c, { ...d, status: d.status ?? 'confirmado' });
+}
+
+/** Id do (único) item da reserva. */
+export async function itemDe(c: pg.Client, reservaId: string): Promise<string> {
+  const { rows } = await c.query<{ id: string }>('SELECT id::text AS id FROM reserva_item WHERE reserva_id = $1', [reservaId]);
+  if (rows.length !== 1) throw new Error(`itemDe: ${rows.length} itens`);
   return rows[0].id;
 }
 

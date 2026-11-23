@@ -5,7 +5,7 @@ import type { TenantContext } from '@/server/tenant/context';
 
 import { criarCenarioReserva } from '../../support/reservas';
 import type { CenarioReserva } from '../../support/reservas';
-import { telefoneNovo } from '../../support/sql';
+import { inserirReservaComItens, telefoneNovo } from '../../support/sql';
 
 export { ctxDoGestor, ctxDoProfissional } from '../profissionais/apoio';
 export { UUID_INEXISTENTE } from '../salao/apoio';
@@ -30,21 +30,45 @@ export function ctxDaAna(c: CenarioReserva): TenantContext {
   });
 }
 
-export type NovaReserva = {
-  profissionalId: string;
-  inicio: Date;
-  fim?: Date;
-  status?: 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
-  clienteId?: string;
+export type StatusSql = 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
+
+export type ItemNovo = {
+  servicoId: string;
+  precoCentavos: number;
+  duracaoMin: number;
+  /** D-050: padrão = o da reserva. */
+  profissionalId?: string;
+  /** D-050: padrão = encadeado depois do item anterior (o 1º em `inicio`). */
+  inicio?: Date;
+  /** D-050: padrão = o da reserva. */
+  status?: StatusSql;
+  /** D-050: padrão = o da reserva. */
   encaixe?: boolean;
-  itens?: { servicoId: string; precoCentavos: number; duracaoMin: number }[];
 };
 
-/** Reserva com itens de snapshot (padrão: serviço A, R$ 50,00, 60 min). Devolve o id. */
-export async function reservar(c: pg.Client, ce: CenarioReserva, r: NovaReserva): Promise<string> {
-  const itens = r.itens ?? [{ servicoId: ce.A, precoCentavos: 5000, duracaoMin: 60 }];
-  const minutos = itens.reduce((t, i) => t + i.duracaoMin, 0);
-  const fim = r.fim ?? new Date(r.inicio.getTime() + minutos * 60_000);
+export type NovaReserva = {
+  /** Profissional padrão dos itens. */
+  profissionalId: string;
+  inicio: Date;
+  /** Só com o item padrão: a duração dele passa a ser `fim - inicio`. */
+  fim?: Date;
+  /** Status padrão dos itens (os derivados da reserva saem dos itens). */
+  status?: StatusSql;
+  clienteId?: string;
+  encaixe?: boolean;
+  revisao?: number;
+  itens?: ItemNovo[];
+};
+
+/**
+ * D-050: reserva com itens de snapshot gravada por SQL direto (`inserirReservaComItens`: derivados pela
+ * regra de `derivarReserva`, um único comando). Padrão: um item do serviço A, R$ 50,00, 60 min (ou
+ * `fim - inicio`). Itens sem `inicio` são encadeados. Devolve os ids da reserva e dos itens (ordem do array).
+ */
+export async function reservarComItens(c: pg.Client, ce: CenarioReserva, r: NovaReserva): Promise<{ reservaId: string; itemIds: string[] }> {
+  if (r.fim !== undefined && r.itens !== undefined) throw new RangeError('reservar: `fim` só com o item padrão');
+  const minutos = r.fim === undefined ? 60 : (r.fim.getTime() - r.inicio.getTime()) / 60_000;
+  const itens = r.itens ?? [{ servicoId: ce.A, precoCentavos: 5000, duracaoMin: minutos }];
   let clienteId = r.clienteId;
   if (clienteId === undefined) {
     const { rows } = await c.query<{ id: string }>(
@@ -53,19 +77,31 @@ export async function reservar(c: pg.Client, ce: CenarioReserva, r: NovaReserva)
     );
     clienteId = rows[0].id;
   }
-  const { rows } = await c.query<{ id: string }>(
-    `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem, encaixe)
-     VALUES ($1, $2, $3, $4, $5, $5, $6, 'equipe', $7) RETURNING id::text AS id`,
-    [ce.s.salaoId, r.profissionalId, clienteId, r.inicio, fim, r.status ?? 'confirmado', r.encaixe ?? false],
-  );
-  for (const [ordem, i] of itens.entries()) {
-    await c.query(
-      `INSERT INTO reserva_item (salao_id, reserva_id, servico_id, ordem, preco_centavos, duracao_min)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [ce.s.salaoId, rows[0].id, i.servicoId, ordem, i.precoCentavos, i.duracaoMin],
-    );
-  }
-  return rows[0].id;
+  let t = r.inicio.getTime();
+  return inserirReservaComItens(c, {
+    salaoId: ce.s.salaoId,
+    clienteId,
+    origem: 'equipe',
+    revisao: r.revisao,
+    itens: itens.map((i) => {
+      const inicio = i.inicio ?? new Date(t);
+      t = inicio.getTime() + i.duracaoMin * 60_000;
+      return {
+        profissionalId: i.profissionalId ?? r.profissionalId,
+        inicio,
+        duracaoMin: i.duracaoMin,
+        status: i.status ?? r.status ?? 'confirmado',
+        encaixe: i.encaixe ?? r.encaixe ?? false,
+        servicoId: i.servicoId,
+        precoCentavos: i.precoCentavos,
+      };
+    }),
+  });
+}
+
+/** Como `reservarComItens`, devolvendo só o id da reserva. */
+export async function reservar(c: pg.Client, ce: CenarioReserva, r: NovaReserva): Promise<string> {
+  return (await reservarComItens(c, ce, r)).reservaId;
 }
 
 export async function bloquear(

@@ -1,6 +1,6 @@
 import { PublicLayout } from '@/components/layout/PublicLayout';
 import { Alert } from '@/components/ui/Alert';
-import { montarHref, QUALQUER } from '@/server/reserva-publica/passos';
+import { camposOcultos } from '@/server/reserva-publica/passos';
 import { MENSAGENS_RESERVA_PUBLICA } from '@/server/reserva-publica/tipos';
 import type { DecisaoAgendamento } from '@/server/reserva-publica/agendamento';
 import type { VisaoDoPasso } from '@/server/reserva-publica/tipos';
@@ -16,15 +16,9 @@ import type {
 import type { AvaliacoesPublicas } from '@/server/avaliacoes/tipos';
 
 import type { AcaoDenunciar } from '../_denuncia/estado';
-import type { AcaoReservar } from '../estado';
+import type { AcaoReservar, EstadoReserva } from '../estado';
 import { FormularioDados } from './FormularioDados';
-import {
-  PassoData,
-  PassoHorario,
-  PassoProfissional,
-  PassoServicos,
-  ResumoDaSelecao,
-} from "./Passos";
+import { CabecalhoDados, PassoData, PassoServico, PassoServicos } from './Passos';
 import {
   Descricao,
   Equipe,
@@ -54,6 +48,8 @@ export type PaginaDoSalaoProps = {
   avaliacoes?: AvaliacoesPublicas;
   /** Denúncia de avaliação (D-035); ausente na vitrine de reserva. */
   denuncia?: { acao: AcaoDenunciar; recebida: boolean };
+  /** Só a vitrine `/dev/reserva`: estado inicial do formulário de dados (vistas de reescolha e confirmação). */
+  estadoInicial?: EstadoReserva;
 };
 
 function PassoAtual({ props }: { props: PaginaDoSalaoProps }) {
@@ -69,60 +65,34 @@ function PassoAtual({ props }: { props: PaginaDoSalaoProps }) {
       );
     case "servicos":
       return <PassoServicos base={base} servicos={servicos} visao={visao} />;
-    case "profissional":
-      return <PassoProfissional base={base} visao={visao} />;
     case "data":
       return <PassoData base={base} visao={visao} />;
-    case "horario":
-      // Horário tomado: sem JavaScript o POST volta aqui; o formulário assume com o estado da ação (DEF-1).
-      if (visao.aviso === 'horario_indisponivel') {
+    case "servico":
+      // Item que caiu (GET): sem JavaScript o POST do conflito, e o da confirmação, voltam à página neste passo;
+      // o formulário assume com o estado da ação (D-036 DEF-1, D-050 CA-10). Sem estado, vale o passo.
+      if (visao.aviso === 'horario_indisponivel' || visao.aviso === 'profissional_indisponivel') {
         return (
           <FormularioDados
             acao={props.acao}
             humano={props.humano}
-            alternativa={<PassoHorario base={base} visao={visao} />}
-            cabecalhoReescolha={<ResumoDaSelecao selecao={visao.selecao} />}
-            ocultos={{ slug: props.slug, s: visao.s, p: visao.p, data: visao.data, profissionalId: '', inicio: '', chave: props.chave }}
+            base={base}
+            estadoInicial={props.estadoInicial}
+            alternativa={<PassoServico base={base} visao={visao} />}
+            ocultos={{ slug: props.slug, chave: props.chave, campos: camposOcultos(visao.consulta) }}
           />
         );
       }
-      return <PassoHorario base={base} visao={visao} />;
+      return <PassoServico base={base} visao={visao} />;
     case "dados":
       return (
         <FormularioDados
           acao={props.acao}
           humano={props.humano}
-          cabecalhoReescolha={<ResumoDaSelecao selecao={visao.selecao} profissional={visao.p === QUALQUER ? undefined : visao.profissional.nome} />}
-          ocultos={{
-            slug: props.slug,
-            s: visao.s,
-            p: visao.p,
-            data: visao.data,
-            profissionalId: visao.profissional.id,
-            inicio: visao.inicioIso,
-            chave: props.chave,
-          }}
+          base={base}
+          estadoInicial={props.estadoInicial}
+          ocultos={{ slug: props.slug, chave: props.chave, campos: camposOcultos(visao.consulta) }}
         >
-          <h2 id="reservar">Seus dados</h2>
-          <ResumoDaSelecao
-            selecao={visao.selecao}
-            profissional={visao.profissional.nome}
-            inicioIso={visao.inicioIso}
-            fuso={visao.fuso}
-          />
-          <ul className={estilos.navegacao}>
-            <li>
-              <a
-                href={montarHref(base, {
-                  s: visao.s,
-                  p: visao.p,
-                  data: visao.data,
-                })}
-              >
-                Escolher outro horário
-              </a>
-            </li>
-          </ul>
+          <CabecalhoDados base={base} visao={visao} />
         </FormularioDados>
       );
   }

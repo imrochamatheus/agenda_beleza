@@ -8,6 +8,8 @@ import { obterPrisma } from '@/server/repos/db';
 
 import { criarCenarioReserva, entradaReserva, instalarContadorDeComandos, sp, DIA } from '../../support/reservas';
 
+import { item, jornadaDaBia, um } from './apoio-itens';
+
 // D-025 T-6c: CA-25 (comandos constantes) e CA-26 (log sem dado pessoal; imports; sem env nova).
 // O plano de consultaOcupacoes com o índice da exclusion segue no teste existente
 // tests/integration/disponibilidade/plano.test.ts.
@@ -22,29 +24,41 @@ afterAll(() => {
 const enfileirar = async () => ({ criado: true as const, id: 'job' });
 const RAIZ = process.cwd();
 
-describe('CA-25: número de comandos SQL independente da quantidade de serviços', () => {
-  it('1 serviço e 3 serviços emitem o mesmo número de comandos', async () => {
+describe('CA-25 / D-050: número de comandos SQL', () => {
+  it('constante na quantidade de itens; só o laço de travas dos profissionais distintos (A-10) soma 1 por profissional', async () => {
     vi.spyOn(console, 'info').mockImplementation(() => {});
-    const c = await criarCenarioReserva();
+    const c = await criarCenarioReserva({ jornada: [['00:00', '24:00']] });
+    await jornadaDaBia(c, [['00:00', '24:00']]);
     const C = (
       await obterPrisma().servico.create({ data: { salaoId: c.s.salaoId, nome: 'C', precoCentavos: 3000, duracaoMin: 15 }, select: { id: true } })
     ).id;
-    await obterPrisma().servicoProfissional.create({ data: { salaoId: c.s.salaoId, servicoId: C, profissionalId: c.ana } });
+    await obterPrisma().servicoProfissional.createMany({
+      data: [
+        { salaoId: c.s.salaoId, servicoId: C, profissionalId: c.ana },
+        { salaoId: c.s.salaoId, servicoId: C, profissionalId: c.bia },
+      ],
+    });
 
     const contador = instalarContadorDeComandos();
     try {
       // Aquece o cliente com log (conexão e metadados), sem contar.
-      await criarReserva(c.ctxEquipe, entradaReserva(c, { inicio: sp(DIA, '08:00') }), { enfileirar });
-      const medir = async (servicoIds: string[], hhmm: string) => {
+      await criarReserva(c.ctxEquipe, entradaReserva(c, um(c, sp(DIA, '08:00'))), { enfileirar });
+      const medir = async (itens: ReturnType<typeof item>[]) => {
         contador.reiniciar();
-        const r = await criarReserva(c.ctxEquipe, entradaReserva(c, { servicoIds, inicio: sp(DIA, hhmm) }), { enfileirar });
+        const r = await criarReserva(c.ctxEquipe, entradaReserva(c, { itens }), { enfileirar });
         expect(r.resultado).toBe('criada');
         return contador.contar();
       };
-      const um = await medir([c.A], '10:00');
-      const tres = await medir([c.A, c.B, C], '12:00');
-      expect(um).toBeGreaterThan(5);
-      expect(tres).toBe(um);
+      const um1 = await medir([item(c, sp(DIA, '10:00'))]);
+      const tresDaAna = await medir([item(c, sp(DIA, '12:00')), item(c, sp(DIA, '13:00'), { servicoId: c.B }), item(c, sp(DIA, '14:00'), { servicoId: C })]);
+      const doisProfissionais = await medir([
+        item(c, sp(DIA, '16:00'), { profissionalId: c.bia }),
+        item(c, sp(DIA, '17:00'), { servicoId: c.B }),
+        item(c, sp(DIA, '18:00'), { servicoId: C, profissionalId: c.bia }),
+      ]);
+      expect(um1).toBeGreaterThan(5);
+      expect(tresDaAna).toBe(um1);
+      expect(doisProfissionais).toBe(um1 + 1);
     } finally {
       await contador.encerrar();
     }
@@ -67,6 +81,9 @@ describe('CA-26: log sem dado pessoal', () => {
     expect(linhas.some((l) => l.includes('"evento":"reserva.criar"'))).toBe(true);
     const eventos = linhas.filter((l) => l.includes('"evento":"reserva.criar"')).map((l) => JSON.parse(l) as Record<string, unknown>);
     expect(eventos.map((e) => e.resultado)).toEqual(['criada', 'repetida', 'horario_indisponivel']);
+    // D-050 §5: o evento leva a quantidade de itens, não o profissional.
+    expect(eventos.map((e) => e.itens)).toEqual([1, 1, 1]);
+    expect(eventos.every((e) => !('profissionalId' in e))).toBe(true);
     for (const l of linhas) {
       expect(l).not.toContain('Exclusiva');
       expect(l).not.toContain('97777');

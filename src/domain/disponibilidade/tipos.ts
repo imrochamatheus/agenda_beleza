@@ -31,7 +31,10 @@ export type AgendaDoProfissional = {
   readonly jornada: readonly LinhaDeJornada[];
   /** Só os do profissional. */
   readonly bloqueios: readonly Intervalo[];
-  /** [r.inicio, r.ocupado_ate) das reservas ativas. */
+  /**
+   * [i.inicio, i.ocupado_ate) dos itens ativos do profissional e, durante a escolha (D-050 RN-9), os
+   * [inicio, fim + intervalo) dos itens já escolhidos com ele, somados pelo chamador.
+   */
   readonly ocupacoes: readonly Intervalo[];
 };
 
@@ -44,13 +47,19 @@ export type EntradaDeCalculo = {
   readonly agora: Date;
   readonly regras: RegrasDeAgenda;
   readonly funcionamento: FuncionamentoDeAgenda;
-  /** Inteiro > 0 (soma das durações). */
+  /** Inteiro > 0: a duração do serviço calculado (D-050). */
   readonly duracaoMin: number;
   /** Em ordem crescente, sem repetição. */
   readonly datas: readonly DataCivil[];
   /** `profissional_id` nulo: valem para todos. */
   readonly bloqueiosDoSalao: readonly Intervalo[];
   readonly profissionais: readonly AgendaDoProfissional[];
+  /**
+   * D-050 RN-8: [inicio, fim) dos itens já escolhidos da mesma reserva. Vale para TODOS os profissionais:
+   * o início t é recusado se [t, t + duracaoMin) cruzar algum (sem intervalo; encostar é permitido).
+   * Ausente = [].
+   */
+  readonly ocupacoesDaCliente?: readonly Intervalo[];
 };
 
 export type HorarioOferecido = {

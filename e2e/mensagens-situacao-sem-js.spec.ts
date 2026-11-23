@@ -17,7 +17,8 @@ test.describe('sem JavaScript', () => {
 
   test('grade do dia e semana mostram a marca; abrir o bloco leva ao detalhe', async ({ page }) => {
     await page.goto('/dev/agenda');
-    await expect(page.getByRole('link', { name: /Falha ao enviar mensagem/ })).toHaveCount(2);
+    // demo-r1, demo-r4 e os 3 itens da demo-r9 (D-050: um bloco por item).
+    await expect(page.getByRole('link', { name: /Falha ao enviar mensagem/ })).toHaveCount(5);
     await page.getByRole('link', { name: /Falha ao enviar mensagem.*Maria Souza/ }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Reserva' })).toBeVisible();
     await expect(page.getByText('Falha ao enviar confirmação por WhatsApp')).toBeVisible();

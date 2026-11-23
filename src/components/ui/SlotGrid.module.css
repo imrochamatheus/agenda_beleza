@@ -67,3 +67,9 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* Legenda discreta (D-050 §4.2): o título acima já nomeia o grupo. */
+.legendaDiscreta {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-suave);
+}

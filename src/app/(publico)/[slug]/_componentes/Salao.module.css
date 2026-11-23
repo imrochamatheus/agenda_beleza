@@ -204,9 +204,123 @@
   align-items: center;
 }
 
+/* D-050 (web-design §4–5): passo por serviço, roteiro, filtro por profissional e reescolha. */
+.servicos {
+  font-weight: 600;
+}
+
+.apoio {
+  font-size: var(--texto-sm);
+}
+
+.indicador {
+  margin: 0;
+  color: var(--cor-texto-suave);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.indicador + h2 {
+  margin-block-start: calc(-1 * var(--espaco-3));
+}
+
+.alterar {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  color: var(--cor-primaria-forte);
+  font-weight: 600;
+}
+
+.filtro {
+  min-width: 0;
+}
+
+.pilulas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pilula {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  padding: 0 var(--espaco-4);
+  border: 1px solid var(--cor-borda-controle);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-primaria-forte);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.pilula[aria-current='true'] {
+  border-color: var(--cor-primaria-forte);
+  background: var(--cor-primaria-forte);
+  color: var(--cor-sobre-primaria);
+}
+
+.grades {
+  display: grid;
+  gap: var(--espaco-6);
+  min-width: 0;
+}
+
+.grupoProfissional {
+  display: grid;
+  gap: var(--espaco-2);
+  min-width: 0;
+}
+
+.grupoProfissional > p {
+  margin: 0;
+}
+
+.reserva .nomeProfissional {
+  margin: 0;
+  font-size: var(--texto-xl);
+}
+
+.blocoReescolha {
+  display: grid;
+  gap: var(--espaco-3);
+  min-width: 0;
+}
+
+.blocoReescolha > h3 {
+  margin: 0;
+}
+
+.total {
+  display: grid;
+  gap: var(--espaco-1);
+}
+
+.total p {
+  margin: 0;
+}
+
+.totalLinha {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--espaco-4);
+  font-size: var(--texto-lg);
+  font-weight: 600;
+}
+
 @media (min-width: 48rem) {
   .item {
     flex-wrap: nowrap;
+  }
+
+  .dias,
+  .apoio {
+    max-width: 36rem;
   }
 }
 

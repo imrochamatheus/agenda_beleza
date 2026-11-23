@@ -7,8 +7,8 @@ import { criarMensagem } from '../../support/mensagens';
 import { definirAssinatura } from '../../support/reserva-publica';
 import { instalarContadorDeComandos } from '../../support/reservas';
 import type { CenarioReserva } from '../../support/reservas';
-import { conectar } from '../../support/sql';
-import { UUID_INEXISTENTE, anonimizarPorSql, criarCenario, ctxDaAna, hora, inserirCliente, reservar } from '../agenda/apoio';
+import { conectar, inserirReservaComItens, telefoneNovo } from '../../support/sql';
+import { UUID_INEXISTENTE, anonimizarPorSql, criarCenario, ctxDaAna, hora, inserirCliente } from '../agenda/apoio';
 
 // D-043 T-3: situação de envio para a equipe (CA-1, 2, 3, 5, 6, 11, 12, 13), PostgreSQL real.
 
@@ -27,6 +27,32 @@ afterAll(async () => {
 
 const t = (min: number) => new Date(Date.UTC(2026, 10, 22, 17, min));
 
+/** D-050: reserva com itens (um por profissional, encadeados de 60 min) pelo suporte de SQL da T-2. */
+async function reservarItens(
+  ce: CenarioReserva,
+  r: { profissionais: string[]; inicio: Date; clienteId?: string },
+): Promise<{ reservaId: string; itemIds: string[] }> {
+  const clienteId =
+    r.clienteId ??
+    (await c.query<{ id: string }>('INSERT INTO cliente (salao_id, nome, telefone_e164) VALUES ($1, $2, $3) RETURNING id::text AS id', [
+      ce.s.salaoId,
+      'Cliente da Agenda',
+      telefoneNovo(),
+    ])).rows[0].id;
+  return inserirReservaComItens(c, {
+    salaoId: ce.s.salaoId,
+    clienteId,
+    origem: 'equipe',
+    itens: r.profissionais.map((profissionalId, i) => ({
+      profissionalId,
+      inicio: new Date(r.inicio.getTime() + i * 60 * 60_000),
+      duracaoMin: 60,
+    })),
+  });
+}
+const reservar = async (_c: pg.Client, ce: CenarioReserva, r: { profissionalId: string; inicio: Date; clienteId?: string }) =>
+  (await reservarItens(ce, { profissionais: [r.profissionalId], inicio: r.inicio, clienteId: r.clienteId })).reservaId;
+
 describe('consultarMensagensDaReserva', () => {
   it('CA-1/CA-2: falha com data e motivo mapeado; enviada; gestor e profissional dono veem o mesmo', async () => {
     const id = await reservar(c, x, { profissionalId: x.ana, inicio: hora('10:00') });
@@ -35,12 +61,12 @@ describe('consultarMensagensDaReserva', () => {
       atualizadoEm: t(1), tentativas: [{ resultado: 'falha', iniciadaEm: t(1) }, { resultado: 'falha', iniciadaEm: t(5) }],
     });
     const enviada = await criarMensagem({
-      salaoId: x.s.salaoId, reservaId: id, tipo: 'cancelamento', revisao: 0, estado: 'enviada', atualizadoEm: t(9),
+      salaoId: x.s.salaoId, reservaId: id, tipo: 'cancelamento', revisao: 1, estado: 'enviada', atualizadoEm: t(9),
       tentativas: [{ resultado: 'sucesso', iniciadaEm: t(9) }],
     });
     const esperado = [
-      { id: falhou, estado: 'falhou', rotulo: 'Falha ao enviar confirmação por WhatsApp', motivo: 'Não foi possível confirmar se a mensagem foi entregue.', tentativas: 2, ultimaTentativaEm: t(5) },
-      { id: enviada, estado: 'enviada', rotulo: 'Cancelamento enviado', motivo: null, tentativas: 1, ultimaTentativaEm: t(9) },
+      { id: falhou, reservaItemId: null, estado: 'falhou', rotulo: 'Falha ao enviar confirmação por WhatsApp', motivo: 'Não foi possível confirmar se a mensagem foi entregue.', tentativas: 2, ultimaTentativaEm: t(5) },
+      { id: enviada, reservaItemId: null, estado: 'enviada', rotulo: 'Cancelamento enviado', motivo: null, tentativas: 1, ultimaTentativaEm: t(9) },
     ];
     expect(await consultarMensagensDaReserva(x.ctxEquipe, id)).toEqual(esperado);
     expect(await consultarMensagensDaReserva(ctxDaAna(x), id)).toEqual(esperado);
@@ -53,10 +79,31 @@ describe('consultarMensagensDaReserva', () => {
     await criarMensagem({ salaoId: x.s.salaoId, reservaId: id, tipo: 'remarcacao', revisao: 2, estado: 'pendente', atualizadoEm: t(3) });
     const lista = await consultarMensagensDaReserva(x.ctxEquipe, id);
     expect(lista.map((m) => m.rotulo)).toEqual([
-      'Confirmação substituída por remarcação posterior',
-      'Remarcação 1 substituída por remarcação posterior',
+      'Confirmação substituída por alteração posterior',
+      'Remarcação 1 substituída por alteração posterior',
       'Remarcação 2 aguardando envio',
     ]);
+  });
+
+  it('D-050 RN-37/CA-33: profissional vê as mensagens sem item e as dos próprios itens; gestor vê todas', async () => {
+    const { reservaId: id, itemIds: [daAna, daBia] } = await reservarItens(x, { profissionais: [x.ana, x.bia], inicio: hora('08:00') });
+    const conf = await criarMensagem({ salaoId: x.s.salaoId, reservaId: id, tipo: 'confirmacao', revisao: 0, estado: 'enviada', atualizadoEm: t(1) });
+    const remAna = await criarMensagem({ salaoId: x.s.salaoId, reservaId: id, tipo: 'remarcacao', revisao: 1, estado: 'enviada', atualizadoEm: t(2) });
+    const cancBia = await criarMensagem({ salaoId: x.s.salaoId, reservaId: id, tipo: 'cancelamento', revisao: 2, estado: 'enviada', atualizadoEm: t(3) });
+    const todos = await criarMensagem({ salaoId: x.s.salaoId, reservaId: id, tipo: 'cancelamento', revisao: 3, estado: 'pendente', atualizadoEm: t(4) });
+    await c.query('UPDATE mensagem SET reserva_item_id = $2 WHERE id = $1', [remAna, daAna]);
+    await c.query('UPDATE mensagem SET reserva_item_id = $2 WHERE id = $1', [cancBia, daBia]);
+    const gestor = await consultarMensagensDaReserva(x.ctxEquipe, id);
+    expect(gestor.map((m) => [m.id, m.reservaItemId])).toEqual([[conf, null], [remAna, daAna], [cancBia, daBia], [todos, null]]);
+    const ana = await consultarMensagensDaReserva(ctxDaAna(x), id);
+    expect(ana.map((m) => m.id)).toEqual([conf, remAna, todos]);
+    expect(JSON.stringify(ana)).not.toContain(daBia);
+  });
+
+  it('D-050: profissional sem item na reserva (de outros) → 404, mesmo havendo mensagens sem item', async () => {
+    const { reservaId: id } = await reservarItens(x, { profissionais: [x.bia], inicio: hora('20:00') });
+    await criarMensagem({ salaoId: x.s.salaoId, reservaId: id, tipo: 'confirmacao', estado: 'enviada' });
+    await expect(consultarMensagensDaReserva(ctxDaAna(x), id)).rejects.toMatchObject({ name: 'NaoEncontrado' });
   });
 
   it('CA-13: reserva sem mensagens devolve lista vazia', async () => {
@@ -101,7 +148,7 @@ describe('consultarMensagensDaReserva', () => {
     for (const s of ['SENTINELA', '987650999', 'wamid', 'erroCodigo', 'destinatario', 'parametros']) {
       expect(json, s).not.toContain(s);
     }
-    expect(Object.keys(lista[0]).sort()).toEqual(['estado', 'id', 'motivo', 'rotulo', 'tentativas', 'ultimaTentativaEm']);
+    expect(Object.keys(lista[0]).sort()).toEqual(['estado', 'id', 'motivo', 'reservaItemId', 'rotulo', 'tentativas', 'ultimaTentativaEm']);
   });
 
   it('CA-11: salão suspenso continua lendo as mensagens', async () => {

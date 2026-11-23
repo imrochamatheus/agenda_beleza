@@ -78,11 +78,12 @@ export default async function PaginaPublicaDoSalao({ params, searchParams }: Pro
   const visao: VisaoDoPasso = salao.decisao.disponivel
     ? await carregarPassoComLimite(ctx, passo, {
         servicos: salao.servicos,
+        equipe: salao.equipe,
         regras,
         agora,
         ip: extrairIp(await headers(), configDaProtecao().proxyHops),
       })
-    : { passo: 'servicos', aviso: null };
+    : { passo: 'servicos', marcados: [], aviso: null };
 
   return (
     <PaginaDoSalao

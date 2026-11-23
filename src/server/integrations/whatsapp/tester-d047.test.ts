@@ -29,14 +29,14 @@ async function sobe(h: (res: http.ServerResponse) => void) {
 afterEach(async () => { srv?.closeAllConnections(); if (srv) await new Promise((r) => srv!.close(r)); srv = undefined; });
 
 const base = { destinatarioE164: FONE, chaveIdempotencia: 'r:confirmacao:0' };
-const P = { salao: 'S', servicos: 'Sv', profissional: '', data: '12/12', horario: '10:00', link: LINK };
+const P = { salao: 'S', servicos: 'Sv', profissional: '', data: '12/12', horario: '10:00', itens: '10:00 Sv com A', link: LINK };
 
 describe('tester D-047', () => {
   it('4 modelos: corpo e cabeçalhos', async () => {
     const url = await sobe((res) => { res.writeHead(200); res.end('{"messages":[{"id":"wamid.A"}]}'); });
     const w = criarWhatsAppReal(config, { urlBase: url });
     const esperado: Record<string, [string, string[]]> = {
-      confirmacao: ['c', ['S', 'Sv', '-', '12/12', '10:00']],
+      confirmacao: ['c', ['S', '12/12', '10:00 Sv com A']],
       remarcacao: ['r', ['S', 'Sv', '-', '12/12', '10:00']],
       cancelamento: ['x', ['S', 'Sv', '12/12', '10:00']],
       convite_avaliacao: ['v', ['S', LINK]],

@@ -23,9 +23,9 @@ export const dynamic = 'force-dynamic';
 type Props = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
 
 /**
- * Reserva manual da equipe (D-029). Gestor: qualquer profissional ativo do salão; profissional: só ele
- * mesmo (o servidor repete a regra na ação). Ordem: 401 (redirect) → 403 ("Acesso negado"). A chave de
- * idempotência nasce aqui, no render do servidor.
+ * Reserva manual da equipe (D-029; D-050: N serviços, cada um com profissional e hora). Gestor: qualquer
+ * profissional ativo do salão em cada linha; profissional: só ele mesmo (o servidor repete a regra na ação).
+ * Ordem: 401 (redirect) → 403 ("Acesso negado"). A chave de idempotência nasce aqui, no render do servidor.
  */
 export default async function PaginaNovaReserva({ searchParams }: Props) {
   const acesso = await exigirAcessoAoPainel(ROTAS.novaReserva, ['gestor', 'profissional'], 'reserva.criar');
@@ -56,9 +56,14 @@ export default async function PaginaNovaReserva({ searchParams }: Props) {
         <FormularioReservaManual
           acao={criarReservaManualAcao}
           estadoInicial={estadoInicial(crypto.randomUUID(), valores)}
-          servicos={ativosDoSalao.map((s) => ({ id: s.id, rotulo: `${s.nome} · ${formatarDuracao(s.duracaoMin)} · ${formatarMoeda(s.precoCentavos)}` }))}
+          servicos={ativosDoSalao.map((s) => ({
+            id: s.id,
+            nome: s.nome,
+            rotulo: `${s.nome} · ${formatarDuracao(s.duracaoMin)} · ${formatarMoeda(s.precoCentavos)}`,
+          }))}
           profissionais={ehGestor ? ativos.map((p) => ({ valor: p.id, rotulo: p.nome })) : null}
-          profissionalFixo={proprio?.nome ?? ''}
+          profissionalFixo={ehGestor ? undefined : { id: ctx.profissionalId ?? '', nome: proprio?.nome ?? '' }}
+          fuso={fuso}
         />
       </div>
     </PanelLayout>

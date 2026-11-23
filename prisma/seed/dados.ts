@@ -50,16 +50,25 @@ export type ClienteSpec = { chave: string; nome: string | null; telefone: string
 
 export type StatusSpec = 'confirmado' | 'concluido' | 'cancelado' | 'nao_compareceu';
 
+/**
+ * Item de uma reserva (D-050): serviço, profissional e horário próprios. Sem `inicioMin`, começa no
+ * `ocupado_ate` do item anterior (fim + intervalo do salão). `status` ausente = o da reserva.
+ */
+export type ItemSpec = { servico: string; profissional: string; inicioMin?: number; status?: StatusSpec };
+
+/**
+ * Reserva de demonstração. Forma abreviada: um profissional e serviços encadeados a partir de `inicioMin`.
+ * Forma explícita (`itens`): cada serviço com o seu profissional e horário, no mesmo dia. O status, o início
+ * e o fim gravados em `reserva` são DERIVADOS dos itens (`derivarReserva`), nunca escritos à mão.
+ */
 export type ReservaSpec = {
   chave: string;
-  profissional: string;
   cliente: string;
   /** Dias a partir de hoje no fuso do salão (negativo = passado). */
   dia: number;
-  inicioMin: number;
-  servicos: readonly string[];
+  /** Status padrão dos itens. */
   status: StatusSpec;
-};
+} & ({ profissional: string; inicioMin: number; servicos: readonly string[] } | { itens: readonly ItemSpec[] });
 
 export type AvaliacaoSpec = { reserva: string; nota: number; comentario?: string; nomeExibicao?: string };
 

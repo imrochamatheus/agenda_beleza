@@ -37,8 +37,8 @@ const DETALHE = {
 } as const;
 
 /**
- * Decisão de T1 (função pura): cliente anonimizada vence; depois a vigência da revisão/estado
- * (RN-16); depois o consentimento (RN-8). Usa a MESMA `decidirElegibilidade` do registro.
+ * Decisão de T1 (função pura): cliente anonimizada vence; depois a vigência pelos itens lidos no envio
+ * (D-050 RN-30); depois o consentimento (RN-8). Usa a MESMA `decidirElegibilidade` do registro.
  */
 export function decidirNoEnvio(c: ContextoDeEnvio): DecisaoDeEnvio {
   const e = decidirElegibilidade({
@@ -51,7 +51,7 @@ export function decidirNoEnvio(c: ContextoDeEnvio): DecisaoDeEnvio {
   if (e.acao === 'terminal' && e.estado === 'cancelada_anonimizacao') {
     return e;
   }
-  if (conferirVigencia(c.tipo, { revisao: c.mensagemRevisao }, c.reserva) === 'obsoleta') {
+  if (conferirVigencia(c.tipo, { revisao: c.mensagemRevisao }, { status: c.reserva.status, itens: c.itens }) === 'obsoleta') {
     return { acao: 'terminal', estado: 'substituida', erroCodigo: CODIGOS_ERRO.obsoleta };
   }
   return e;
@@ -116,9 +116,8 @@ export async function enviarMensagem(
       parametros = montarParametros(inicio.tipo, {
         salaoNome: c.salaoNome,
         fuso: c.fuso,
-        inicio: c.reserva.inicio,
-        servicos: c.servicos,
-        profissionalNome: c.profissionalNome,
+        itens: c.itens,
+        revisao: inicio.revisao,
       });
     }
     const r = await deps.whatsapp().enviarModelo({

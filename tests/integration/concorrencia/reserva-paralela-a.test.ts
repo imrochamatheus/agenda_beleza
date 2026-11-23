@@ -9,7 +9,7 @@ import { conectar } from '../../support/sql';
 import { aceitas, disputar, registroDoWorker } from './disputa';
 
 // CA-6 (arquivo A): 12 transações concorrentes no MESMO profissional e MESMO horário. Exatamente uma é
-// aceita; as outras 11 são recusadas pela exclusion `reserva_sem_sobreposicao` (23P01). Roda em paralelo
+// aceita; as outras 11 são recusadas pela exclusion `reserva_item_sem_sobreposicao` (23P01, D-050). Roda em paralelo
 // com o arquivo B, em outro worker e outra base: nenhum vê os dados do outro. Sobre a trava do
 // profissional, ver o comentário de ./disputa.ts.
 
@@ -49,12 +49,12 @@ describe('CA-6 (A): disputa pelo mesmo horário em transações concorrentes', (
     const aceita = aceitas(resultados);
     expect(aceita).toHaveLength(1);
     expect(resultados.filter((r) => !r.aceita)).toEqual(
-      Array.from({ length: N - 1 }, () => ({ aceita: false, code: '23P01', constraint: 'reserva_sem_sobreposicao' })),
+      Array.from({ length: N - 1 }, () => ({ aceita: false, code: '23P01', constraint: 'reserva_item_sem_sobreposicao' })),
     );
 
     // No banco: uma única reserva no horário, com o seu item (as recusadas não deixaram rastro).
     const reservas = await c.query<{ id: string }>(
-      'SELECT id FROM reserva WHERE salao_id = $1 AND profissional_id = $2 AND inicio = $3',
+      'SELECT DISTINCT reserva_id AS id FROM reserva_item WHERE salao_id = $1 AND profissional_id = $2 AND inicio = $3',
       [s.salaoId, s.profissional.profissionalId, inicio],
     );
     expect(reservas.rows).toEqual([{ id: aceita[0].reservaId }]);

@@ -13,6 +13,7 @@ import { normalizarTelefoneBr } from '@/lib/telefone';
 
 import { CREDENCIAIS_DEMO, semear } from '../../../prisma/seed';
 import { entrarDeVerdade } from '../../support/auth';
+import { conferirDerivados } from '../../support/reservas';
 import { conectar, erroSql } from '../../support/sql';
 
 import { prepararArmazenamento, TABELAS_SEMEADAS } from './apoio';
@@ -197,21 +198,68 @@ describe('CA-7: telefones válidos e exclusão de sobreposição', () => {
     }
   });
 
-  it('nenhuma reserva ocupante se sobrepõe a outra do mesmo profissional, e a constraint rejeita uma nova', async () => {
+  it('nenhum item ocupante se sobrepõe a outro do mesmo profissional, e a constraint rejeita um novo', async () => {
     const pares = await c.query(`
-      SELECT 1 FROM reserva a JOIN reserva b ON a.profissional_id = b.profissional_id AND a.id < b.id
+      SELECT 1 FROM reserva_item a JOIN reserva_item b ON a.profissional_id = b.profissional_id AND a.id < b.id
        WHERE a.status IN ('confirmado','concluido','nao_compareceu') AND b.status IN ('confirmado','concluido','nao_compareceu')
          AND tstzrange(a.inicio, a.ocupado_ate, '[)') && tstzrange(b.inicio, b.ocupado_ate, '[)')`);
     expect(pares.rowCount).toBe(0);
-    const base = (await c.query(`SELECT salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate FROM reserva WHERE status = 'confirmado' LIMIT 1`)).rows[0];
+    const base = (
+      await c.query(`
+        SELECT i.salao_id, i.profissional_id, i.servico_id, i.inicio, i.fim, i.ocupado_ate, i.duracao_min, r.cliente_id
+          FROM reserva_item i JOIN reserva r ON r.id = i.reserva_id WHERE i.status = 'confirmado' LIMIT 1`)
+    ).rows[0];
+    // Uma reserva nova, de outra cliente, no mesmo horário do mesmo profissional (num só comando).
     const erro = await erroSql(
       c.query(
-        `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-         VALUES ($1, $2, $3, $4, $5, $6, 'confirmado', 'equipe')`,
-        [base.salao_id, base.profissional_id, base.cliente_id, base.inicio, base.fim, base.ocupado_ate],
+        `WITH r AS (
+           INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem)
+           VALUES ($1, $3, $5, $6, 'confirmado', 'equipe') RETURNING id
+         )
+         INSERT INTO reserva_item (salao_id, reserva_id, servico_id, profissional_id, ordem, inicio, fim, ocupado_ate, status, preco_centavos, duracao_min)
+         SELECT $1, r.id, $4, $2, 0, $5, $6, $7, 'confirmado', 0, $8 FROM r`,
+        [base.salao_id, base.profissional_id, base.cliente_id, base.servico_id, base.inicio, base.fim, base.ocupado_ate, base.duracao_min],
       ),
     );
-    expect(erro).toEqual({ code: '23P01', constraint: 'reserva_sem_sobreposicao' });
+    expect(erro).toEqual({ code: '23P01', constraint: 'reserva_item_sem_sobreposicao' });
+  });
+});
+
+describe('D-050: itens e derivados', () => {
+  it('toda reserva semeada tem itens e derivados (status, início, fim, cancelada_em) coerentes com eles', async () => {
+    const saloes = (await c.query('SELECT id FROM salao ORDER BY id')).rows;
+    let total = 0;
+    for (const s of saloes) total += await conferirDerivados({ salaoId: s.id });
+    expect(total).toBe(contagens.reserva);
+  });
+
+  it('CA-51: no salão A há uma reserva com 3 itens em 3 profissionais, de manhã e à tarde, no mesmo dia', async () => {
+    const r = await c.query(`
+      SELECT r.id, r.status::text AS status, count(*)::int AS itens, count(DISTINCT i.profissional_id)::int AS profissionais,
+             bool_or(extract(hour FROM i.inicio AT TIME ZONE s.fuso) < 12) AS manha,
+             bool_or(extract(hour FROM i.inicio AT TIME ZONE s.fuso) >= 12) AS tarde,
+             count(DISTINCT (i.inicio AT TIME ZONE s.fuso)::date)::int AS dias,
+             string_agg(v.nome || ' com ' || p.nome, '; ' ORDER BY i.inicio) AS roteiro
+        FROM reserva r
+        JOIN salao s ON s.id = r.salao_id
+        JOIN reserva_item i ON i.salao_id = r.salao_id AND i.reserva_id = r.id
+        JOIN servico v ON v.salao_id = i.salao_id AND v.id = i.servico_id
+        JOIN profissional p ON p.salao_id = i.salao_id AND p.id = i.profissional_id
+       WHERE s.nome = 'Studio Aurora'
+       GROUP BY r.id
+      HAVING count(DISTINCT i.profissional_id) >= 3`);
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({ status: 'confirmado', itens: 3, profissionais: 3, manha: true, tarde: true, dias: 1 });
+    expect(r.rows[0].roteiro).toBe('Escova com Marcos Pires; Hidratação com Beatriz Lima; Manicure com Helena Moura');
+  });
+
+  it('item cancelado ao lado de um concluído: a reserva fica concluída e o envelope ignora o cancelado', async () => {
+    const r = await c.query(`
+      SELECT r.status::text AS status, r.fim = max(i.fim) FILTER (WHERE i.status <> 'cancelado') AS envelope,
+             array_agg(i.status::text ORDER BY i.inicio) AS itens
+        FROM reserva r JOIN reserva_item i ON i.salao_id = r.salao_id AND i.reserva_id = r.id
+       GROUP BY r.id HAVING bool_or(i.status = 'cancelado') AND bool_or(i.status <> 'cancelado')`);
+    expect(r.rows).toEqual([{ status: 'concluido', envelope: true, itens: ['concluido', 'cancelado'] }]);
   });
 });
 

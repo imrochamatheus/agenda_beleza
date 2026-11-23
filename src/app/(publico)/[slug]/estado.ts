@@ -1,6 +1,9 @@
-import type { ResumoConfirmacao } from '@/server/reserva-publica/tipos';
+import type { ReescolhaDosItens, ResumoConfirmacao } from '@/server/reserva-publica/tipos';
 
-/** Estado do formulário de dados da reserva pública (D-026 §3). Sem 'use server'. */
+/** Reescolha montada (D-050 CA-10): itens mantidos, itens abertos com as alternativas e o estado da URL. */
+export type ReescolhaNoEstado = Extract<ReescolhaDosItens, { resultado: 'reescolher' }>;
+
+/** Estado do formulário de dados da reserva pública (D-026 §3; D-050 §3.10). Sem 'use server'. */
 export type EstadoReserva = {
   status: 'editando' | 'confirmada' | 'indisponivel' | 'horario_indisponivel';
   mensagem: string | null;
@@ -10,8 +13,11 @@ export type EstadoReserva = {
   chave: string;
   resumo: ResumoConfirmacao | null;
   repetida: boolean;
-  /** Conflito de horário (D-036 DEF-1): horários atualizados do mesmo dia, na resposta (sem PRG e sem PII na URL). */
-  reescolha?: { fuso: string; horarios: string[] } | null;
+  /**
+   * Conflito de horário (D-036 DEF-1; D-050 CA-10): itens que caíram (ou reabertos) com os horários atualizados
+   * do mesmo dia, na resposta (sem PRG e sem PII na URL).
+   */
+  reescolha?: ReescolhaNoEstado | null;
 };
 
 export function estadoInicialReserva(chave: string): EstadoReserva {

@@ -4,6 +4,7 @@ import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { repos } from '@/server/repos';
+import { emTransacao } from '@/server/repos/transacao';
 import { defineAcao } from '@/server/tenant/define-acao';
 import type { ResultadoAcao } from '@/server/tenant/define-acao';
 import { NaoEncontrado, respostaDeErro } from '@/server/tenant/erros';
@@ -49,9 +50,29 @@ const alterar = {
   cliente: defineAcao({ papeis: ['gestor'], capacidade: 'configurar' }, (ctx, i: Entrada) =>
     repos().clientes.renomear(ctx, i.id, NOVO_NOME),
   ),
-  // Primitiva de persistência (S-9): sem ação de produto; exercitada aqui por uma ação de teste.
+  // D-050: a primitiva S-9 `atualizarStatus` saiu de RepoReserva (as transições são por item, T-6). A
+  // escrita escopada estável sobre uma reserva existente é acrescentar um item (`criarItens`), precedida
+  // da leitura escopada `buscarPorId` (outro salão → NaoEncontrado antes de qualquer escrita).
   reserva: defineAcao({ papeis: ['gestor'], capacidade: 'cancelar' }, (ctx, i: Entrada) =>
-    repos().reservas.atualizarStatus(ctx, i.id, { de: 'confirmado', para: 'concluido' }),
+    emTransacao(async (t) => {
+      const antes = await t.reservas.buscarPorId(ctx, i.id);
+      const inicio = new Date(antes.fim.getTime() + 60 * 60_000);
+      const fim = new Date(inicio.getTime() + 30 * 60_000);
+      await t.reservas.criarItens(ctx, antes.id, [
+        {
+          servicoId: servicoExtraA,
+          profissionalId: a.profissional.profissionalId,
+          ordem: antes.itens.length,
+          inicio,
+          fim,
+          ocupadoAte: fim,
+          precoCentavos: 1000,
+          duracaoMin: 30,
+          encaixe: false,
+        },
+      ]);
+      return t.reservas.buscarPorId(ctx, i.id);
+    }),
   ),
 };
 
@@ -80,10 +101,15 @@ let a: SalaoCompleto;
 let b: SalaoCompleto;
 let gestorA: Credencial;
 
+let servicoExtraA: string;
+
 beforeAll(async () => {
   c = await conectar();
   ({ a, b } = await criarDoisSaloes());
   gestorA = await credencialDoGestor(a);
+  // Serviço que a reserva da fábrica ainda não tem (UNIQUE (salao, reserva, servico)): o inativo da
+  // fábrica, para não criar linha nova em `servico` (CA-7 conta as listagens).
+  servicoExtraA = a.servicos.inativoId;
 });
 afterAll(async () => {
   await c.end();
@@ -176,10 +202,13 @@ describe('CA-2: mutação por ID de recurso do salão B não ocorre', () => {
     const r = (await alterar[agregado].executar(gestorA, { id })) as ResultadoAcao<Record<string, unknown>>;
     expect(r.ok).toBe(true);
     const depois = await linha(agregado, id);
-    expect(depois).not.toEqual(antes);
+    if (agregado !== 'reserva') expect(depois).not.toEqual(antes);
     if (agregado === 'reserva') {
-      expect(depois.status).toBe('concluido');
-      expect((r as unknown as { dados: { status: string } }).dados.status).toBe('concluido');
+      // A escrita foi o item novo (a linha de `reserva` não muda: o teste não regrava derivados).
+      const itens = (r as unknown as { dados: { itens: { servicoId: string }[] } }).dados.itens;
+      expect(itens.map((x) => x.servicoId)).toContain(servicoExtraA);
+      const n = await c.query<{ n: number }>('SELECT count(*)::int AS n FROM reserva_item WHERE reserva_id = $1', [id]);
+      expect(n.rows[0].n).toBe(a.reserva.itemIds.length + 1);
     } else {
       expect(depois.nome).toBe(NOVO_NOME);
       expect((r as unknown as { dados: { nome: string } }).dados.nome).toBe(NOVO_NOME);
@@ -194,13 +223,12 @@ describe('CA-2: mutação por ID de recurso do salão B não ocorre', () => {
     expect(await linha('cliente', a.clientes.anonimizadaId)).toEqual(antes);
   });
 
-  it('CA-2: atualizarStatus com `de` diferente do status atual é NaoEncontrado e não altera', async () => {
-    const ctx = await resolverCtxDoGestorA();
-    const antes = await linha('reserva', b.reserva.id);
-    await expect(
-      repos().reservas.atualizarStatus(ctx, b.reserva.id, { de: 'cancelado', para: 'confirmado' }),
-    ).rejects.toBeInstanceOf(NaoEncontrado);
-    expect(await linha('reserva', b.reserva.id)).toEqual(antes);
+  it('CA-2 (D-050): a ação de reserva com o id de B não grava item nenhum em B', async () => {
+    const contar = async () =>
+      (await c.query<{ n: number }>('SELECT count(*)::int AS n FROM reserva_item WHERE reserva_id = $1', [b.reserva.id])).rows[0].n;
+    const antes = await contar();
+    expect(await alterar.reserva.executar(gestorA, { id: b.reserva.id })).toEqual(NAO_ENCONTRADO);
+    expect(await contar()).toBe(antes);
   });
 });
 

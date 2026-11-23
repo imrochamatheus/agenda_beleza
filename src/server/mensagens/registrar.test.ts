@@ -23,16 +23,18 @@ function montar(c: Partial<ContextoDeRegistroDTO> = {}, criada = true) {
     inserir: vi.fn(async (_c: unknown, d: NovaMensagem) => {
       chamadas.push('inserir');
       inseridas.push(d);
-      return { criada, mensagem: { id: 'm1', reservaId: d.reservaId, tipo: d.tipo, revisao: d.revisao, estado: d.estado, erroCodigo: d.erroCodigo } };
+      return { criada, mensagem: { id: 'm1', reservaId: d.reservaId, reservaItemId: d.reservaItemId ?? null, tipo: d.tipo, revisao: d.revisao, estado: d.estado, erroCodigo: d.erroCodigo } };
     }),
-    substituirPendentes: vi.fn(async () => {
+    substituirNaoVigentes: vi.fn(async () => {
       chamadas.push('substituir');
       return 0;
     }),
   };
   return { r: { mensagens } as unknown as Repos, mensagens, chamadas, inseridas };
 }
-const registrar = (m: ReturnType<typeof montar>, tipo: TipoMensagem) => registrarMensagem(ctx, { reservaId: RESERVA, tipo }, AGORA, m.r);
+const ITEM = '7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+const registrar = (m: ReturnType<typeof montar>, tipo: TipoMensagem, reservaItemId?: string | null) =>
+  registrarMensagem(ctx, { reservaId: RESERVA, tipo, reservaItemId }, AGORA, m.r);
 
 describe('registrarMensagem: revisão derivada (RN-2, A-2)', () => {
   it.each([
@@ -40,7 +42,6 @@ describe('registrarMensagem: revisão derivada (RN-2, A-2)', () => {
     ['convite_avaliacao', 3, 0],
     ['remarcacao', 3, 3],
     ['cancelamento', 3, 3],
-    ['cancelamento', 0, 0],
   ] as const)('%s com reserva.revisao=%d grava revisão %d', async (tipo, reservaRevisao, esperada) => {
     const m = montar({ reservaRevisao });
     const r = await registrar(m, tipo);
@@ -48,9 +49,9 @@ describe('registrarMensagem: revisão derivada (RN-2, A-2)', () => {
     expect(r).toEqual({ criada: true, mensagemId: 'm1', tipo, revisao: esperada, estado: 'pendente', chave: `${RESERVA}:${tipo}:${esperada}`, precisaEnfileirar: true });
   });
 
-  it('remarcação com reserva.revisao 0 é erro de programação', async () => {
+  it.each(['remarcacao', 'cancelamento'] as const)('%s com reserva.revisao 0 é erro de programação (D-050 RN-28)', async (tipo) => {
     const m = montar({ reservaRevisao: 0 });
-    await expect(registrar(m, 'remarcacao')).rejects.toThrow(RangeError);
+    await expect(registrar(m, tipo)).rejects.toThrow(RangeError);
     expect(m.mensagens.inserir).not.toHaveBeenCalled();
   });
 });
@@ -59,13 +60,13 @@ describe('registrarMensagem: elegibilidade (RN-8; CA-13, CA-14)', () => {
   it('sem consentimento → nao_enviada sem telefone e sem enfileirar', async () => {
     const m = montar({ consentimentoMensagens: false });
     const r = await registrar(m, 'confirmacao');
-    expect(m.inseridas[0]).toEqual({ reservaId: RESERVA, tipo: 'confirmacao', revisao: 0, estado: 'nao_enviada', erroCodigo: 'sem_consentimento', destinatarioE164: null });
+    expect(m.inseridas[0]).toEqual({ reservaId: RESERVA, reservaItemId: null, tipo: 'confirmacao', revisao: 0, estado: 'nao_enviada', erroCodigo: 'sem_consentimento', destinatarioE164: null });
     expect(r).toMatchObject({ estado: 'nao_enviada', precisaEnfileirar: false, criada: true });
   });
 
   it('cliente anonimizada → cancelada_anonimizacao', async () => {
-    const m = montar({ clienteAnonimizada: true, telefone: null });
-    const r = await registrar(m, 'cancelamento');
+    const m = montar({ clienteAnonimizada: true, telefone: null, reservaRevisao: 1 });
+    const r = await registrar(m, 'cancelamento', ITEM);
     expect(m.inseridas[0]).toMatchObject({ estado: 'cancelada_anonimizacao', destinatarioE164: null, erroCodigo: null });
     expect(r.precisaEnfileirar).toBe(false);
   });
@@ -76,30 +77,39 @@ describe('registrarMensagem: elegibilidade (RN-8; CA-13, CA-14)', () => {
   });
 });
 
-describe('registrarMensagem: substituição (RN-7, A-7) e idempotência', () => {
-  it('remarcação N substitui confirmação e remarcação com revisão < N, depois do INSERT', async () => {
+describe('registrarMensagem: item (D-050 RN-29) e substituição fora (RN-31)', () => {
+  it.each(['remarcacao', 'cancelamento'] as const)('%s de um item grava o reservaItemId', async (tipo) => {
     const m = montar({ reservaRevisao: 2 });
-    await registrar(m, 'remarcacao');
-    expect(m.chamadas).toEqual(['contexto', 'inserir', 'substituir']);
-    expect(m.mensagens.substituirPendentes).toHaveBeenCalledWith(ctx, { reservaId: RESERVA, tipos: ['confirmacao', 'remarcacao'], revisaoMenorQue: 2 }, AGORA);
+    const r = await registrar(m, tipo, ITEM);
+    expect(m.inseridas[0]).toMatchObject({ reservaId: RESERVA, reservaItemId: ITEM, tipo, revisao: 2, estado: 'pendente' });
+    expect(r.chave).toBe(`${RESERVA}:${tipo}:2`);
   });
 
-  it('cancelamento substitui confirmação e remarcação de qualquer revisão', async () => {
-    const m = montar({ reservaRevisao: 2 });
+  it('cancelamento sem item ("cancelar todos") grava reservaItemId null', async () => {
+    const m = montar({ reservaRevisao: 4 });
     await registrar(m, 'cancelamento');
-    expect(m.mensagens.substituirPendentes).toHaveBeenCalledWith(ctx, { reservaId: RESERVA, tipos: ['confirmacao', 'remarcacao'], revisaoMenorQue: null }, AGORA);
+    expect(m.inseridas[0]).toMatchObject({ reservaItemId: null, revisao: 4 });
   });
 
-  it.each(['confirmacao', 'convite_avaliacao'] as const)('%s não substitui nada', async (tipo) => {
-    const m = montar();
-    await registrar(m, tipo);
-    expect(m.mensagens.substituirPendentes).not.toHaveBeenCalled();
+  it.each(['confirmacao', 'convite_avaliacao'] as const)('%s com reservaItemId é RangeError antes de ler o banco', async (tipo) => {
+    const m = montar({ reservaRevisao: 2 });
+    await expect(registrar(m, tipo, ITEM)).rejects.toThrow(RangeError);
+    expect(m.chamadas).toEqual([]);
   });
 
-  it('linha já existente (criada=false): não substitui e não manda enfileirar', async () => {
+  it.each(['confirmacao', 'remarcacao', 'cancelamento', 'convite_avaliacao'] as const)(
+    '%s não substitui nada (é do chamador, via substituirNaoVigentes)',
+    async (tipo) => {
+      const m = montar({ reservaRevisao: 1 });
+      await registrar(m, tipo);
+      expect(m.chamadas).toEqual(['contexto', 'inserir']);
+      expect(m.mensagens.substituirNaoVigentes).not.toHaveBeenCalled();
+    },
+  );
+
+  it('linha já existente (criada=false): não manda enfileirar', async () => {
     const m = montar({ reservaRevisao: 1 }, false);
-    const r = await registrar(m, 'remarcacao');
-    expect(m.mensagens.substituirPendentes).not.toHaveBeenCalled();
+    const r = await registrar(m, 'remarcacao', ITEM);
     expect(r).toMatchObject({ criada: false, precisaEnfileirar: false });
   });
 });

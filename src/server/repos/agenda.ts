@@ -4,56 +4,93 @@ import { exigirEscopo } from '@/server/tenant/context';
 import { NaoEncontrado } from '@/server/tenant/erros';
 
 import { ehUuid } from './ids';
+import { PREDICADO_VIGENTE } from './mensagem';
 import type { JornadaLinhaDTO, Periodo, StatusReserva, OrigemReserva } from './tipos';
 import type { Executor } from './transacao';
 
-// Leituras da agenda da equipe (D-028 §4). Só leitura. Todo método filtra pelo salão do contexto. Uma
-// instrução por chamada: profissional, cliente (só o nome e se foi anonimizada; o telefone NUNCA é lido
-// aqui) e os itens (agregados em JSON) vêm na mesma consulta, sem N+1 (CA-16). D-043: o `EXISTS` da falha
-// de mensagem vigente também vai no mesmo comando; os literais ('falhou', status, tipos) nunca são parâmetros.
+// Leituras da agenda da equipe (D-028 §4; D-050 §3.9). Só leitura. Todo método filtra pelo salão do
+// contexto. Uma instrução por chamada: profissional, serviço, cliente (só o nome e se foi anonimizada; o
+// telefone NUNCA é lido aqui) vêm na mesma consulta, sem N+1 (D-028 CA-16).
+// D-050: a unidade da agenda é o ITEM (`reserva_item`): um bloco por item, no profissional do item.
+// D-043/RN-37: o EXISTS da falha de mensagem vigente usa `PREDICADO_VIGENTE` de repos/mensagem.ts (fonte
+// ÚNICA, nunca copiada; aliases fixos `m` e `r`) e vale para a reserva inteira (todos os blocos dela).
+// Os literais ('falhou', status, tipos) nunca são parâmetros.
 
-export type ItemDeLinhaAgenda = { nome: string; precoCentavos: number; duracaoMin: number };
-
+/** Um item (bloco) na listagem. */
 export type LinhaAgenda = {
-  id: string;
+  itemId: string;
+  reservaId: string;
   profissionalId: string;
-  profissionalNome: string;
-  profissionalAtivo: boolean;
-  clienteId: string;
   clienteNome: string | null;
   clienteAnonimizada: boolean;
+  /** Do item. */
   inicio: Date;
   fim: Date;
   status: StatusReserva;
   origem: OrigemReserva;
   encaixe: boolean;
-  /** Há mensagem `falhou` VIGENTE (mesma regra de `conferirVigencia`, D-043 RN-11). */
+  servicoNome: string;
+  precoCentavos: number;
+  duracaoMin: number;
+  /** Há mensagem `falhou` VIGENTE na reserva (`PREDICADO_VIGENTE`). */
   temFalhaDeMensagem: boolean;
-  itens: ItemDeLinhaAgenda[];
+  /** "n de N" entre os itens não cancelados da reserva (só com `comPosicao`; null caso contrário). */
+  posicao: { n: number; de: number } | null;
+};
+
+export type ItemDoDetalheDTO = {
+  id: string;
+  servicoId: string;
+  servicoNome: string;
+  profissionalId: string;
+  profissionalNome: string;
+  profissionalAtivo: boolean;
+  inicio: Date;
+  fim: Date;
+  status: StatusReserva;
+  encaixe: boolean;
+  precoCentavos: number;
+  duracaoMin: number;
+};
+
+export type DetalheAgendaDTO = {
+  id: string;
+  clienteId: string;
+  clienteNome: string | null;
+  clienteAnonimizada: boolean;
+  /** Envelope e status DERIVADOS (D-050 A-1/A-2). */
+  inicio: Date;
+  fim: Date;
+  status: StatusReserva;
+  origem: OrigemReserva;
+  temFalhaDeMensagem: boolean;
+  /** Por (inicio, id). Com `profissionalId`, só os itens dele. */
+  itens: ItemDoDetalheDTO[];
 };
 
 export interface RepoAgenda {
   /**
-   * Reservas de TODOS os status que cruzam [de, ate) (`inicio < ate AND fim > de`), por início e id.
-   * `profissionalId` limita a um profissional (malformado → NaoEncontrado sem consultar). Devolve até
-   * `limite` linhas; `truncada` indica que havia mais.
+   * Itens de TODOS os status que cruzam [de, ate) (`i.inicio < ate AND i.fim > de`), por (inicio, id).
+   * `profissionalId` limita aos itens de um profissional (malformado → NaoEncontrado sem consultar).
+   * `comPosicao` (só o gestor) calcula o "n de N". Devolve até `limite` linhas; `truncada` indica que havia mais.
    */
   listarAgenda(
     ctx: ContextoEscopado,
-    d: { periodo: Periodo; profissionalId: string | null; limite: number },
-  ): Promise<{ reservas: LinhaAgenda[]; truncada: boolean }>;
-  /** Uma reserva do salão (e, se informado, do profissional). Outra: NaoEncontrado (igual para todos os casos). */
-  detalhe(ctx: ContextoEscopado, id: unknown, profissionalId: string | null): Promise<LinhaAgenda>;
+    d: { periodo: Periodo; profissionalId: string | null; limite: number; comPosicao: boolean },
+  ): Promise<{ blocos: LinhaAgenda[]; truncada: boolean }>;
+  /**
+   * Uma reserva do salão. Com `profissionalId`: só se ela tiver ITEM dele (qualquer status), e só os itens
+   * dele são devolvidos (CA-33). Caso contrário: NaoEncontrado (igual para todos os casos).
+   */
+  detalhe(ctx: ContextoEscopado, id: unknown, profissionalId: string | null): Promise<DetalheAgendaDTO>;
   /** Jornada (todas as linhas) do salão ou de um profissional, numa instrução. */
   listarJornadas(ctx: ContextoEscopado, profissionalId: string | null): Promise<(JornadaLinhaDTO & { profissionalId: string })[]>;
 }
 
 type LinhaBruta = {
-  id: string;
+  item_id: string;
+  reserva_id: string;
   profissional_id: string;
-  profissional_nome: string;
-  profissional_ativo: boolean;
-  cliente_id: string;
   cliente_nome: string | null;
   cliente_anonimizada: boolean;
   inicio: Date;
@@ -61,65 +98,77 @@ type LinhaBruta = {
   status: StatusReserva;
   origem: OrigemReserva;
   encaixe: boolean;
+  servico_nome: string;
+  preco_centavos: number;
+  duracao_min: number;
   tem_falha_mensagem: boolean;
-  itens: { nome: string; preco: number; duracao: number }[];
+  posicao_n: number | null;
+  posicao_de: number | null;
 };
 
-const COLUNAS = Prisma.sql`
-  r.id::text AS id, r.profissional_id::text AS profissional_id, p.nome AS profissional_nome,
-  p.ativo AS profissional_ativo, r.cliente_id::text AS cliente_id, c.nome AS cliente_nome,
-  (c.anonimizada_em IS NOT NULL) AS cliente_anonimizada, r.inicio, r.fim,
-  r.status::text AS status, r.origem::text AS origem, r.encaixe,
-  EXISTS (SELECT 1 FROM mensagem m
+/** EXISTS da falha vigente da reserva `r` (D-043 + D-050 M-4). Exige o alias `r` (reserva) no FROM. */
+const TEM_FALHA = Prisma.sql`EXISTS (SELECT 1 FROM mensagem m
            WHERE m.salao_id = r.salao_id AND m.reserva_id = r.id AND m.estado = 'falhou'
-             AND ((m.tipo IN ('confirmacao', 'remarcacao') AND m.revisao = r.revisao AND r.status = 'confirmado')
-               OR (m.tipo = 'cancelamento' AND m.revisao = r.revisao AND r.status = 'cancelado')
-               OR (m.tipo = 'convite_avaliacao' AND r.status = 'concluido'))) AS tem_falha_mensagem,
-  COALESCE((SELECT json_agg(json_build_object('nome', s.nome, 'preco', ri.preco_centavos, 'duracao', ri.duracao_min)
-                            ORDER BY ri.ordem)
-              FROM reserva_item ri
-              JOIN servico s ON s.salao_id = ri.salao_id AND s.id = ri.servico_id
-             WHERE ri.salao_id = r.salao_id AND ri.reserva_id = r.id), '[]'::json) AS itens`;
+             AND ${PREDICADO_VIGENTE})`;
 
-const DE = Prisma.sql`
-  FROM reserva r
-  JOIN profissional p ON p.salao_id = r.salao_id AND p.id = r.profissional_id
-  JOIN cliente c ON c.salao_id = r.salao_id AND c.id = r.cliente_id`;
+/** "n de N" (dba.md Q7): subconsultas correlacionadas pelo UNIQUE (salao_id, reserva_id, …) de reserva_item. */
+const POSICAO = Prisma.sql`
+  (SELECT count(*) FROM reserva_item o
+    WHERE o.salao_id = i.salao_id AND o.reserva_id = i.reserva_id AND o.status <> 'cancelado'
+      AND (o.inicio, o.id) <= (i.inicio, i.id))::int AS posicao_n,
+  (SELECT count(*) FROM reserva_item o
+    WHERE o.salao_id = i.salao_id AND o.reserva_id = i.reserva_id AND o.status <> 'cancelado')::int AS posicao_de`;
 
-/** Margem para o limite inferior de `inicio` (D-028 §4): 10 serviços × 720 min = 5 dias < 7 dias. */
-const MARGEM_INICIO = Prisma.sql`interval '7 days'`;
+const SEM_POSICAO = Prisma.sql`NULL::int AS posicao_n, NULL::int AS posicao_de`;
 
 /**
- * SQL da listagem (exportado só para o teste de plano). O predicado `r.inicio >= de - 7 dias` é
- * redundante para o resultado (nenhuma reserva dura mais que 5 dias) e existe para o planejador usar
- * `reserva_salao_id_inicio_idx`/`reserva_salao_id_profissional_id_inicio_idx` sem varrer o histórico.
+ * Margem do limite inferior de `i.inicio` (D-050 M-2): nenhum item dura mais que 1440 min
+ * (`reserva_item_duracao_teto_chk`), logo todo item que cruza [de, ate) começa em `de - 1 dia` ou depois.
+ */
+const MARGEM_INICIO = Prisma.sql`interval '1 day'`;
+
+/**
+ * SQL da listagem (exportado só para o teste de plano). O predicado `i.inicio >= de - 1 dia` é redundante
+ * para o resultado e existe para o planejador usar `reserva_item_salao_id_(profissional_id_)inicio_idx`
+ * sem varrer o histórico (dba.md Q4).
  */
 export function consultaAgenda(
   salaoId: string,
   { de, ate }: Periodo,
   profissionalId: string | null,
   limite: number,
+  comPosicao: boolean,
 ): Prisma.Sql {
   const doProfissional =
-    profissionalId === null ? Prisma.empty : Prisma.sql`AND r.profissional_id = ${profissionalId}::uuid`;
+    profissionalId === null ? Prisma.empty : Prisma.sql`AND i.profissional_id = ${profissionalId}::uuid`;
   return Prisma.sql`
-    SELECT ${COLUNAS}
-      ${DE}
-     WHERE r.salao_id = ${salaoId}::uuid
-       AND r.inicio < ${ate}::timestamptz AND r.fim > ${de}::timestamptz
-       AND r.inicio >= ${de}::timestamptz - ${MARGEM_INICIO}
+    SELECT i.id::text AS item_id, i.reserva_id::text AS reserva_id, i.profissional_id::text AS profissional_id,
+           c.nome AS cliente_nome, (c.anonimizada_em IS NOT NULL) AS cliente_anonimizada,
+           i.inicio, i.fim, i.status::text AS status, r.origem::text AS origem, i.encaixe,
+           s.nome AS servico_nome, i.preco_centavos, i.duracao_min,
+           ${TEM_FALHA} AS tem_falha_mensagem,
+           ${comPosicao ? POSICAO : SEM_POSICAO}
+      FROM reserva_item i
+      JOIN reserva r ON r.salao_id = i.salao_id AND r.id = i.reserva_id
+      JOIN cliente c ON c.salao_id = r.salao_id AND c.id = r.cliente_id
+      JOIN servico s ON s.salao_id = i.salao_id AND s.id = i.servico_id
+     WHERE i.salao_id = ${salaoId}::uuid
+       AND i.inicio < ${ate}::timestamptz AND i.fim > ${de}::timestamptz
+       AND i.inicio >= ${de}::timestamptz - ${MARGEM_INICIO}
        ${doProfissional}
-     ORDER BY r.inicio, r.id
+     ORDER BY i.inicio, i.id
      LIMIT ${limite}::int`;
 }
 
 function deLinha(l: LinhaBruta): LinhaAgenda {
+  const posicao =
+    l.posicao_n !== null && l.posicao_de !== null && l.status !== 'cancelado' && l.posicao_de >= 2
+      ? { n: l.posicao_n, de: l.posicao_de }
+      : null;
   return {
-    id: l.id,
+    itemId: l.item_id,
+    reservaId: l.reserva_id,
     profissionalId: l.profissional_id,
-    profissionalNome: l.profissional_nome,
-    profissionalAtivo: l.profissional_ativo,
-    clienteId: l.cliente_id,
     clienteNome: l.cliente_anonimizada ? null : l.cliente_nome,
     clienteAnonimizada: l.cliente_anonimizada,
     inicio: l.inicio,
@@ -127,14 +176,46 @@ function deLinha(l: LinhaBruta): LinhaAgenda {
     status: l.status,
     origem: l.origem,
     encaixe: l.encaixe,
+    servicoNome: l.servico_nome,
+    precoCentavos: l.preco_centavos,
+    duracaoMin: l.duracao_min,
     temFalhaDeMensagem: l.tem_falha_mensagem,
-    itens: l.itens.map((i) => ({ nome: i.nome, precoCentavos: i.preco, duracaoMin: i.duracao })),
+    posicao,
   };
 }
 
+type ItemBruto = {
+  id: string;
+  servico_id: string;
+  servico_nome: string;
+  profissional_id: string;
+  profissional_nome: string;
+  profissional_ativo: boolean;
+  /** Milissegundos desde a época (número no JSON: sem depender do TimeZone da sessão). */
+  inicio_ms: number;
+  fim_ms: number;
+  status: StatusReserva;
+  encaixe: boolean;
+  preco: number;
+  duracao: number;
+};
+
+type DetalheBruto = {
+  id: string;
+  cliente_id: string;
+  cliente_nome: string | null;
+  cliente_anonimizada: boolean;
+  inicio: Date;
+  fim: Date;
+  status: StatusReserva;
+  origem: OrigemReserva;
+  tem_falha_mensagem: boolean;
+  itens: ItemBruto[];
+};
+
 export function criarRepoAgenda(db: Executor): RepoAgenda {
   return {
-    async listarAgenda(ctx, { periodo, profissionalId, limite }) {
+    async listarAgenda(ctx, { periodo, profissionalId, limite, comPosicao }) {
       const salaoId = exigirEscopo(ctx);
       if (profissionalId !== null && !ehUuid(profissionalId)) {
         throw new NaoEncontrado();
@@ -142,8 +223,10 @@ export function criarRepoAgenda(db: Executor): RepoAgenda {
       if (!Number.isSafeInteger(limite) || limite < 1) {
         throw new RangeError('listarAgenda: limite deve ser um inteiro positivo');
       }
-      const linhas = await db.$queryRaw<LinhaBruta[]>(consultaAgenda(salaoId, periodo, profissionalId, limite + 1));
-      return { reservas: linhas.slice(0, limite).map(deLinha), truncada: linhas.length > limite };
+      const linhas = await db.$queryRaw<LinhaBruta[]>(
+        consultaAgenda(salaoId, periodo, profissionalId, limite + 1, comPosicao),
+      );
+      return { blocos: linhas.slice(0, limite).map(deLinha), truncada: linhas.length > limite };
     },
 
     async detalhe(ctx, id, profissionalId) {
@@ -152,15 +235,63 @@ export function criarRepoAgenda(db: Executor): RepoAgenda {
         throw new NaoEncontrado();
       }
       const doProfissional =
-        profissionalId === null ? Prisma.empty : Prisma.sql`AND r.profissional_id = ${profissionalId}::uuid`;
-      const linhas = await db.$queryRaw<LinhaBruta[]>(Prisma.sql`
-        SELECT ${COLUNAS}
-          ${DE}
-         WHERE r.salao_id = ${salaoId}::uuid AND r.id = ${id}::uuid ${doProfissional}`);
+        profissionalId === null ? Prisma.empty : Prisma.sql`AND i.profissional_id = ${profissionalId}::uuid`;
+      const temItemDoProfissional =
+        profissionalId === null
+          ? Prisma.empty
+          : Prisma.sql`AND EXISTS (SELECT 1 FROM reserva_item i
+                                    WHERE i.salao_id = r.salao_id AND i.reserva_id = r.id
+                                      AND i.profissional_id = ${profissionalId}::uuid)`;
+      const linhas = await db.$queryRaw<DetalheBruto[]>(Prisma.sql`
+        SELECT r.id::text AS id, r.cliente_id::text AS cliente_id, c.nome AS cliente_nome,
+               (c.anonimizada_em IS NOT NULL) AS cliente_anonimizada, r.inicio, r.fim,
+               r.status::text AS status, r.origem::text AS origem,
+               ${TEM_FALHA} AS tem_falha_mensagem,
+               COALESCE((SELECT json_agg(json_build_object(
+                                  'id', i.id, 'servico_id', i.servico_id, 'servico_nome', s.nome,
+                                  'profissional_id', i.profissional_id, 'profissional_nome', p.nome,
+                                  'profissional_ativo', p.ativo,
+                                  'inicio_ms', (extract(epoch FROM i.inicio) * 1000)::bigint,
+                                  'fim_ms', (extract(epoch FROM i.fim) * 1000)::bigint,
+                                  'status', i.status, 'encaixe', i.encaixe,
+                                  'preco', i.preco_centavos, 'duracao', i.duracao_min)
+                                ORDER BY i.inicio, i.id)
+                           FROM reserva_item i
+                           JOIN servico s ON s.salao_id = i.salao_id AND s.id = i.servico_id
+                           JOIN profissional p ON p.salao_id = i.salao_id AND p.id = i.profissional_id
+                          WHERE i.salao_id = r.salao_id AND i.reserva_id = r.id ${doProfissional}), '[]'::json) AS itens
+          FROM reserva r
+          JOIN cliente c ON c.salao_id = r.salao_id AND c.id = r.cliente_id
+         WHERE r.salao_id = ${salaoId}::uuid AND r.id = ${id}::uuid ${temItemDoProfissional}`);
       if (linhas.length === 0) {
         throw new NaoEncontrado();
       }
-      return deLinha(linhas[0]);
+      const l = linhas[0];
+      return {
+        id: l.id,
+        clienteId: l.cliente_id,
+        clienteNome: l.cliente_anonimizada ? null : l.cliente_nome,
+        clienteAnonimizada: l.cliente_anonimizada,
+        inicio: l.inicio,
+        fim: l.fim,
+        status: l.status,
+        origem: l.origem,
+        temFalhaDeMensagem: l.tem_falha_mensagem,
+        itens: l.itens.map((i) => ({
+          id: i.id,
+          servicoId: i.servico_id,
+          servicoNome: i.servico_nome,
+          profissionalId: i.profissional_id,
+          profissionalNome: i.profissional_nome,
+          profissionalAtivo: i.profissional_ativo,
+          inicio: new Date(Number(i.inicio_ms)),
+          fim: new Date(Number(i.fim_ms)),
+          status: i.status,
+          encaixe: i.encaixe,
+          precoCentavos: i.preco,
+          duracaoMin: i.duracao,
+        })),
+      };
     },
 
     async listarJornadas(ctx, profissionalId) {

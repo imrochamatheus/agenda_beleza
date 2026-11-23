@@ -83,15 +83,18 @@ export interface RepoCliente {
    * `ja_anonimizada` sem escrever; senão UM UPDATE de nome, telefone e `anonimizada_em` (o CHECK exige o par).
    */
   anonimizar(ctx: ContextoEscopado, id: string, agora: Date): Promise<ResultadoAnonimizarCliente>;
-  /** Até `limite` reservas da cliente, da mais recente à mais antiga, com o total. */
+  /**
+   * Até `limite` reservas da cliente, da mais recente à mais antiga (envelope derivado), com o total; cada
+   * uma com TODOS os itens (cancelados inclusive), por (inicio, id), com profissional e status do item.
+   */
   historico(
     ctx: ContextoEscopado,
     clienteId: string,
     limite: number,
   ): Promise<{ reservas: ReservaHistoricoDTO[]; total: number }>;
   /**
-   * Cliente (inclui anonimizada) do salão; com `so.profissionalId`, só se houver reserva (qualquer
-   * status) dela com esse profissional. NaoEncontrado não distingue os motivos.
+   * Cliente (inclui anonimizada) do salão; com `so.profissionalId`, só se houver item de reserva
+   * (qualquer status) dela com esse profissional (D-050 RN-38). NaoEncontrado não distingue os motivos.
    */
   buscarContato(ctx: ContextoEscopado, id: string, so?: { profissionalId: string }): Promise<ClienteDTO>;
 }
@@ -272,10 +275,17 @@ export function criarRepoCliente(db: Executor): RepoCliente {
             id: true,
             inicio: true,
             status: true,
-            profissional: { select: { nome: true } },
             itens: {
-              select: { ordem: true, precoCentavos: true, duracaoMin: true, servico: { select: { nome: true } } },
-              orderBy: { ordem: 'asc' },
+              select: {
+                inicio: true,
+                status: true,
+                precoCentavos: true,
+                duracaoMin: true,
+                servico: { select: { nome: true } },
+                profissional: { select: { nome: true } },
+              },
+              // D-050 RN-6: exibição por início; id desempata.
+              orderBy: [{ inicio: 'asc' }, { id: 'asc' }],
             },
           },
           orderBy: [{ inicio: 'desc' }, { id: 'asc' }],
@@ -289,10 +299,11 @@ export function criarRepoCliente(db: Executor): RepoCliente {
           id: r.id,
           inicio: r.inicio,
           status: r.status,
-          profissionalNome: r.profissional.nome,
           itens: r.itens.map((i) => ({
             servicoNome: i.servico.nome,
-            ordem: i.ordem,
+            profissionalNome: i.profissional.nome,
+            status: i.status,
+            inicio: i.inicio,
             precoCentavos: i.precoCentavos,
             duracaoMin: i.duracaoMin,
           })),
@@ -309,7 +320,8 @@ export function criarRepoCliente(db: Executor): RepoCliente {
         where: {
           id,
           salaoId,
-          ...(so ? { reservas: { some: { salaoId, profissionalId: so.profissionalId } } } : {}),
+          // D-050 RN-38: basta um ITEM (qualquer status) da cliente com o profissional.
+          ...(so ? { reservas: { some: { salaoId, itens: { some: { salaoId, profissionalId: so.profissionalId } } } } } : {}),
         },
         select: CAMPOS,
       });

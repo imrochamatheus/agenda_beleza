@@ -9,15 +9,17 @@ import {
   anonimizarCliente,
   criarCenarioMensagem,
   criarMensagem,
+  criarOutraReserva,
   lerMensagem,
   mensagensDaReservaDireto,
   mudarReserva,
 } from '../../support/mensagens';
 
-import { ctxDo, registrar } from './apoio';
+import { ctxDo, itensDa, registrar } from './apoio';
 
 // D-024 T-7: registro (outbox) contra o PostgreSQL real. CA-4 (registro duplicado), CA-5, CA-13/CA-14
-// (elegibilidade no registro), CA-16 (substituição), CA-19 (atomicidade com a reserva).
+// (elegibilidade no registro), CA-19 (atomicidade com a reserva). D-050: item da mensagem (RN-29); a
+// substituição (RN-31) saiu do registro e está em substituicao.test.ts.
 
 describe('registro: revisão, chave e estado inicial (RN-2, RN-8)', () => {
   it('confirmacao nasce pendente com o telefone e revisão 0; chave reserva:tipo:revisao', async () => {
@@ -83,49 +85,62 @@ describe('CA-13: cliente anonimizada no registro', () => {
   });
 });
 
-describe('CA-16 / CA-5: substituição de pendentes (RN-7)', () => {
-  it('cancelamento substitui confirmação e remarcações pendentes; enviando, enviada e falhou permanecem; outras reservas e salões não mudam', async () => {
-    const s = await criarCenarioMensagem({ revisao: 3, status: 'cancelado' });
-    const outraDoMesmoSalao = await criarCenarioMensagem();
-    const pend = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'confirmacao', revisao: 0, destinatarioE164: s.telefone });
-    const rem1 = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 1, destinatarioE164: s.telefone });
-    const rem3 = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 3 });
-    const env = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 2, estado: 'enviando' });
-    const enviada = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 0, estado: 'enviada' });
-    const falhou = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 4, estado: 'falhou' });
-    const convite = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'convite_avaliacao', revisao: 0 });
-    const alheia = await criarMensagem({ salaoId: outraDoMesmoSalao.salaoId, reservaId: outraDoMesmoSalao.reservaId });
-    const r = await registrar(s, 'cancelamento');
-    expect(r).toMatchObject({ estado: 'pendente', revisao: 3 });
-    for (const id of [pend, rem1, rem3]) expect((await lerMensagem(id)).estado).toBe('substituida');
-    expect(await lerMensagem(pend)).toMatchObject({ erroCodigo: 'substituida', destinatarioE164: null });
-    expect((await lerMensagem(env)).estado).toBe('enviando');
-    expect((await lerMensagem(enviada)).estado).toBe('enviada');
-    expect((await lerMensagem(falhou)).estado).toBe('falhou');
-    expect((await lerMensagem(convite)).estado).toBe('pendente');
-    expect((await lerMensagem(alheia)).estado).toBe('pendente');
+describe('D-050: registro por item (RN-29) e sem substituição (RN-31 é do chamador)', () => {
+  it('remarcacao/cancelamento de um item gravam reserva_item_id; confirmacao e "cancelar todos" ficam sem item', async () => {
+    const s = await criarCenarioMensagem({ revisao: 2 });
+    const [x, y] = await itensDa(s.reservaId);
+    const rem = await registrar(s, 'remarcacao', new Date(), { reservaItemId: x.id });
+    await mudarReserva(s.reservaId, { revisao: 3 });
+    const canc = await registrar(s, 'cancelamento', new Date(), { reservaItemId: y.id });
+    await mudarReserva(s.reservaId, { revisao: 4 });
+    const todos = await registrar(s, 'cancelamento');
+    const conf = await registrar(s, 'confirmacao');
+    const lidas = await obterPrisma().mensagem.findMany({
+      where: { reservaId: s.reservaId },
+      select: { id: true, reservaItemId: true, tipo: true, revisao: true },
+    });
+    const por = new Map(lidas.map((m) => [m.id, m]));
+    expect(por.get(rem.mensagemId)).toMatchObject({ reservaItemId: x.id, tipo: 'remarcacao', revisao: 2 });
+    expect(por.get(canc.mensagemId)).toMatchObject({ reservaItemId: y.id, tipo: 'cancelamento', revisao: 3 });
+    expect(por.get(todos.mensagemId)).toMatchObject({ reservaItemId: null, tipo: 'cancelamento', revisao: 4 });
+    expect(por.get(conf.mensagemId)).toMatchObject({ reservaItemId: null, tipo: 'confirmacao', revisao: 0 });
   });
 
-  it('remarcacao N substitui só confirmação e remarcações pendentes de revisão menor (CA-7)', async () => {
-    const s = await criarCenarioMensagem({ revisao: 2 });
+  it('reservaItemId em confirmacao/convite → RangeError e nada gravado', async () => {
+    const s = await criarCenarioMensagem({ revisao: 1, status: 'concluido', consentimentoConvite: true });
+    const [x] = await itensDa(s.reservaId);
+    for (const tipo of ['confirmacao', 'convite_avaliacao'] as const) {
+      await expect(registrar(s, tipo, new Date(), { reservaItemId: x.id })).rejects.toThrow(RangeError);
+    }
+    expect(await mensagensDaReservaDireto(s.reservaId)).toEqual([]);
+  });
+
+  it('item malformado → NaoEncontrado; item de outra reserva do salão → FK (23503) desfaz tudo', async () => {
+    const s = await criarCenarioMensagem({ revisao: 1 });
+    await expect(registrar(s, 'remarcacao', new Date(), { reservaItemId: 'nao-uuid' })).rejects.toMatchObject({ name: 'NaoEncontrado' });
+    const outra = await criarOutraReserva(s, { revisao: 1 });
+    const [alheio] = await itensDa(outra);
+    const erro = await registrar(s, 'remarcacao', new Date(), { reservaItemId: alheio.id }).then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+    expect(String(erro)).toContain('mensagem_salao_id_reserva_id_reserva_item_id_fkey');
+    expect(await mensagensDaReservaDireto(s.reservaId)).toEqual([]);
+  });
+
+  it('cancelamento com reserva.revisao 0 → RangeError (D-050 RN-28: cancelar sempre incrementa)', async () => {
+    const s = await criarCenarioMensagem({ revisao: 0, status: 'cancelado' });
+    await expect(registrar(s, 'cancelamento')).rejects.toThrow(RangeError);
+    expect(await mensagensDaReservaDireto(s.reservaId)).toEqual([]);
+  });
+
+  it('registrar não substitui nenhuma pendente (nem obsoleta): isso é do substituirNaoVigentes', async () => {
+    const s = await criarCenarioMensagem({ revisao: 3, status: 'cancelado' });
     const conf = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'confirmacao', revisao: 0 });
     const rem1 = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'remarcacao', revisao: 1 });
-    const canc = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'cancelamento', revisao: 1 });
-    const r = await registrar(s, 'remarcacao');
-    expect(r).toMatchObject({ revisao: 2, estado: 'pendente' });
-    expect((await lerMensagem(conf)).estado).toBe('substituida');
-    expect((await lerMensagem(rem1)).estado).toBe('substituida');
-    expect((await lerMensagem(canc)).estado).toBe('pendente');
-    expect((await lerMensagem(r.mensagemId)).estado).toBe('pendente');
-  });
-
-  it('registro repetido não substitui de novo (só linha criada substitui)', async () => {
-    const s = await criarCenarioMensagem({ revisao: 2 });
-    await registrar(s, 'remarcacao');
-    const velha = await criarMensagem({ salaoId: s.salaoId, reservaId: s.reservaId, tipo: 'confirmacao', revisao: 0 });
-    const outra = await registrar(s, 'remarcacao');
-    expect(outra.criada).toBe(false);
-    expect((await lerMensagem(velha)).estado).toBe('pendente');
+    await registrar(s, 'cancelamento');
+    expect((await lerMensagem(conf)).estado).toBe('pendente');
+    expect((await lerMensagem(rem1)).estado).toBe('pendente');
   });
 });
 
@@ -144,22 +159,27 @@ describe('CA-19: atomicidade com a transação do evento (RN-3, RN-24)', () => {
   it('violação da exclusion constraint (23P01) depois de registrar desfaz a mensagem e o job nunca existiu', async () => {
     const s = await criarCenarioMensagem();
     const db = obterPrisma();
-    const existente = await db.reserva.findUniqueOrThrow({ where: { id: s.reservaId } });
+    const [item] = await itensDa(s.reservaId);
     const erro = await db
       .$transaction(async (tx) => {
-        await registrarMensagem(ctxDo(s), { reservaId: s.reservaId, tipo: 'cancelamento' }, new Date(), criarRepos(tx));
-        // Mesmo profissional e horário da reserva existente: o banco recusa.
+        await registrarMensagem(ctxDo(s), { reservaId: s.reservaId, tipo: 'confirmacao' }, new Date(), criarRepos(tx));
+        // D-050: outra reserva com um item do mesmo profissional e horário de um item existente: o banco recusa.
+        const [nova] = await tx.$queryRaw<{ id: string }[]>`
+          INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem)
+          VALUES (${s.salaoId}::uuid, ${s.clienteId}::uuid, ${item.inicio}, ${item.fim}, 'confirmado', 'publico')
+          RETURNING id::text AS id`;
         await tx.$executeRaw`
-          INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-          VALUES (${s.salaoId}::uuid, ${s.profissionalId}::uuid, ${s.clienteId}::uuid,
-                  ${existente.inicio}, ${existente.fim}, ${existente.ocupadoAte}, 'confirmado', 'publico')`;
+          INSERT INTO reserva_item (salao_id, reserva_id, servico_id, profissional_id, ordem, inicio, fim, ocupado_ate,
+                                    status, preco_centavos, duracao_min)
+          VALUES (${s.salaoId}::uuid, ${nova.id}::uuid, ${s.servicoIds[0]}::uuid, ${s.profissionalId}::uuid, 0,
+                  ${item.inicio}, ${item.fim}, ${item.ocupadoAte}, 'confirmado', 5000, 30)`;
       })
       .then(
         () => null,
         (e: unknown) => e as Error,
       );
     expect(erro).not.toBeNull();
-    expect(String((erro as Error).message)).toContain('reserva_sem_sobreposicao');
+    expect(String((erro as Error).message)).toContain('reserva_item_sem_sobreposicao');
     expect(await mensagensDaReservaDireto(s.reservaId)).toEqual([]);
   });
 

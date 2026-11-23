@@ -1,4 +1,4 @@
-// Validação pura da entrada de `criarReserva` (D-025 §3.3, A-14, A-15). Nunca toca o banco. Erros de
+// Validação pura da entrada de `criarReserva` (D-025 §3.3, A-14, A-15; D-050 §3.5 passo 1: N itens). Nunca toca o banco. Erros de
 // programação (`agora`, modo, encaixe no público, contexto de outro tipo) lançam; o resto é resultado.
 import { validarEntradaCliente } from '@/server/clientes/validacao';
 import { validarServicos } from '@/server/disponibilidade/validacao';
@@ -7,19 +7,21 @@ import { exigirEscopo } from '@/server/tenant/context';
 import type { ContextoEscopado } from '@/server/tenant/context';
 
 import { MENSAGENS_RESERVA } from './tipos';
-import type { EntradaCriarReserva, ErrosReserva, ModoReserva } from './tipos';
+import type { EntradaCriarReserva, ErrosReserva, ItemPedido, ModoReserva } from './tipos';
 
 export type EntradaValidada = {
   ok: true;
-  servicoIds: string[];
-  profissionalId: string;
-  inicio: Date;
+  /** Na ordem pedida (a posição é a `ordem` gravada); ids em minúsculas. */
+  itens: ItemPedido[];
   nome: string;
   telefoneE164: string;
   chave: string | null;
   modo: ModoReserva;
-  /** Ids que não são UUID: indisponíveis sem consultar o banco (A-15). */
-  idsMalformados: { profissional: boolean; servicos: boolean };
+  /**
+   * Ids que não são UUID: indisponíveis sem consultar o banco (A-15). `servicos` = algum serviço malformado;
+   * `profissionais` = índices dos itens com profissional malformado.
+   */
+  malformados: { servicos: boolean; profissionais: number[] };
 };
 
 export function ehInstanteValido(v: unknown): v is Date {
@@ -53,14 +55,19 @@ export function validarEntradaReserva(
     Object.assign(erros, cliente.erros);
   }
 
-  const lista = Array.isArray(e.servicoIds) ? (e.servicoIds as unknown[]) : [];
-  const textos = lista.every((s) => typeof s === 'string') ? (lista as string[]).map((s) => s.toLowerCase()) : null;
-  if (textos === null || validarServicos(textos) !== null) {
-    erros.servicos = MENSAGENS_RESERVA.servicos;
+  // D-050 §3.5 passo 1: 1..10 itens, `servicoId` distintos (validarServicos), `inicio` em minuto cheio.
+  const lista = Array.isArray(e.itens) ? (e.itens as unknown[]) : [];
+  const objetos = lista.every((i) => typeof i === 'object' && i !== null && typeof (i as ItemPedido).servicoId === 'string');
+  const servicoIds = objetos ? (lista as ItemPedido[]).map((i) => i.servicoId.toLowerCase()) : null;
+  if (servicoIds === null || validarServicos(servicoIds) !== null) {
+    erros.itens = MENSAGENS_RESERVA.servicos;
   }
-
-  if (!ehInstanteValido(e.inicio) || !ehMinutoCheio(e.inicio)) {
-    erros.inicio = MENSAGENS_RESERVA.inicio;
+  if (objetos) {
+    (lista as ItemPedido[]).forEach((i, k) => {
+      if (!ehInstanteValido(i.inicio) || !ehMinutoCheio(i.inicio)) {
+        erros.porItem = { ...erros.porItem, [k]: { inicio: MENSAGENS_RESERVA.inicio } };
+      }
+    });
   }
 
   const bruta = e.chaveRequisicao ?? null;
@@ -68,18 +75,25 @@ export function validarEntradaReserva(
     erros.chave = MENSAGENS_RESERVA.chave;
   }
 
-  if (!cliente.ok || Object.keys(erros).length > 0 || textos === null) {
+  if (!cliente.ok || Object.keys(erros).length > 0 || servicoIds === null) {
     return { ok: false, erros };
   }
+  const pedidos = lista as ItemPedido[];
+  const itens = pedidos.map((i, k) => ({
+    servicoId: servicoIds[k],
+    profissionalId: typeof i.profissionalId === 'string' ? i.profissionalId.toLowerCase() : '',
+    inicio: i.inicio,
+  }));
   return {
     ok: true,
-    servicoIds: textos,
-    profissionalId: typeof e.profissionalId === 'string' ? e.profissionalId.toLowerCase() : '',
-    inicio: e.inicio,
+    itens,
     nome: cliente.nome,
     telefoneE164: cliente.telefoneE164,
     chave: bruta === null ? null : bruta.toLowerCase(),
     modo,
-    idsMalformados: { profissional: !ehUuid(e.profissionalId), servicos: !textos.every((s) => ehUuid(s)) },
+    malformados: {
+      servicos: !servicoIds.every((s) => ehUuid(s)),
+      profissionais: pedidos.flatMap((i, k) => (ehUuid(i.profissionalId) ? [] : [k])),
+    },
   };
 }

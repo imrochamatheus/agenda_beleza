@@ -63,12 +63,12 @@ describe('CA-23: MODELOS_WHATSAPP é o enum tipo_mensagem do banco', () => {
 describe('CA-24: a reconciliação usa o índice parcial (consultas com literais)', () => {
   it('pendentes e enviando antigas: Index Scan em mensagem_reconciliacao_idx, sem Seq Scan nem Sort, com volume', async () => {
     const salao = (await c.query<{ id: string }>("INSERT INTO salao (nome) VALUES ('Volume') RETURNING id")).rows[0].id;
-    const prof = (await c.query<{ id: string }>('INSERT INTO profissional (salao_id, nome) VALUES ($1, $2) RETURNING id', [salao, 'P'])).rows[0].id;
     const cli = (await c.query<{ id: string }>('INSERT INTO cliente (salao_id, nome, telefone_e164) VALUES ($1, $2, $3) RETURNING id', [salao, 'C', telefoneNovo()])).rows[0].id;
     const reserva = (
       await c.query<{ id: string }>(
-        "INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, origem) VALUES ($1, $2, $3, '2031-02-01T13:00:00Z', '2031-02-01T14:00:00Z', '2031-02-01T14:00:00Z', 'equipe') RETURNING id",
-        [salao, prof, cli],
+        // D-050: a reserva é o envelope (sem profissional nem ocupação); itens não importam a este plano.
+        "INSERT INTO reserva (salao_id, cliente_id, inicio, fim, origem) VALUES ($1, $2, '2031-02-01T13:00:00Z', '2031-02-01T14:00:00Z', 'equipe') RETURNING id",
+        [salao, cli],
       )
     ).rows[0].id;
     await c.query(

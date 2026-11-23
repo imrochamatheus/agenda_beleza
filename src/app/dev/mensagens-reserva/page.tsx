@@ -11,7 +11,8 @@ import { vitrineHabilitada } from '@/server/env';
 
 // Vitrine da situação das mensagens (D-043): todos os tipos × estados pelos MESMOS rótulos e componente do
 // detalhe da reserva, sem banco. 404 sem VITRINE_COMPONENTES=true (exceto em next dev), lido na requisição.
-// `?vista=vazia` mostra o estado sem mensagens.
+// `?vista=vazia` mostra o estado sem mensagens. D-050: "substituída por alteração posterior" cobre remarcação,
+// cancelamento de item e "cancelar todos" (a substituição é "pendente que deixou de ser vigente").
 export const dynamic = 'force-dynamic';
 
 const METADADOS: Metadata = {

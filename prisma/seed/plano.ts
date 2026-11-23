@@ -1,24 +1,38 @@
 // Planejamento puro do seed (D-036): transforma um SalaoSpec e o instante `agora` nas linhas concretas
 // com instantes UTC (calculados no fuso do salão por `fuso.ts`, nunca por métodos locais de Date).
 // Sem banco, sem relógio: `agora` é entrada. Testado em TZ=UTC e TZ=America/Sao_Paulo.
+import { derivarReserva } from '@/server/reservas/itens';
 import { instanteDeHoraLocal, partesLocais, somarDias } from '@/server/tempo/fuso';
 
-import { idDemo, type SalaoSpec, type StatusSpec } from './dados';
+import { idDemo, type ItemSpec, type ReservaSpec, type SalaoSpec, type StatusSpec } from './dados';
 
 const MIN_MS = 60_000;
 const HORA_MS = 60 * MIN_MS;
 
-export type ReservaPlanejada = {
+/** Item planejado (D-050): a unidade de agenda, com profissional, horário e status próprios. */
+export type ItemPlanejado = {
   id: string;
-  chave: string;
+  servicoId: string;
   profissionalId: string;
-  clienteId: string;
+  ordem: number;
   inicio: Date;
   fim: Date;
   ocupadoAte: Date;
   status: StatusSpec;
+  precoCentavos: number;
+  duracaoMin: number;
+};
+
+/** Reserva planejada: `status`, `inicio`, `fim` e `canceladaEm` DERIVADOS dos itens por `derivarReserva` (D-050 A-1/A-2). */
+export type ReservaPlanejada = {
+  id: string;
+  chave: string;
+  clienteId: string;
+  inicio: Date;
+  fim: Date;
+  status: StatusSpec;
   canceladaEm: Date | null;
-  itens: { id: string; servicoId: string; ordem: number; precoCentavos: number; duracaoMin: number }[];
+  itens: ItemPlanejado[];
 };
 
 export type AvaliacaoPlanejada = {
@@ -67,26 +81,45 @@ export function planejar(spec: SalaoSpec, agora: Date): PlanoDoSalao {
   const servicos = new Map(spec.servicos.map((s) => [s.chave, s]));
 
   const reservas: ReservaPlanejada[] = spec.reservas.map((r) => {
-    const inicio = instanteDeHoraLocal(somarDias(hoje, r.dia), r.inicioMin, spec.fuso);
-    let cursor = inicio.getTime();
-    const itens = r.servicos.map((chave, ordem) => {
-      const s = servicos.get(chave);
-      if (!s) throw new Error(`serviço desconhecido no seed: ${chave}`);
-      cursor += s.duracaoMin * MIN_MS;
-      return { id: id.item(r.chave, ordem), servicoId: id.servico(chave), ordem, precoCentavos: s.precoCentavos, duracaoMin: s.duracaoMin };
+    const dia = somarDias(hoje, r.dia);
+    let anterior: ItemPlanejado | null = null;
+    const itens = itensDaSpec(r).map((it, ordem): ItemPlanejado => {
+      const s = servicos.get(it.servico);
+      if (!s) throw new Error(`serviço desconhecido no seed: ${it.servico}`);
+      const profissionalId = id.profissional(it.profissional);
+      // Sem `inicioMin`: encadeado ao item anterior, depois do intervalo do salão (RN-9 quando é o mesmo profissional).
+      let inicio: Date;
+      if (it.inicioMin !== undefined) inicio = instanteDeHoraLocal(dia, it.inicioMin, spec.fuso);
+      else if (anterior !== null) inicio = anterior.ocupadoAte;
+      else throw new Error(`primeiro item sem horário no seed: ${r.chave}`);
+      const fim = new Date(inicio.getTime() + s.duracaoMin * MIN_MS);
+      const item: ItemPlanejado = {
+        id: id.item(r.chave, ordem),
+        servicoId: id.servico(it.servico),
+        profissionalId,
+        ordem,
+        inicio,
+        fim,
+        // Mesma regra da criação (D-050 §3.5 passo 5): cada item ocupa até fim + intervalo do salão.
+        ocupadoAte: new Date(fim.getTime() + spec.intervaloMin * MIN_MS),
+        status: it.status ?? r.status,
+        precoCentavos: s.precoCentavos,
+        duracaoMin: s.duracaoMin,
+      };
+      anterior = item;
+      return item;
     });
-    const fim = new Date(cursor);
+    // O cancelamento aconteceu 1 dia antes do primeiro item, nunca depois do início (coerente em passado e futuro).
+    const primeiro = Math.min(...itens.map((i) => i.inicio.getTime()));
+    const derivados = derivarReserva(itens, null, new Date(primeiro - 24 * HORA_MS));
     return {
       id: id.reserva(r.chave),
       chave: r.chave,
-      profissionalId: id.profissional(r.profissional),
       clienteId: id.cliente(r.cliente),
-      inicio,
-      fim,
-      ocupadoAte: new Date(cursor + spec.intervaloMin * MIN_MS),
-      status: r.status,
-      // O cancelamento aconteceu 1 dia antes do horário, nunca depois do início (coerente em passado e futuro).
-      canceladaEm: r.status === 'cancelado' ? new Date(inicio.getTime() - 24 * HORA_MS) : null,
+      inicio: derivados.inicio,
+      fim: derivados.fim,
+      status: derivados.status as StatusSpec,
+      canceladaEm: derivados.canceladaEm,
       itens,
     };
   });
@@ -120,16 +153,25 @@ export function planejar(spec: SalaoSpec, agora: Date): PlanoDoSalao {
   return { reservas, avaliacoes, bloqueios };
 }
 
-/** Pares de reservas ocupantes do mesmo profissional cujos intervalos [inicio, ocupadoAte) se cruzam. */
+/** Os itens da spec: a forma explícita (`itens`) ou a abreviada (um profissional, serviços encadeados). */
+function itensDaSpec(r: ReservaSpec): readonly ItemSpec[] {
+  if ('itens' in r) return r.itens;
+  return r.servicos.map((servico, k) => ({ servico, profissional: r.profissional, inicioMin: k === 0 ? r.inicioMin : undefined }));
+}
+
+/**
+ * Pares de itens ocupantes do mesmo profissional cujos `[inicio, ocupadoAte)` se cruzam, inclusive entre
+ * reservas diferentes (o que `reserva_item_sem_sobreposicao` recusaria). Cada item é `<chave>:<ordem>`.
+ */
 export function sobreposicoes(reservas: readonly ReservaPlanejada[]): [string, string][] {
-  const ocupantes = reservas.filter((r) => r.status !== 'cancelado');
+  const ocupantes = reservas.flatMap((r) => r.itens.filter((i) => i.status !== 'cancelado').map((i) => ({ rotulo: `${r.chave}:${i.ordem}`, i })));
   const pares: [string, string][] = [];
-  for (let i = 0; i < ocupantes.length; i += 1) {
-    for (let j = i + 1; j < ocupantes.length; j += 1) {
-      const a = ocupantes[i]!;
-      const b = ocupantes[j]!;
-      if (a.profissionalId === b.profissionalId && a.inicio < b.ocupadoAte && b.inicio < a.ocupadoAte) {
-        pares.push([a.chave, b.chave]);
+  for (let x = 0; x < ocupantes.length; x += 1) {
+    for (let y = x + 1; y < ocupantes.length; y += 1) {
+      const a = ocupantes[x]!;
+      const b = ocupantes[y]!;
+      if (a.i.profissionalId === b.i.profissionalId && a.i.inicio < b.i.ocupadoAte && b.i.inicio < a.i.ocupadoAte) {
+        pares.push([a.rotulo, b.rotulo]);
       }
     }
   }

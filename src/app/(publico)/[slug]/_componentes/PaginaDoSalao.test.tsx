@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { montarSemana } from '@/server/semana/montagem';
 import type { PerfilPublico } from '@/server/repos/publico';
-import type { VisaoDoPasso } from '@/server/reserva-publica/tipos';
+import { valorDoItem } from '@/server/reserva-publica/passos';
+import type { ItemEscolhido, VisaoDoPasso } from '@/server/reserva-publica/tipos';
 
 import { estadoInicialReserva } from '../estado';
 import { PaginaDoSalao } from './PaginaDoSalao';
@@ -41,7 +42,7 @@ const SERVICOS = [
   { id: S1, nome: 'Corte', precoCentavos: 5000, duracaoMin: 30 },
   { id: S2, nome: 'Escova', precoCentavos: 7000, duracaoMin: 45 },
 ];
-const SELECAO = { servicos: SERVICOS, duracaoTotalMin: 75, precoTotalCentavos: 12000 };
+const SELECAO = { servicos: SERVICOS, precoTotalCentavos: 12000 };
 
 function montar(o: Partial<PaginaDoSalaoProps> = {}) {
   const props: PaginaDoSalaoProps = {
@@ -52,7 +53,7 @@ function montar(o: Partial<PaginaDoSalaoProps> = {}) {
     servicos: SERVICOS,
     equipe: [{ id: P1, nome: 'Ana' }],
     decisao: { disponivel: true },
-    visao: { passo: 'servicos', aviso: null },
+    visao: { passo: 'servicos', marcados: [], aviso: null },
     chave: '44444444-4444-4444-8444-444444444444',
     acao: vi.fn(async (anterior) => anterior),
     humano: { modo: 'simulado', chaveDoSite: '', tokenSimulado: 'XXXX.DUMMY.TOKEN.XXXX', controleDeTeste: false },
@@ -113,93 +114,210 @@ describe('PaginaDoSalao: indisponível (CA-4)', () => {
   });
 });
 
+// D-050: dois serviços (Corte, Escova), Ana e Bia; 2026-12-01 em São Paulo (12:00Z = 09:00).
+const P2 = '55555555-5555-4555-8555-555555555555';
+const H2 = '2026-12-01T13:00:00.000Z';
+const V0 = valorDoItem(P1, H);
+const V1 = valorDoItem(P2, H2);
+const CORTE_ANA: ItemEscolhido = {
+  indice: 0, servicoId: S1, servicoNome: 'Corte', profissionalId: P1, profissionalNome: 'Ana',
+  inicioIso: H, fimIso: '2026-12-01T12:30:00.000Z', precoCentavos: 5000, duracaoMin: 30,
+};
+const ESCOVA_BIA: ItemEscolhido = {
+  indice: 1, servicoId: S2, servicoNome: 'Escova', profissionalId: P2, profissionalNome: 'Bia',
+  inicioIso: H2, fimIso: '2026-12-01T13:45:00.000Z', precoCentavos: 7000, duracaoMin: 45,
+};
+type VisaoServico = Extract<VisaoDoPasso, { passo: 'servico' }>;
+const servico = (o: Partial<VisaoServico> = {}): VisaoServico => ({
+  passo: 'servico',
+  s: [S1, S2],
+  data: '2026-12-01',
+  fuso: 'America/Sao_Paulo',
+  selecao: SELECAO,
+  indice: 1,
+  total: 2,
+  servico: SERVICOS[1],
+  escolhidos: [CORTE_ANA],
+  pendentes: [],
+  profissionais: [
+    { id: P1, nome: 'Ana', horarios: [] },
+    { id: P2, nome: 'Bia', horarios: [H2, '2026-12-01T13:15:00.000Z'] },
+  ],
+  opcoesDeFiltro: [{ id: P1, nome: 'Ana' }, { id: P2, nome: 'Bia' }],
+  filtro: null,
+  preSelecionado: null,
+  alterando: false,
+  proximoEhDados: true,
+  vazio: null,
+  aviso: null,
+  horarioPerdidoIso: null,
+  consulta: { s: [S1, S2], data: '2026-12-01', h: [V0, null] },
+  ...o,
+});
+const DADOS: VisaoDoPasso = {
+  passo: 'dados',
+  s: [S1, S2],
+  data: '2026-12-01',
+  fuso: 'America/Sao_Paulo',
+  selecao: SELECAO,
+  itens: [CORTE_ANA, ESCOVA_BIA],
+  totalCentavos: 12000,
+  consulta: { s: [S1, S2], data: '2026-12-01', h: [V0, V1] },
+};
+const enc = encodeURIComponent;
+const ocultos = (c: HTMLElement) =>
+  [...c.querySelectorAll('input[type=hidden]')].map((i) => [(i as HTMLInputElement).name, (i as HTMLInputElement).value]);
+/** Critérios 7 e 8 do web-design: o modelo antigo não aparece em nenhum passo. */
+const semModeloAntigo = (c: HTMLElement) => {
+  expect(c.textContent).not.toMatch(/com o mesmo profissional|Sem preferência|Alterar profissional/);
+};
+
 describe('PaginaDoSalao: passos', () => {
-  it('serviços: checkboxes "s" por GET com preço e duração em pt-BR e o aviso', () => {
-    const { container } = montar({ visao: { passo: 'servicos', aviso: 'horario_indisponivel' } });
+  it('serviços: checkboxes "s" por GET, texto novo, aviso e serviços marcados ao voltar', () => {
+    const { container } = montar({ visao: { passo: 'servicos', marcados: [S2], aviso: 'servico_indisponivel' } });
     const form = container.querySelector('form')!;
     expect(form.getAttribute('method')).toBe('get');
     expect(form.getAttribute('action')).toBe('/studio-bela');
     const caixas = screen.getAllByRole('checkbox') as HTMLInputElement[];
-    expect(caixas.map((c) => [c.name, c.value])).toEqual([['s', S1], ['s', S2]]);
+    expect(caixas.map((c) => [c.name, c.value, c.checked])).toEqual([['s', S1, false], ['s', S2, true]]);
     expect(within(form).getByText(/R\$\s*50,00/)).toBeTruthy();
-    expect(screen.getByText(/30 min/)).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toContain('Este horário não está mais disponível');
-    // A lista só-leitura não duplica os serviços no primeiro passo.
+    expect(screen.getByText(/Depois você escolhe o dia e, para cada serviço, o profissional e o horário\./)).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain('Algum dos serviços escolhidos não está mais disponível');
     expect(screen.getAllByRole('heading', { level: 2, name: 'Serviços' })).toHaveLength(1);
+    semModeloAntigo(container);
   });
 
-  it('profissional: "Sem preferência" marcada, serviços preservados em campos ocultos', () => {
-    const visao: VisaoDoPasso = { passo: 'profissional', s: [S1, S2], selecao: SELECAO, profissionais: [{ id: P1, nome: 'Ana' }], aviso: null };
-    const { container } = montar({ visao });
-    const radios = screen.getAllByRole('radio') as HTMLInputElement[];
-    expect(radios.map((r) => [r.value, r.checked])).toEqual([['qualquer', true], [P1, false]]);
-    expect([...container.querySelectorAll('input[type=hidden][name=s]')].map((i) => (i as HTMLInputElement).value)).toEqual([S1, S2]);
-    expect(screen.getByText(/1 h 15 min/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Alterar serviços' }).getAttribute('href')).toBe('/studio-bela');
-  });
-
-  it('data: dias com horários são links; sem horários são texto; navegação entre páginas', () => {
+  it('data: dias com horários são links (s + data); sem horários são texto; navegação e "Alterar serviços"', () => {
     const visao: VisaoDoPasso = {
-      passo: 'data',
-      s: [S1],
-      p: 'qualquer',
-      selecao: SELECAO,
-      de: '2026-12-01',
-      dias: [
-        { data: '2026-12-01', temHorarios: true },
-        { data: '2026-12-06', temHorarios: false },
-      ],
-      anterior: '2026-11-20',
-      proxima: '2026-12-15',
-      aviso: null,
+      passo: 'data', s: [S1, S2], selecao: SELECAO, de: '2026-12-01',
+      dias: [{ data: '2026-12-01', temHorarios: true }, { data: '2026-12-06', temHorarios: false }],
+      anterior: '2026-11-20', proxima: '2026-12-15', aviso: null,
     };
-    montar({ visao });
-    expect(screen.getByRole('link', { name: 'Terça-feira, 01/12/2026' }).getAttribute('href')).toBe(
-      `/studio-bela?s=${S1}&p=qualquer&data=2026-12-01`,
-    );
+    const { container } = montar({ visao });
+    expect(screen.getByRole('link', { name: 'Terça-feira, 01/12/2026' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&data=2026-12-01`);
     expect(screen.getByText('Domingo, 06/12/2026 (sem horários)')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Dias anteriores' }).getAttribute('href')).toContain('de=2026-11-20');
+    expect(screen.getByText('Corte · Escova')).toBeTruthy();
+    expect(screen.getByText(/2 serviços · R\$\s120,00/)).toBeTruthy();
+    expect(screen.getByText('Um dia aparece disponível quando cada serviço tem ao menos um horário livre nele.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Dias anteriores' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&de=2026-11-20`);
     expect(screen.getByRole('link', { name: 'Próximos dias' }).getAttribute('href')).toContain('de=2026-12-15');
+    expect(screen.getByRole('link', { name: 'Alterar serviços' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&alterar=servicos`);
+    expect(container.textContent).not.toMatch(/Duração|1 h 15 min/);
+    semModeloAntigo(container);
   });
 
-  it('horário: rádios "h" no fuso do salão e campos ocultos do fluxo', () => {
-    const visao: VisaoDoPasso = {
-      passo: 'horario', s: [S1], p: 'qualquer', data: '2026-12-01', selecao: SELECAO, fuso: 'America/Sao_Paulo',
-      horarios: [H, '2026-12-01T12:30:00.000Z'], aviso: null,
-    };
-    const { container } = montar({ visao });
+  it('serviço k de N: indicador no aria-describedby do h2, roteiro, filtro, grades num só name e ocultos', () => {
+    const { container } = montar({ visao: servico() });
+    const h2 = screen.getByRole('heading', { level: 2, name: 'Escova' });
+    expect(document.getElementById(h2.getAttribute('aria-describedby')!)?.textContent).toBe('Serviço 2 de 2');
+    expect(within(container.querySelector('form')!).getByText(/45 min · R\$\s70,00/)).toBeTruthy();
+
+    const paradas = within(screen.getByRole('list', { name: 'Seu dia' })).getAllByRole('listitem');
+    expect(paradas.map((p) => p.getAttribute('data-estado'))).toEqual(['escolhida', 'destaque']);
+    expect(paradas[0].textContent).toMatch(/^09:00Cortecom Ana · 30 min · R\$\s50,00/);
+    expect(paradas[1].textContent).toContain('escolhendo agora');
+    const alterar = within(paradas[0]).getByRole('link', { name: 'Alterar Corte (09:00 com Ana)' });
+    expect(alterar.getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&data=2026-12-01&h0=${enc(V0)}&alterar=0`);
+
+    const filtro = screen.getByRole('navigation', { name: 'Filtrar por profissional' });
+    const pilulas = within(filtro).getAllByRole('link');
+    expect(pilulas.map((l) => [l.textContent, l.getAttribute('aria-current')])).toEqual([['Todos (2)', 'true'], ['Ana', null], ['Bia', null]]);
+    expect(pilulas[2].getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&data=2026-12-01&h0=${enc(V0)}&f=${P2}`);
+
+    // Bia (com horários) antes de Ana (sem horários); um só name; valor = profissional + instante.
+    const grupos = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(grupos).toEqual(['Terça-feira, 01/12/2026', 'Bia', 'Ana']);
+    expect(screen.getByText('Sem horários livres neste dia.')).toBeTruthy();
     const radios = screen.getAllByRole('radio') as HTMLInputElement[];
-    expect(radios.map((r) => [r.name, r.value])).toEqual([['h', H], ['h', '2026-12-01T12:30:00.000Z']]);
-    expect(screen.getByText('09:00')).toBeTruthy();
-    expect(screen.getByText('09:30')).toBeTruthy();
-    expect(container.querySelector('input[type=hidden][name=data]')).toHaveProperty('value', '2026-12-01');
+    expect(radios.map((r) => [r.name, r.value])).toEqual([['h1', V1], ['h1', valorDoItem(P2, '2026-12-01T13:15:00.000Z')]]);
+    expect(screen.getByText('10:00')).toBeTruthy();
+    expect(ocultos(container)).toEqual([['s', S1], ['s', S2], ['data', '2026-12-01'], ['h0', V0], ['enviado', '1']]);
+    expect(screen.getByRole('button', { name: 'Continuar para seus dados' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Escolher outro dia' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&de=2026-12-01`);
+    expect(screen.getByRole('link', { name: 'Alterar serviços' }).getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&alterar=servicos`);
+    semModeloAntigo(container);
   });
 
-  it('horário sem opções: mensagem e caminho para outro dia, sem botão de continuar', () => {
-    const visao: VisaoDoPasso = { passo: 'horario', s: [S1], p: 'qualquer', data: '2026-12-01', selecao: SELECAO, fuso: 'America/Sao_Paulo', horarios: [], aviso: null };
-    montar({ visao });
-    expect(screen.getByText('Nenhum horário disponível neste dia.')).toBeTruthy();
-    expect(screen.getAllByRole('link', { name: 'Escolher outro dia' })).toHaveLength(1);
-    expect(screen.queryByRole('button', { name: 'Continuar' })).toBeNull();
+  it('serviço com pendentes: parada "a escolher" e botão "Continuar"; filtro só com 2+ profissionais', () => {
+    montar({
+      visao: servico({
+        indice: 0, servico: SERVICOS[0], escolhidos: [], pendentes: [1], proximoEhDados: false,
+        opcoesDeFiltro: [{ id: P2, nome: 'Bia' }], profissionais: [{ id: P2, nome: 'Bia', horarios: [H2] }],
+        consulta: { s: [S1, S2], data: '2026-12-01', h: [null, null] },
+      }),
+    });
+    const paradas = within(screen.getByRole('list', { name: 'Seu dia' })).getAllByRole('listitem');
+    expect(paradas.map((p) => p.getAttribute('data-estado'))).toEqual(['destaque', 'pendente']);
+    expect(paradas[1].textContent).toContain('a escolher');
+    expect(screen.getByRole('button', { name: 'Continuar' })).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Filtrar por profissional' })).toBeNull();
   });
 
-  it('dados: resumo no fuso do salão, campos ocultos e formulário com consentimento', () => {
-    const visao: VisaoDoPasso = {
-      passo: 'dados', s: [S1, S2], p: 'qualquer', data: '2026-12-01', selecao: SELECAO, fuso: 'America/Sao_Paulo',
-      inicioIso: H, profissional: { id: P1, nome: 'Ana' },
-    };
-    const { container } = montar({ visao });
-    expect(screen.getByText('Profissional: Ana')).toBeTruthy();
-    expect(screen.getByText('Quando: 01/12/2026 09:00')).toBeTruthy();
-    const oculto = (n: string) => (container.querySelector(`input[type=hidden][name=${n}]`) as HTMLInputElement).value;
-    expect([oculto('slug'), oculto('profissionalId'), oculto('inicio'), oculto('chave'), oculto('p'), oculto('data')]).toEqual([
-      'studio-bela', P1, H, '44444444-4444-4444-8444-444444444444', 'qualquer', '2026-12-01',
+  it('"Alterar": meta "alterando", horário atual pré-selecionado e filtro que preserva o alterar', () => {
+    montar({
+      visao: servico({ indice: 0, servico: SERVICOS[0], escolhidos: [ESCOVA_BIA], alterando: true, preSelecionado: V1, filtro: P2,
+        profissionais: [{ id: P2, nome: 'Bia', horarios: [H, H2] }], consulta: { s: [S1, S2], data: '2026-12-01', h: [V0, V1] } }),
+    });
+    expect(screen.getByText('alterando')).toBeTruthy();
+    const marcado = (screen.getAllByRole('radio') as HTMLInputElement[]).filter((r) => r.checked).map((r) => r.value);
+    expect(marcado).toEqual([V1]);
+    const pilulas = within(screen.getByRole('navigation', { name: 'Filtrar por profissional' })).getAllByRole('link');
+    expect(pilulas.map((l) => l.getAttribute('aria-current'))).toEqual([null, null, 'true']);
+    expect(pilulas[0].getAttribute('href')).toContain('alterar=0');
+  });
+
+  it('vazio por calendário e por conflito: textos exatos e sem "Continuar"', () => {
+    const { unmount } = montar({ visao: servico({ vazio: 'calendario' }) });
+    expect(screen.getByRole('heading', { level: 3, name: 'Nenhum horário para Escova neste dia.' })).toBeTruthy();
+    expect(screen.getByText('Escolha outro dia ou altere os serviços.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Continuar/ })).toBeNull();
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
+    unmount();
+    montar({ visao: servico({ vazio: 'conflito' }) });
+    expect(screen.getByRole('heading', { level: 3, name: 'Os horários de Escova neste dia coincidem com os serviços que você já escolheu.' })).toBeTruthy();
+    expect(screen.getByText('Altere o horário de outro serviço acima ou escolha outro dia.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Alterar Corte/ })).toBeTruthy();
+  });
+
+  it('avisos do passo: sem seleção nomeia o serviço; horário perdido nomeia hora e serviço (alternativa do formulário)', () => {
+    const { unmount } = montar({ visao: servico({ aviso: 'sem_selecao' }) });
+    expect(screen.getByRole('status').textContent).toContain('Escolha um horário para Escova.');
+    unmount();
+    const { container } = montar({ visao: servico({ aviso: 'horario_indisponivel', horarioPerdidoIso: H2 }) });
+    expect(screen.getByRole('status').textContent).toContain('O horário das 10:00 de Escova não está mais disponível. Escolha outro.');
+    expect(container.querySelector('form')?.getAttribute('method')).toBe('get');
+    expect(screen.queryByRole('button', { name: 'Confirmar reserva' })).toBeNull();
+  });
+
+  it('dados: roteiro com "Alterar" por item, total, "Alterar serviços" e o POST com todos os itens', () => {
+    const { container } = montar({ visao: DADOS });
+    expect(screen.getByRole('heading', { level: 2, name: 'Seus dados' })).toBeTruthy();
+    const alterar = screen.getAllByRole('link', { name: /^Alterar / });
+    expect(alterar.map((l) => l.textContent)).toEqual(['Alterar Corte (09:00 com Ana)', 'Alterar Escova (10:00 com Bia)', 'Alterar serviços']);
+    expect(alterar[1].getAttribute('href')).toBe(`/studio-bela?s=${S1}&s=${S2}&data=2026-12-01&h0=${enc(V0)}&h1=${enc(V1)}&alterar=1`);
+    expect(container.textContent).toMatch(/TotalR\$\s120,00/);
+    expect(container.textContent).not.toMatch(/Duração/);
+    const form = container.querySelector('form')!;
+    expect(ocultos(form).filter(([n]) => n !== 'cf-turnstile-response')).toEqual([
+      ['slug', 'studio-bela'], ['s', S1], ['s', S2], ['data', '2026-12-01'], ['h0', V0], ['h1', V1],
+      ['chave', '44444444-4444-4444-8444-444444444444'],
     ]);
-    expect(screen.getByRole('textbox', { name: /Nome/ })).toBeTruthy();
-    expect(screen.getByRole('textbox', { name: /Telefone/ })).toBeTruthy();
+    // Ordem de Tab (critério 14): os "Alterar" e "Alterar serviços" vêm antes do Nome.
+    const focaveis = [...container.querySelectorAll('a[href], input:not([type=hidden]), button')].map(
+      (e) => e.textContent?.trim() || (e as HTMLInputElement).name,
+    );
+    const nome = focaveis.indexOf('nome');
+    expect(focaveis.slice(nome - 3, nome + 2)).toEqual(['Alterar Corte (09:00 com Ana)', 'Alterar Escova (10:00 com Bia)', 'Alterar serviços', 'nome', 'telefone']);
     expect(screen.getAllByRole('checkbox')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeTruthy();
     expect(estadoInicialReserva('x').status).toBe('editando');
+    semModeloAntigo(container);
+  });
+
+  it('limitado: só o aviso de limite, sem formulário', () => {
+    const { container } = montar({ visao: { passo: 'limitado' } });
+    expect(screen.getByText('Muitas tentativas. Aguarde alguns minutos e tente novamente.')).toBeTruthy();
+    expect(container.querySelector('form')).toBeNull();
   });
 });
 

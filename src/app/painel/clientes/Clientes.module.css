@@ -169,6 +169,19 @@
   overflow-wrap: anywhere;
 }
 
+.itensReserva {
+  display: grid;
+  gap: var(--espaco-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.itemCancelado {
+  color: var(--cor-texto-suave);
+  text-decoration: line-through;
+}
+
 @media (min-width: 48rem) {
   .busca {
     grid-template-columns: 1fr auto;

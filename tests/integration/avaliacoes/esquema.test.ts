@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { conectar, criarCenario, erroSql, inserirReserva } from '../../support/sql';
+import { conectar, criarCenario, criarServico, erroSql, inserirReserva } from '../../support/sql';
 
 // D-032 (E4.5), migração 20261122000000_avaliacao. Contrato em docs/demandas/D-032/dba.md.
 let c: pg.Client;
@@ -89,11 +89,19 @@ describe('isolamento entre salões (FKs compostas) e RESTRICT', () => {
 describe('leitura pública: plano com 50 mil avaliações em um salão', () => {
   it('lista paginada usa avaliacao_publica_idx e o agregado lê só o salão', async () => {
     const { salaoId, profissionalId, clienteId } = await criarCenario(c);
+    const servicoId = await criarServico(c, salaoId);
+    // D-050: reserva (derivados) e um item concluído do profissional por reserva.
     await c.query(
-      `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-       SELECT $1, $2, $3, '2026-01-01T00:00:00Z'::timestamptz + g * interval '1 hour', '2026-01-01T00:00:00Z'::timestamptz + g * interval '1 hour' + interval '30 min',
-              '2026-01-01T00:00:00Z'::timestamptz + g * interval '1 hour' + interval '30 min', 'concluido', 'publico'
-       FROM generate_series(0, 49999) g`, [salaoId, profissionalId, clienteId],
+      `INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem)
+       SELECT $1, $2, '2026-01-01T00:00:00Z'::timestamptz + g * interval '1 hour', '2026-01-01T00:00:00Z'::timestamptz + g * interval '1 hour' + interval '30 min',
+              'concluido', 'publico'
+       FROM generate_series(0, 49999) g`, [salaoId, clienteId],
+    );
+    await c.query(
+      `INSERT INTO reserva_item (salao_id, reserva_id, servico_id, profissional_id, ordem, preco_centavos, duracao_min,
+                                 inicio, fim, ocupado_ate, status)
+       SELECT salao_id, id, $2, $3, 0, 5000, 30, inicio, fim, fim, 'concluido' FROM reserva WHERE salao_id = $1`,
+      [salaoId, servicoId, profissionalId],
     );
     await c.query(
       `INSERT INTO avaliacao (salao_id, reserva_id, cliente_id, nota, comentario, nome_exibicao, publicacao_aceita_em, versao_termos, criado_em)

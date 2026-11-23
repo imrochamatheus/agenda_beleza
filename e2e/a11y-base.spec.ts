@@ -293,7 +293,7 @@ test('CA-14: alvos de pelo menos 44 × 44 px em 375 px', async ({ page }) => {
   expect(await page.locator('main button').count()).toBeGreaterThan(10);
   expect(await pequenos('main button')).toEqual([]);
   expect(await pequenos('main input[type="radio"]')).toEqual([]);
-  expect(await page.locator('main input[type="radio"]').count()).toBe(8);
+  expect(await page.locator('main input[type="radio"]').count()).toBe(12);
   const menu = page.getByRole('button', { name: 'Menu' });
   expect(await pequenos('header + div button[aria-controls]')).toEqual([]);
   await menu.click();

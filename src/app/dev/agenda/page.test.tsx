@@ -44,7 +44,7 @@ describe('página /dev/agenda', () => {
     await renderizar();
     expect(screen.getByRole('heading', { level: 1, name: 'Agenda' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Próximo dia' }).getAttribute('href')).toMatch(/^\/dev\/agenda\?data=\d{4}-\d{2}-\d{2}&visao=dia$/);
-    expect(screen.getByRole('link', { name: /Maria Souza/ }).getAttribute('href')).toBe('/dev/agenda?reserva=demo-r1');
+    expect(screen.getByRole('link', { name: /10:00–11:00 Maria Souza/ }).getAttribute('href')).toBe('/dev/agenda?reserva=demo-r1#item-demo-r1-i1');
   });
 
   it('semana e filtro; parâmetro repetido vale como ausente', async () => {
@@ -59,8 +59,18 @@ describe('página /dev/agenda', () => {
     await renderizar({ reserva: 'demo-r1' });
     expect(screen.getByRole('heading', { level: 1, name: 'Reserva' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Voltar para a agenda' }).getAttribute('href')).toBe('/dev/agenda');
+    expect(screen.getByRole('list', { name: 'Serviços da reserva' })).toBeTruthy();
+    expect(document.querySelector('form')).toBeNull();
     await expect(DemonstracaoAgenda({ searchParams: Promise.resolve({ reserva: 'x' }) })).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' });
     await expect(DemonstracaoAgenda({ searchParams: Promise.resolve({ profissional: 'x' }) })).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' });
+  });
+
+  it('D-050: a reserva de 3 serviços abre com o roteiro dos 3 itens, um por profissional', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    await renderizar({ reserva: 'demo-r9' });
+    const itens = screen.getByRole('list', { name: 'Serviços da reserva' }).querySelectorAll('li');
+    expect(Array.from(itens).map((li) => li.id)).toEqual(['item-demo-r9-i1', 'item-demo-r9-i2', 'item-demo-r9-i3']);
+    expect(screen.getByText(/Falha ao enviar confirmação/)).toBeTruthy();
   });
 
   it('vistaDemonstracao com profissional desconhecido devolve null', () => {

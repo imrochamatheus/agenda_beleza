@@ -8,7 +8,7 @@ import type { SalaoCompleto } from '../../support/factories';
 import { ipNovo } from '../../support/reserva-publica';
 import { conectar } from '../../support/sql';
 
-import { AGORA, DIA_MS, criarAvaliavel, ctxPublico, emitirLink, enviar, fotografia, salaoNovo } from './apoio';
+import { AGORA, DIA_MS, criarAvaliavel, ctxPublico, definirStatus, emitirLink, enviar, fotografia, salaoNovo } from './apoio';
 
 // Verificação independente do tester (D-032): uniformidade, concorrência simples e leitura pública.
 let c: pg.Client;
@@ -40,7 +40,7 @@ describe('uniformidade e leitura', () => {
     const tVenc = (await emitirLink(s, venc.reservaId)).token;
     const tOutro = (await emitirLink(o, outroSalao.reservaId)).token;
     expect(await enviar(s, tUsado)).toEqual({ resultado: 'enviada' });
-    await c.query("UPDATE reserva SET status='nao_compareceu' WHERE id=$1", [nc.reservaId]);
+    await definirStatus(c, nc.reservaId, 'nao_compareceu');
     await c.query("UPDATE cliente SET anonimizada_em=now(), nome=NULL, telefone_e164=NULL WHERE id=$1", [anon.clienteId]);
     const antes = await fotografia(c, s.salaoId);
     const depoisDe30 = new Date(AGORA.getTime() + 30 * DIA_MS);
@@ -80,7 +80,7 @@ describe('uniformidade e leitura', () => {
     await tk(d, '1');
     await tk(e, '2');
     await c.query("UPDATE avaliacao SET retirada_em=now() WHERE reserva_id=$1", [d.reservaId]);
-    await c.query("UPDATE reserva SET status='nao_compareceu' WHERE id=$1", [e.reservaId]);
+    await definirStatus(c, e.reservaId, 'nao_compareceu');
     const p = await lerAvaliacoesPublicas(ctxPublico(t));
     expect(p.total).toBe(2);
     expect(p.media).toBe(4.5);

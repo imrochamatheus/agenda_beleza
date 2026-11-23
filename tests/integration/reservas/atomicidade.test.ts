@@ -13,14 +13,15 @@ import {
   contarLinhas,
   criarCenarioReserva,
   entradaReserva,
-  inserirReservaDireta,
   instalarFalhaPorTrigger,
   sp,
 } from '../../support/reservas';
 import type { TabelaDeFalha } from '../../support/reservas';
 import { conectar, telefoneNovo } from '../../support/sql';
 
-// D-025 T-6c: CA-4, CA-6, CA-20, CA-23 (tudo ou nada, e a fila só depois do commit).
+import { item, ocupar } from './apoio-itens';
+
+// D-025 T-6c: CA-4, CA-6, CA-20, CA-23 (tudo ou nada, e a fila só depois do commit); D-050 T-5: N itens.
 
 let c: pg.Client;
 beforeAll(async () => {
@@ -86,17 +87,17 @@ describe('CA-6: o nome da cliente existente só muda se a transação for confir
     const antes = await contarLinhas(cen.s.salaoId);
     // Depois da revalidação e antes do upsert, outra reserva ocupa o horário: o INSERT falha com 23P01.
     const aposRevalidar = async () => {
-      await inserirReservaDireta(cen, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30') });
+      await ocupar(cen, { inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30') });
     };
     const enfileirar = vi.fn();
     const r = await criarReserva(cen.ctxSistema, entradaReserva(cen, { cliente: { nome: 'Ana Souza', telefone } }), { aposRevalidar, enfileirar });
-    expect(r).toEqual({ resultado: 'horario_indisponivel', causa: '23P01' });
+    expect(r).toEqual({ resultado: 'horario_indisponivel', causa: '23P01', itens: [] });
     const depois = await db().cliente.findUniqueOrThrow({ where: { id: ana.id } });
     expect(depois.nome).toBe('Ana');
     expect(depois.atualizadoEm).toEqual(ana.atualizadoEm);
-    // A reserva e a cliente injetadas pelo gancho são as únicas novas; nenhum item, consentimento nem mensagem.
+    // A reserva (com o seu item) e a cliente injetadas pelo gancho são as únicas novas; nenhum consentimento nem mensagem.
     const contagem = await contarLinhas(cen.s.salaoId);
-    expect(contagem).toEqual({ ...antes, reserva: antes.reserva + 1, cliente: antes.cliente + 1 });
+    expect(contagem).toEqual({ ...antes, reserva: antes.reserva + 1, itens: antes.itens + 1, cliente: antes.cliente + 1 });
     expect(enfileirar).not.toHaveBeenCalled();
   });
 });
@@ -175,5 +176,47 @@ describe('CA-23: falha forçada em cada etapa desfaz tudo', () => {
     });
     expect(r.resultado).toBe('criada');
     expect((await contarLinhas(cen.s.salaoId)).reserva).toBe(1);
+  });
+});
+
+describe('D-050 RN-11: com N itens, o antesDaReserva recebe o envelope e uma falha no INSERT dos itens desfaz tudo', () => {
+  it('antesDaReserva recebe o início do PRIMEIRO item no tempo, não o do primeiro pedido', async () => {
+    const cen = await criarCenarioReserva();
+    const vistos: Date[] = [];
+    const r = await criarReserva(
+      cen.ctxSistema,
+      entradaReserva(cen, { itens: [item(cen, sp(DIA, '14:00'), { servicoId: cen.B }), item(cen, sp(DIA, '10:00'))] }),
+      {
+        antesDaReserva: async (_ctx, _r, d) => {
+          vistos.push(d.inicio);
+          return { permitido: true };
+        },
+        enfileirar: async () => ({ criado: true, id: 'job' }),
+      },
+    );
+    expect(r.resultado).toBe('criada');
+    expect(vistos).toEqual([sp(DIA, '10:00')]);
+  });
+
+  it('falha forçada no INSERT de reserva_item com 3 itens: nenhuma reserva, item, cliente, consentimento ou mensagem', async () => {
+    const cen = await criarCenarioReserva({ jornada: [['00:00', '24:00']] });
+    const C = (await db().servico.create({ data: { salaoId: cen.s.salaoId, nome: 'C', precoCentavos: 3000, duracaoMin: 15 }, select: { id: true } })).id;
+    await db().servicoProfissional.create({ data: { salaoId: cen.s.salaoId, servicoId: C, profissionalId: cen.ana } });
+    const antes = await contarLinhas(cen.s.salaoId);
+    const remover = await instalarFalhaPorTrigger(c, 'reserva_item');
+    const enfileirar = vi.fn();
+    try {
+      await expect(
+        criarReserva(
+          cen.ctxSistema,
+          entradaReserva(cen, { itens: [item(cen, sp(DIA, '10:00')), item(cen, sp(DIA, '11:00'), { servicoId: cen.B }), item(cen, sp(DIA, '15:00'), { servicoId: C })] }),
+          { enfileirar },
+        ),
+      ).rejects.toBeDefined();
+    } finally {
+      await remover();
+    }
+    expect(await contarLinhas(cen.s.salaoId)).toEqual(antes);
+    expect(enfileirar).not.toHaveBeenCalled();
   });
 });

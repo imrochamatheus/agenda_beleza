@@ -198,21 +198,21 @@ export async function lerFotosPublicasDoSalao(ctx: PublicoContext): Promise<Linh
 }
 
 /**
- * Nomes para a tela de confirmação (D-026 RN-11): do salão do contexto, mesmo de serviço ou profissional
- * desativado depois (a reserva guarda o snapshot de preço e duração, não o nome). Ids de outro salão não
- * aparecem.
+ * Nomes para a tela de confirmação (D-026 RN-11; D-050: um profissional por item): do salão do contexto,
+ * mesmo de serviço ou profissional desativado depois (a reserva guarda o snapshot de preço e duração, não o
+ * nome). Ids de outro salão não aparecem.
  */
 export async function lerRotulosDaReserva(
   ctx: PublicoContext,
   servicoIds: readonly string[],
-  profissionalId: string,
-): Promise<{ fuso: string; servicos: Map<string, string>; profissionalNome: string | null }> {
+  profissionalIds: readonly string[],
+): Promise<{ fuso: string; servicos: Map<string, string>; profissionais: Map<string, string> }> {
   const salaoId = exigirPublico(ctx);
   const prisma = obterPrisma();
-  const [salao, servicos, profissional] = await Promise.all([
+  const [salao, servicos, profissionais] = await Promise.all([
     prisma.salao.findUnique({ where: { id: salaoId }, select: { fuso: true } }),
     prisma.servico.findMany({ where: { salaoId, id: { in: [...servicoIds] } }, select: { id: true, nome: true } }),
-    prisma.profissional.findFirst({ where: { salaoId, id: profissionalId }, select: { nome: true } }),
+    prisma.profissional.findMany({ where: { salaoId, id: { in: [...new Set(profissionalIds)] } }, select: { id: true, nome: true } }),
   ]);
   if (!salao) {
     throw new NaoEncontrado();
@@ -220,6 +220,6 @@ export async function lerRotulosDaReserva(
   return {
     fuso: salao.fuso,
     servicos: new Map(servicos.map((s) => [s.id, s.nome])),
-    profissionalNome: profissional?.nome ?? null,
+    profissionais: new Map(profissionais.map((p) => [p.id, p.nome])),
   };
 }

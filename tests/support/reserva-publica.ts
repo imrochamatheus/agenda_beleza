@@ -8,7 +8,7 @@ import { AGORA, DIA, criarCenarioReserva, sp } from './reservas';
 import type { CenarioReserva } from './reservas';
 import { telefoneNovo } from './sql';
 
-// Apoio dos testes da página pública (D-026 T-3): parte do cenário de `criarReserva` (D-025), que deixa o
+// Apoio dos testes da página pública (D-026 T-3; D-050: itens por serviço): parte do cenário de `criarReserva` (D-025), que deixa o
 // salão sem jornada nem reserva e com a Ana e a Bia. Relógio sempre injetado.
 export { AGORA, DIA, criarCenarioReserva, sp };
 export type { CenarioReserva };
@@ -29,13 +29,28 @@ export function ipNovo(): string {
   return `198.51.${Math.floor(contadorDeIp / 250) % 250}.${(contadorDeIp % 250) + 1}`;
 }
 
-/** Entrada válida padrão da página: serviço A com a Ana, terça 10:00 local, aceite do consentimento. */
-export function entradaPublica(c: CenarioReserva, sobre: Partial<EntradaReservaPublica> = {}): EntradaReservaPublica {
+/** Atalhos de um item só (o caso mais comum dos testes de proteção): serviço A por padrão. */
+export type SobreEntradaPublica = Partial<EntradaReservaPublica> & { profissionalId?: string; inicio?: string };
+
+/** Item da página: o mesmo formato que a casca monta a partir de `s` e `h<k>`. */
+export const itemPublico = (servicoId: string, profissionalId: string, inicio: Date | string) => ({
+  servicoId,
+  profissionalId,
+  inicio: typeof inicio === 'string' ? inicio : inicio.toISOString(),
+});
+
+/**
+ * Entrada válida padrão da página: serviço A com a Ana, terça 10:00 local, aceite do consentimento. Sem
+ * `itens`, monta UM item com `servicoIds[0]` (padrão A), `profissionalId` (padrão Ana) e `inicio` (padrão
+ * 10:00); com `itens`, `servicoIds` padrão = os serviços dos itens.
+ */
+export function entradaPublica(c: CenarioReserva, sobre: SobreEntradaPublica = {}): EntradaReservaPublica {
+  const { profissionalId, inicio, ...resto } = sobre;
+  const itens =
+    resto.itens ?? [itemPublico(resto.servicoIds?.[0] ?? c.A, profissionalId ?? c.ana, inicio ?? sp(DIA, '10:00').toISOString())];
   return {
     slug: c.s.slugAtual,
-    servicoIds: [c.A],
-    profissionalId: c.ana,
-    inicio: sp(DIA, '10:00').toISOString(),
+    servicoIds: Array.isArray(itens) ? itens.map((i) => i.servicoId) : [],
     nome: 'Maria da Silva',
     telefone: telefoneNovo(),
     aceites: { mensagensReserva: true, conviteAvaliacao: false },
@@ -43,6 +58,7 @@ export function entradaPublica(c: CenarioReserva, sobre: Partial<EntradaReservaP
     // IP novo por entrada: os limites por IP não vazam entre os casos (D-027).
     ip: ipNovo(),
     tokenHumano: TOKEN_TURNSTILE_SIMULADO,
-    ...sobre,
+    ...resto,
+    itens,
   };
 }

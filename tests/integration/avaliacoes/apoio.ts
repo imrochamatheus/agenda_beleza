@@ -13,7 +13,7 @@ import { criarPublicoContext, contextoDeSistema } from '@/server/tenant/context'
 import { criarSalaoCompleto, instanteFuturo } from '../../support/factories';
 import type { SalaoCompleto } from '../../support/factories';
 import { ipNovo } from '../../support/reserva-publica';
-import { telefoneNovo } from '../../support/sql';
+import { inserirReserva, inserirReservaComItens, telefoneNovo } from '../../support/sql';
 
 // Apoio local aos testes de tests/integration/avaliacoes (D-032). Não é arquivo de teste. SQL direto pelo
 // driver `pg`, sem mocks de banco; o link vem do gerador REAL com relógio, segredo e APP_URL injetados.
@@ -34,11 +34,17 @@ let dia = 10;
 
 export type Avaliavel = { clienteId: string; reservaId: string; telefone: string };
 
-/** Cliente + reserva (por padrão `concluido`) no salão. */
+type StatusSql = 'confirmado' | 'concluido' | 'nao_compareceu' | 'cancelado';
+
+/**
+ * Cliente + reserva (por padrão `concluido`) no salão. D-050: a reserva tem itens; sem `itens`, um item
+ * de 1 h com o gestor-profissional no `status` dado; com `itens`, um item de 30 min por status
+ * (alternando gestor e profissional, encadeados), e a reserva recebe o status DERIVADO.
+ */
 export async function criarAvaliavel(
   c: pg.Client,
   s: SalaoCompleto,
-  o: { nome?: string | null; status?: 'confirmado' | 'concluido' | 'nao_compareceu' | 'cancelado' } = {},
+  o: { nome?: string | null; status?: StatusSql; itens?: StatusSql[] } = {},
 ): Promise<Avaliavel> {
   const telefone = telefoneNovo();
   const { rows } = await c.query<{ id: string }>(
@@ -47,13 +53,33 @@ export async function criarAvaliavel(
   );
   const clienteId = rows[0].id;
   const inicio = instanteFuturo((dia += 1), 13);
-  const fim = new Date(inicio.getTime() + 3_600_000);
-  const r = await c.query<{ id: string }>(
-    `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem)
-     VALUES ($1, $2, $3, $4, $5, $5, $6, 'equipe') RETURNING id::text AS id`,
-    [s.salaoId, s.gestor.profissionalId, clienteId, inicio, fim, o.status ?? 'concluido'],
-  );
-  return { clienteId, reservaId: r.rows[0].id, telefone };
+  if (o.itens) {
+    const servicos = [...s.servicos.ativos, s.servicos.inativoId];
+    const profissionais = [s.gestor.profissionalId!, s.profissional.profissionalId];
+    const { reservaId } = await inserirReservaComItens(c, {
+      salaoId: s.salaoId,
+      clienteId,
+      origem: 'equipe',
+      itens: o.itens.map((status, k) => ({
+        profissionalId: profissionais[k % 2],
+        inicio: new Date(inicio.getTime() + k * 30 * 60_000),
+        duracaoMin: 30,
+        servicoId: servicos[k],
+        status,
+      })),
+    });
+    return { clienteId, reservaId, telefone };
+  }
+  const reservaId = await inserirReserva(c, {
+    salaoId: s.salaoId,
+    profissionalId: s.gestor.profissionalId!,
+    clienteId,
+    inicio,
+    fim: new Date(inicio.getTime() + 3_600_000),
+    status: o.status ?? 'concluido',
+    servicoId: s.servicos.ativos[0],
+  });
+  return { clienteId, reservaId, telefone };
 }
 
 export const ctxSistema = (s: Pick<SalaoCompleto, 'salaoId'>) => contextoDeSistema(s.salaoId, 'teste');
@@ -107,3 +133,15 @@ export async function conviteDe(c: pg.Client, reservaId: string): Promise<Record
 
 export const hashDe = hashDoToken;
 export const novoUuid = randomUUID;
+
+/**
+ * Muda o status de TODOS os itens da reserva e o derivado da reserva (D-050: `reserva.status` é derivado
+ * dos itens; mudar só a reserva deixaria os dois incoerentes).
+ */
+export async function definirStatus(c: pg.Client, reservaId: string, status: StatusSql): Promise<void> {
+  await c.query('UPDATE reserva_item SET status = $2::status_reserva WHERE reserva_id = $1', [reservaId, status]);
+  await c.query(
+    `UPDATE reserva SET status = $2::status_reserva, cancelada_em = CASE WHEN $2::status_reserva = 'cancelado' THEN now() END WHERE id = $1`,
+    [reservaId, status],
+  );
+}

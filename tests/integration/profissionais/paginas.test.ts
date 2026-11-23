@@ -227,7 +227,14 @@ describe('casca acoes.ts', () => {
     const s = await criarSalaoCompleto();
     await comoGestor(s);
     const r = await desativarProfissionalAcao(s.profissional.profissionalId);
-    expect(r).toMatchObject({ status: 'recusado', reservas: [{ id: s.reserva.id, cliente: s.clientes.nomeAtiva }] });
+    // D-050 RN-38: a reserva da fábrica tem 2 itens do profissional → uma linha por item.
+    expect(r).toMatchObject({
+      status: 'recusado',
+      reservas: [
+        { id: s.reserva.id, cliente: s.clientes.nomeAtiva, servicos: [s.servicos.nomes[0]] },
+        { id: s.reserva.id, cliente: s.clientes.nomeAtiva, servicos: [s.servicos.nomes[1]] },
+      ],
+    });
     expect(estadoNext.revalidados).toEqual([]);
     expect(ROTULO_CLIENTE_REMOVIDA).toBe('cliente removida');
 

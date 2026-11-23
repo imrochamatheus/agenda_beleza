@@ -35,6 +35,9 @@ describe('página /dev/mensagens-reserva', () => {
     expect(screen.getByText('Cancelamento enviado')).toBeTruthy();
     expect(screen.getByText('Falha ao enviar convite de avaliação por WhatsApp')).toBeTruthy();
     expect(screen.getByText('Link de avaliação indisponível.')).toBeTruthy();
+    // D-050: a substituição também vem de cancelamento de item; o rótulo não fala só em remarcação.
+    expect(screen.getByText('Cancelamento substituído por alteração posterior')).toBeTruthy();
+    expect(screen.queryByText(/por remarcação posterior/)).toBeNull();
   });
 
   it('?vista=vazia mostra o estado sem mensagens', async () => {

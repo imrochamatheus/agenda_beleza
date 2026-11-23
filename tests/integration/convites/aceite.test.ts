@@ -107,11 +107,12 @@ describe('CA-2: aceite', () => {
     const escopo = filtroDeProfissional(ctx, 'agenda.ver');
     expect(escopo).toEqual({ profissionalId: p.id });
     const periodo = { de: new Date('2026-11-01T00:00:00Z'), ate: new Date('2027-02-01T00:00:00Z') };
-    const { reservas } = await repos().agenda.listarAgenda(ctx, { periodo, profissionalId: p.id, limite: 50 });
-    expect(reservas.map((x) => x.id)).toEqual([proprio]);
+    const { blocos } = await repos().agenda.listarAgenda(ctx, { periodo, profissionalId: p.id, limite: 50, comPosicao: false });
+    expect(blocos.map((x) => x.reservaId)).toEqual([proprio]);
     // O repositório escopado pelo salão A nunca devolve reservas do salão B.
-    const todas = await repos().agenda.listarAgenda(ctx, { periodo, profissionalId: null, limite: 50 });
-    expect(todas.reservas.every((x) => x.id !== b.reserva.id)).toBe(true);
+    const todas = await repos().agenda.listarAgenda(ctx, { periodo, profissionalId: null, limite: 50, comPosicao: false });
+    expect(todas.blocos.length).toBeGreaterThan(1);
+    expect(todas.blocos.every((x) => x.reservaId !== b.reserva.id)).toBe(true);
   });
 
   it('o aceite é permitido com o salão suspenso (pré-contexto, fora da política de estado)', async () => {

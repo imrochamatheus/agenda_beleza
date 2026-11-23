@@ -53,17 +53,47 @@ describe('dia', () => {
     expect(titulos).toContain('Bia Demonstração');
   });
 
-  it('reservas mostram horário local, cliente, serviços e o rótulo textual do status; cancelada e não compareceu (CA-12)', () => {
+  it('um bloco por ITEM com horário do item, cliente, serviço e status do item no masculino; cancelado e não compareceu (D-050 RN-36)', () => {
     renderizar();
     const ana = screen.getByRole('region', { name: 'Ana Demonstração' });
-    const r1 = within(ana).getByRole('link', { name: /10:00–11:00 Maria Souza · Corte feminino · Confirmada/ });
-    expect(r1.getAttribute('href')).toBe('/r/demo-r1');
-    expect(within(ana).getByRole('link', { name: /15:00–16:30 Joana Lima · Corte feminino e Escova · Concluída/ })).toBeTruthy();
+    const r1 = within(ana).getByRole('link', { name: /10:00–11:00 Maria Souza · Corte feminino · Confirmado$/ });
+    expect(r1.getAttribute('href')).toBe('/r/demo-r1#item-demo-r1-i1');
+    expect(within(ana).getByRole('link', { name: /15:00–16:00 Joana Lima · Corte feminino · Concluído$/ })).toBeTruthy();
     const encaixe = within(ana).getByRole('link', { name: /Paula Encaixe/ });
     expect(encaixe.textContent).toContain('Encaixe');
     const bia = screen.getByRole('region', { name: 'Bia Demonstração' });
-    expect(within(bia).getByRole('link', { name: /Renata Alves · Corte feminino · Cancelada/ })).toBeTruthy();
+    expect(within(bia).getByRole('link', { name: /Renata Alves · Corte feminino · Cancelado/ })).toBeTruthy();
+    // O outro item da Joana (Escova, cancelado) fica na coluna da Bia e leva ao MESMO detalhe, na parada dele.
+    expect(within(bia).getByRole('link', { name: /16:00–16:30 Joana Lima · Escova · Cancelado$/ }).getAttribute('href')).toBe('/r/demo-r2#item-demo-r2-i2');
     expect(within(bia).getByRole('link', { name: /Não compareceu/ })).toBeTruthy();
+    expect(screen.queryByText(/Confirmada|Concluída|Cancelada/)).toBeNull();
+  });
+
+  it('reserva de 3 itens: 3 blocos em 3 colunas, "n de 3" com texto completo para o leitor de tela (critério 17)', () => {
+    renderizar();
+    const esperado: [string | RegExp, RegExp, string][] = [
+      ['Ana Demonstração', /11:00–11:30 Lúcia Prado · Escova · Confirmado · serviço 1 de 3 do agendamento$/, 'demo-r9-i1'],
+      ['Bia Demonstração', /11:30–12:10 Lúcia Prado · Hidratação · Confirmado · serviço 2 de 3 do agendamento$/, 'demo-r9-i2'],
+      [/^Carla Antiga/, /12:30–13:15 Lúcia Prado · Manicure · Confirmado · Encaixe · serviço 3 de 3 do agendamento$/, 'demo-r9-i3'],
+    ];
+    for (const [coluna, nome, item] of esperado) {
+      const link = within(screen.getByRole('region', { name: coluna })).getByRole('link', { name: nome });
+      expect(link.getAttribute('href')).toBe(`/r/demo-r9#item-${item}`);
+      // Visível só "n de 3"; a frase completa é só para o leitor de tela.
+      expect(link.querySelector('[aria-hidden="true"]:not(svg)')!.textContent).toMatch(/^\d de 3$/);
+    }
+    // Reserva com um só item não cancelado não tem marcador.
+    expect(screen.getByRole('link', { name: /15:00–16:00 Joana Lima/ }).textContent).not.toMatch(/de \d/);
+  });
+
+  it('geometria: altura = duração do item × 0,1 rem; a marca de falha não muda a altura (critério 18, D-043)', () => {
+    renderizar();
+    const bloco = (nome: RegExp) => screen.getByRole('link', { name: nome }) as HTMLElement;
+    expect(bloco(/Hidratação/).style.height).toBe('4rem');
+    expect(bloco(/11:00–11:30 Lúcia Prado/).style.height).toBe('3rem');
+    expect(bloco(/Manicure/).style.height).toBe('4.5rem');
+    expect(bloco(/16:00–16:30 Joana Lima/).style.height).toBe('3rem');
+    expect(bloco(/11:00–11:30 Lúcia Prado/).style.top).toBe('66rem');
   });
 
   it('anonimizada: "cliente removida"; nenhum telefone na grade (CA-5, CA-17)', () => {
@@ -154,35 +184,43 @@ describe('aviso de truncamento', () => {
   it('aparece com role=status e sem colunas mostra a mensagem', () => {
     const vista = { ...vistaDemonstracao({}, AGORA)!, truncada: true, colunas: [] };
     render(<VistaDaAgenda vista={vista} base="/x" hrefReserva={hrefReserva} baseNovaReserva="/nova" />);
-    expect(screen.getByRole('status').textContent).toContain('primeiras 200 reservas');
+    expect(screen.getByRole('status').textContent).toBe(
+      'Mostrando os primeiros 200 serviços deste período. Use o filtro de profissional ou a visão por dia para ver o restante.',
+    );
     expect(screen.getByText('Nenhum profissional com agenda neste período.')).toBeTruthy();
   });
 });
 
-describe('marca de falha de mensagem (D-043 CA-8, CA-14)', () => {
-  it('dia: só os blocos com falha vigente têm a marca, com texto acessível dentro do link, sem nova parada de tabulação', () => {
+describe('marca de falha de mensagem (D-043 CA-8, CA-14; D-050 CA-34)', () => {
+  it('dia: a marca aparece em TODOS os blocos da reserva com falha, com texto acessível dentro do link, sem nova parada de tabulação', () => {
     renderizar({ data: '2026-12-01' });
     const comFalha = screen.getAllByRole('link', { name: /Falha ao enviar mensagem/ });
-    expect(comFalha.map((l) => l.getAttribute('href'))).toEqual(['/r/demo-r1', '/r/demo-r4']);
+    expect(comFalha.map((l) => l.getAttribute('href'))).toEqual([
+      '/r/demo-r1#item-demo-r1-i1',
+      '/r/demo-r9#item-demo-r9-i1',
+      '/r/demo-r4#item-demo-r4-i1',
+      '/r/demo-r9#item-demo-r9-i2',
+      '/r/demo-r9#item-demo-r9-i3',
+    ]);
     // O texto acessível vem antes do horário e fica dentro do link.
     expect(comFalha[0].textContent).toMatch(/^Falha ao enviar mensagem\. 10:00–11:00 Maria Souza/);
     expect(comFalha[0].querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
     expect(comFalha[0].querySelectorAll('a, button, [tabindex]')).toHaveLength(0);
     // Sem a falha, o nome do link não muda.
-    const sem = screen.getByRole('link', { name: /Joana Lima/ });
+    const sem = screen.getByRole('link', { name: /15:00–16:00 Joana Lima/ });
     expect(sem.textContent).not.toContain('Falha');
     expect(sem.querySelector('svg')).toBeNull();
   });
 
-  it('semana: a marca tem texto visível dentro do item da reserva', () => {
+  it('semana: a marca tem texto visível dentro de cada linha de item da reserva', () => {
     renderizar({ data: '2026-12-01', visao: 'semana' });
     const terca = screen.getByRole('region', { name: 'Terça-feira, 01/12/2026' });
     const links = within(terca).getAllByRole('link', { name: /Falha ao enviar mensagem/ });
-    expect(links).toHaveLength(2);
+    expect(links).toHaveLength(5);
     for (const l of links) {
       expect(l.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
       expect(l.textContent).toMatch(/Falha ao enviar mensagem$/);
     }
-    expect(within(terca).getByRole('link', { name: /Joana Lima/ }).textContent).not.toContain('Falha');
+    expect(within(terca).getByRole('link', { name: /15:00–16:00 Joana Lima/ }).textContent).not.toContain('Falha');
   });
 });

@@ -10,15 +10,16 @@ import type { Executor } from './transacao';
 // Repositório de profissionais (D-005; D-013 §3.2). Todo método filtra pelo salão do contexto.
 //
 // ORDEM DE TRAVAS (D-013 §3.2; obrigação para E1.4 e E3.x): `profissional` (SELECT … FOR UPDATE OF p)
-// → leitura de `reserva` → `profissional` (UPDATE) → `sessao` → `convite`. Ninguém trava `usuario`.
-// A trava é FOR UPDATE (nunca FOR NO KEY UPDATE): ela conflita com o FOR KEY SHARE que o PostgreSQL
-// toma na linha referenciada quando alguém insere uma `reserva`/`convite` apontando para ela, de modo
-// que a desativação espera essas inserções e, ao obter a trava, enxerga o que foi confirmado (D-7).
+// → leitura de `reserva_item` (D-050) → `profissional` (UPDATE) → `sessao` → `convite`. Ninguém trava
+// `usuario`. A trava é FOR UPDATE (nunca FOR NO KEY UPDATE): ela conflita com o FOR KEY SHARE que o
+// PostgreSQL toma na linha referenciada quando alguém insere um `reserva_item`/`convite` apontando para
+// ela, de modo que a desativação espera essas inserções e, ao obter a trava, enxerga o que foi
+// confirmado (D-7).
 // E3.2/E3.4/E3.5 devem conferir `ativo` com FOR SHARE na mesma linha antes de gravar a reserva
 // (D-025: `travarParaReserva`, depois do salão FOR SHARE e antes dos serviços, com FOR NO KEY UPDATE
-// (DEF-1): E3.4/E3.5, em todo comando que INSIRA ou ATUALIZE `reserva` para status ocupante (criar,
-// reagendar, voltar a `confirmado`), devem tomar FOR NO KEY UPDATE (ou mais forte) no profissional
-// ANTES do comando; cancelar pode manter FOR SHARE. Ver o cabeçalho de repos/servico.ts.)
+// (DEF-1): todo comando que INSIRA ou ATUALIZE `reserva_item` para status ocupante (criar, remarcar
+// item) deve tomar FOR NO KEY UPDATE (ou mais forte) no profissional ANTES do comando. D-050: com N
+// profissionais, `travarVariosParaReserva` (laço em ordem de id). Ver o cabeçalho de repos/servico.ts.)
 
 export interface RepoProfissional {
   buscarPorId(ctx: ContextoEscopado, id: string): Promise<ProfissionalDTO>;
@@ -48,6 +49,14 @@ export interface RepoProfissional {
    * pg_stat_activity pelos testes.
    */
   travarParaReserva(ctx: ContextoEscopado, id: string): Promise<{ ativo: boolean } | null>;
+  /**
+   * D-050 A-10/Q12: `travarParaReserva` em LAÇO, um comando por id, sobre os ids DISTINTOS em
+   * minúsculas e ordenados (a ordem lexicográfica da string canônica é a ordem do uuid no PostgreSQL),
+   * para que transações com conjuntos sobrepostos travem sempre na mesma ordem (sem impasse). Devolve
+   * um Map por id em minúsculas: `{ ativo }` ou null (inexistente, de outro salão ou malformado; o
+   * malformado não é consultado). Lista vazia → Map vazio sem consulta. Só dentro de emTransacao.
+   */
+  travarVariosParaReserva(ctx: ContextoEscopado, ids: readonly string[]): Promise<Map<string, { ativo: boolean } | null>>;
   /** Grava nome e e-mail; NaoEncontrado se a linha não é do salão. */
   atualizarDados(ctx: ContextoEscopado, id: string, d: { nome: string; email: string | null }): Promise<ProfissionalDTO>;
   /**
@@ -128,6 +137,19 @@ export function criarRepoProfissional(db: Executor): RepoProfissional {
     }
   }
 
+  async function travarParaReserva(ctx: ContextoEscopado, id: string): Promise<{ ativo: boolean } | null> {
+    const salaoId = exigirEscopo(ctx);
+    if (!ehUuid(id)) {
+      return null;
+    }
+    const linhas = await db.$queryRaw<{ ativo: boolean }[]>`
+      SELECT p.ativo
+        FROM profissional p
+       WHERE p.id = ${id}::uuid AND p.salao_id = ${salaoId}::uuid
+         FOR NO KEY UPDATE OF p`;
+    return linhas[0] ?? null;
+  }
+
   return {
     buscarPorId,
 
@@ -181,17 +203,16 @@ export function criarRepoProfissional(db: Executor): RepoProfissional {
       });
     },
 
-    async travarParaReserva(ctx, id) {
-      const salaoId = exigirEscopo(ctx);
-      if (!ehUuid(id)) {
-        return null;
+    travarParaReserva,
+
+    async travarVariosParaReserva(ctx, ids) {
+      exigirEscopo(ctx);
+      const ordenados = [...new Set(ids.map((id) => id.toLowerCase()))].sort();
+      const travas = new Map<string, { ativo: boolean } | null>();
+      for (const id of ordenados) {
+        travas.set(id, await travarParaReserva(ctx, id));
       }
-      const linhas = await db.$queryRaw<{ ativo: boolean }[]>`
-        SELECT p.ativo
-          FROM profissional p
-         WHERE p.id = ${id}::uuid AND p.salao_id = ${salaoId}::uuid
-           FOR NO KEY UPDATE OF p`;
-      return linhas[0] ?? null;
+      return travas;
     },
 
     async travarParaAlteracao(ctx, id) {

@@ -16,6 +16,7 @@ const ESPERADO: Record<Operacao, [Escopo, Escopo, Escopo]> = {
   'agenda.ver': ['salao', 'proprio', 'negado'],
   'reserva.criar': ['salao', 'proprio', 'negado'],
   'reserva.alterar': ['salao', 'proprio', 'negado'],
+  'reserva.cancelar_todos': ['salao', 'negado', 'negado'],
   'bloqueio_profissional.gerir': ['salao', 'proprio', 'negado'],
   'bloqueio_salao.gerir': ['salao', 'negado', 'negado'],
   'jornada.ver': ['salao', 'proprio', 'negado'],
@@ -97,7 +98,7 @@ describe('CA-11: exigirPermissao', () => {
 
   it('CA-11: operação negada ao profissional (ex.: editar jornada) → AcessoNegado', () => {
     const p = ctx('profissional', PROF_PROPRIO);
-    for (const op of ['jornada.editar', 'servico.gerir', 'cliente.gerir', 'bloqueio_salao.gerir'] as const) {
+    for (const op of ['jornada.editar', 'servico.gerir', 'cliente.gerir', 'bloqueio_salao.gerir', 'reserva.cancelar_todos'] as const) {
       const erro = (() => {
         try {
           exigirPermissao(p, op, { profissionalId: PROF_PROPRIO });

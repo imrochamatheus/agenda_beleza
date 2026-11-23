@@ -46,6 +46,8 @@ const MIGRACOES = [
   '20261124000000_avaliacao_denuncia',
   '20261125000000_convite_pendente_unico',
   '20261126000000_sim_mp_operacao_atualizar_meio_pagamento',
+  // D-050: item autônomo (docs/demandas/D-050/dba.md).
+  '20261127000000_reserva_item_autonomo',
 ];
 
 describe('CA-17: a guarda roda antes de qualquer conexão (prepararExecucao)', () => {

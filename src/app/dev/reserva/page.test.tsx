@@ -48,4 +48,20 @@ describe('página /dev/reserva (CA-12)', () => {
     expect(vazio.container.textContent).not.toMatch(/undefined|null/);
     expect(screen.queryByRole('heading', { name: 'Endereço' })).toBeNull();
   });
+
+  it('vistas do exemplo D-050: reescolha, confirmada e conflito', async () => {
+    vi.stubEnv('VITRINE_COMPONENTES', 'true');
+    const reescolha = await renderizar({ vista: 'reescolha' });
+    expect(screen.getByRole('heading', { level: 2, name: 'Escolha outro horário para Hidratação' })).toBeTruthy();
+    expect((screen.getByRole('textbox', { name: /Nome/ }) as HTMLInputElement).value).toBe('Maria Souza');
+    expect(new Set((screen.getAllByRole('radio') as HTMLInputElement[]).map((r) => r.name))).toEqual(new Set(['h1']));
+    reescolha.unmount();
+    const confirmada = await renderizar({ vista: 'confirmada' });
+    expect(screen.getByText('Reserva confirmada!')).toBeTruthy();
+    expect(confirmada.container.textContent).toMatch(/TotalR\$\s205,00/);
+    confirmada.unmount();
+    await renderizar({ vista: 'conflito' });
+    expect(screen.getByRole('heading', { level: 2, name: 'Hidratação' })).toBeTruthy();
+    expect(screen.getByText('Os horários de Hidratação neste dia coincidem com os serviços que você já escolheu.')).toBeTruthy();
+  });
 });

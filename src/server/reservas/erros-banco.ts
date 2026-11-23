@@ -1,13 +1,18 @@
 // Reconhecimento da violação da exclusion constraint de reserva (D-025 A-8, RN-3). Só `23P01` COM o
-// nome `reserva_sem_sobreposicao`: nenhum dos dois sozinho basta. Puro, sem imports de servidor.
+// nome `reserva_item_sem_sobreposicao` (D-050 §3.3: a anti-sobreposição por profissional passou para
+// os itens; o nome antigo `reserva_sem_sobreposicao` deixou de existir e NÃO é aceito): nenhum dos dois
+// sozinho basta. `reserva_item_mesma_reserva_sem_sobreposicao` NUNCA é reconhecida (indica falha da
+// checagem pura `conferirItens`, que roda antes do INSERT/UPDATE; dba.md M-6). A citação é sempre o
+// nome ENTRE ASPAS, então o nome da outra exclusion (que contém o sufixo) não casa. Puro, sem imports
+// de servidor.
 //
 // Forma real capturada no Prisma 7 (adaptador pg), INSERT bruto ($executeRaw/$queryRaw, com ou sem
 // transação): PrismaClientKnownRequestError, `code = 'P2010'`, sem `cause`,
 // `meta.driverAdapterError.cause = { originalCode: '23P01', code: '23P01', originalMessage/message:
-// 'conflicting key value violates exclusion constraint "reserva_sem_sobreposicao"', detail, … }`.
+// 'conflicting key value violates exclusion constraint "reserva_item_sem_sobreposicao"', detail, … }`.
 // O nome da restrição só aparece nesses textos do driver; não há campo `constraint` separado.
 
-export const RESTRICAO_SOBREPOSICAO = 'reserva_sem_sobreposicao';
+export const RESTRICAO_SOBREPOSICAO = 'reserva_item_sem_sobreposicao';
 const SQLSTATE_EXCLUSAO = '23P01';
 
 type Obj = Record<string, unknown>;

@@ -2,6 +2,8 @@ import { randomInt, randomUUID } from 'node:crypto';
 
 import pg from 'pg';
 
+import { derivarReserva } from '@/server/reservas/itens';
+
 import { urlDoWorker } from './db';
 
 // Helpers mínimos dos testes de banco da D-004 (SQL direto pelo driver pg: err.code e
@@ -90,34 +92,171 @@ export async function criarServico(c: pg.Client, salaoId: string): Promise<strin
   );
 }
 
+type StatusReservaSql = 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
+type Instante = string | Date;
+
+const iso = (t: Instante): string => (t instanceof Date ? t : new Date(t)).toISOString();
+const MIN_MS = 60_000;
+
+/**
+ * Reserva de UM item no formato antigo (D-050 R-12, compatível com os testes anteriores): grava a
+ * reserva e um item com o profissional, `[inicio, fim)`, `ocupadoAte` (padrão `fim`), status e encaixe
+ * dados, derivados coerentes (status/inicio/fim da reserva = os do item; `cancelada_em` só se
+ * `cancelado`). `servicoId` ausente → cria um serviço "Serviço de teste" no salão. `fim - inicio` deve
+ * ser um número inteiro de minutos de 1 a 1440 (reserva_item_fim_chk/duracao_teto_chk).
+ */
 export type NovaReserva = {
   salaoId: string;
   profissionalId: string;
   clienteId: string;
-  inicio: string;
-  fim: string;
+  inicio: Instante;
+  fim: Instante;
   /** Padrão: igual a `fim` (intervalo 0). */
-  ocupadoAte?: string;
-  status?: 'confirmado' | 'cancelado' | 'concluido' | 'nao_compareceu';
+  ocupadoAte?: Instante;
+  status?: StatusReservaSql;
   chaveRequisicao?: string | null;
+  encaixe?: boolean;
+  servicoId?: string;
+  /** Revisão da reserva e do item (padrão 0). */
+  revisao?: number;
 };
 
+/**
+ * Insere a reserva e o item num ÚNICO comando (CTEs): um 23P01 de `reserva_item_sem_sobreposicao` (ou
+ * outro erro) não deixa reserva órfã. Devolve o id da reserva.
+ */
 export async function inserirReserva(c: pg.Client, r: NovaReserva): Promise<string> {
+  const dur = (new Date(iso(r.fim)).getTime() - new Date(iso(r.inicio)).getTime()) / MIN_MS;
+  if (!Number.isInteger(dur)) throw new RangeError('inserirReserva: fim - inicio deve ser um número inteiro de minutos');
+  const status = r.status ?? 'confirmado';
   return id(
     c,
-    `INSERT INTO reserva (salao_id, profissional_id, cliente_id, inicio, fim, ocupado_ate, status, origem, chave_requisicao)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'publico', $8) RETURNING id`,
+    `WITH s AS (
+       INSERT INTO servico (salao_id, nome, preco_centavos, duracao_min)
+       SELECT $1, 'Serviço de teste', 5000, GREATEST($10::int, 1) WHERE $9::uuid IS NULL
+       RETURNING id
+     ), r AS (
+       INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem, chave_requisicao, revisao, cancelada_em)
+       VALUES ($1, $3, $4::timestamptz, $5::timestamptz, $7::status_reserva, 'publico', $8, $11,
+               CASE WHEN $7::status_reserva = 'cancelado' THEN now() END)
+       RETURNING id
+     ), i AS (
+       INSERT INTO reserva_item (salao_id, reserva_id, servico_id, profissional_id, ordem, preco_centavos, duracao_min,
+                                 inicio, fim, ocupado_ate, status, encaixe, revisao)
+       SELECT $1, r.id, COALESCE($9::uuid, (SELECT id FROM s)), $2, 0, 5000, $10, $4::timestamptz, $5::timestamptz,
+              $6::timestamptz, $7::status_reserva, $12, $11
+         FROM r
+       RETURNING reserva_id
+     )
+     SELECT reserva_id AS id FROM i`,
     [
       r.salaoId,
       r.profissionalId,
       r.clienteId,
-      r.inicio,
-      r.fim,
-      r.ocupadoAte ?? r.fim,
-      r.status ?? 'confirmado',
+      iso(r.inicio),
+      iso(r.fim),
+      iso(r.ocupadoAte ?? r.fim),
+      status,
       r.chaveRequisicao ?? null,
+      r.servicoId ?? null,
+      dur,
+      r.revisao ?? 0,
+      r.encaixe ?? false,
     ],
   );
+}
+
+/** Item de `inserirReservaComItens`. `fim = inicio + duracaoMin`; `ocupadoAte = fim + intervaloMin`. */
+export type NovoItemSql = {
+  profissionalId: string;
+  inicio: Instante;
+  /** Padrão 30. */
+  duracaoMin?: number;
+  /** Padrão 0. */
+  intervaloMin?: number;
+  status?: StatusReservaSql;
+  encaixe?: boolean;
+  /** Ausente → cria um serviço novo no salão (a UNIQUE (salao, reserva, servico) exige serviços distintos). */
+  servicoId?: string;
+  precoCentavos?: number;
+  /** Revisão do item (padrão: a da reserva). */
+  revisao?: number;
+};
+
+/**
+ * Reserva com N itens (D-050) gravada por SQL direto: derivados (status, inicio, fim, cancelada_em) pela
+ * MESMA regra de `derivarReserva` (reservas/itens.ts) e itens num único comando com a reserva (CTE).
+ * `ordem` = posição no array. Devolve o id da reserva e os ids dos itens na ordem do array.
+ */
+export async function inserirReservaComItens(
+  c: pg.Client,
+  r: {
+    salaoId: string;
+    clienteId: string;
+    itens: NovoItemSql[];
+    origem?: 'publico' | 'equipe';
+    revisao?: number;
+    chaveRequisicao?: string | null;
+  },
+): Promise<{ reservaId: string; itemIds: string[] }> {
+  if (r.itens.length === 0) throw new RangeError('inserirReservaComItens: ao menos um item');
+  const servicos: string[] = [];
+  for (const it of r.itens) {
+    servicos.push(it.servicoId ?? (await criarServico(c, r.salaoId)));
+  }
+  const revisao = r.revisao ?? 0;
+  const itens = r.itens.map((it) => {
+    const inicio = new Date(iso(it.inicio));
+    const dur = it.duracaoMin ?? 30;
+    const fim = new Date(inicio.getTime() + dur * MIN_MS);
+    return {
+      ...it,
+      inicio,
+      fim,
+      dur,
+      ocupadoAte: new Date(fim.getTime() + (it.intervaloMin ?? 0) * MIN_MS),
+      status: it.status ?? ('confirmado' as const),
+    };
+  });
+  const d = derivarReserva(itens, null, new Date());
+  const res = await c.query<{ reserva_id: string; id: string; ordem: number }>(
+    `WITH r AS (
+       INSERT INTO reserva (salao_id, cliente_id, inicio, fim, status, origem, chave_requisicao, revisao, cancelada_em)
+       VALUES ($1, $2, $3::timestamptz, $4::timestamptz, $5::status_reserva, $6::origem_reserva, $7, $8, $9::timestamptz)
+       RETURNING id
+     )
+     INSERT INTO reserva_item (salao_id, reserva_id, servico_id, profissional_id, ordem, preco_centavos, duracao_min,
+                               inicio, fim, ocupado_ate, status, encaixe, revisao)
+     SELECT $1, r.id, x.servico, x.prof, x.ordem, x.preco, x.dur, x.ini, x.fim, x.ocup, x.st, x.enc, x.rev
+       FROM r, unnest($10::uuid[], $11::uuid[], $12::int[], $13::int[], $14::int[], $15::timestamptz[], $16::timestamptz[],
+                      $17::timestamptz[], $18::status_reserva[], $19::bool[], $20::int[])
+            AS x(servico, prof, ordem, preco, dur, ini, fim, ocup, st, enc, rev)
+     RETURNING reserva_id, id, ordem`,
+    [
+      r.salaoId,
+      r.clienteId,
+      d.inicio.toISOString(),
+      d.fim.toISOString(),
+      d.status,
+      r.origem ?? 'publico',
+      r.chaveRequisicao ?? null,
+      revisao,
+      d.canceladaEm?.toISOString() ?? null,
+      servicos,
+      itens.map((i) => i.profissionalId),
+      itens.map((_, k) => k),
+      itens.map((i) => i.precoCentavos ?? 5000),
+      itens.map((i) => i.dur),
+      itens.map((i) => i.inicio.toISOString()),
+      itens.map((i) => i.fim.toISOString()),
+      itens.map((i) => i.ocupadoAte.toISOString()),
+      itens.map((i) => i.status),
+      itens.map((i) => i.encaixe ?? false),
+      itens.map((i) => i.revisao ?? revisao),
+    ],
+  );
+  const porOrdem = [...res.rows].sort((a, b) => a.ordem - b.ordem);
+  return { reservaId: porOrdem[0].reserva_id, itemIds: porOrdem.map((x) => x.id) };
 }
 
 /** Salão com um profissional e uma cliente, todos novos. */

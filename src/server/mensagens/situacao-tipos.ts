@@ -4,6 +4,11 @@ import type { EstadoMensagem } from './tipos';
 // servidor: nunca `erroCodigo` bruto, destinatário, parâmetros, id do provedor nem `erro_detalhe`.
 export type MensagemSituacao = {
   id: string;
+  /**
+   * D-050 RN-29/RN-37: item a que a mensagem se refere (remarcação/cancelamento de um item); null = reserva
+   * inteira (confirmação, convite, "cancelar todos" e mensagens antigas). Opcional só para as vitrines.
+   */
+  reservaItemId?: string | null;
   estado: EstadoMensagem;
   rotulo: string;
   motivo: string | null;

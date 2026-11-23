@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useId, useMemo, type ReactNode } from 'react';
 
 import { formatarDeslocamentoUtc, formatarHora, FUSO_PADRAO } from '@/lib/format';
 
@@ -24,6 +24,14 @@ export type SlotGridProps = {
   /** Padrão: EmptyState "Nenhum horário disponível nesta data." */
   vazio?: ReactNode;
   disabled?: boolean;
+  /**
+   * Texto (serializável) antes do ISO no `value` de cada rádio: `value = prefixoDoValor + iso`
+   * (D-050 C1; ex.: `"<profissionalId>_"`). Várias grades com o mesmo `name` e prefixos distintos
+   * formam UM grupo de rádios (uma parada de Tab, uma escolha). Padrão: sem prefixo.
+   */
+  prefixoDoValor?: string;
+  /** 'discreta': legenda menor e suave, quando o título acima já nomeia o grupo. Padrão 'forte'. */
+  nivelLegenda?: 'forte' | 'discreta';
 };
 
 type Horario = { iso: string; texto: string };
@@ -52,7 +60,11 @@ export function montarHorarios(instantes: readonly Date[], fuso: string): Horari
 
 /**
  * Grade de horários (D-009 RN-21): rádios nativos num fieldset (uma parada de Tab por grupo;
- * setas mudam a seleção). A identidade de cada horário é o instante ISO, nunca o rótulo.
+ * setas mudam a seleção). A identidade de cada horário é o instante ISO, nunca o rótulo; o valor
+ * enviado é `prefixoDoValor + iso`.
+ *
+ * Não controlado, a marcação é do navegador (`defaultChecked`): grades com o mesmo `name` se
+ * desmarcam entre si sem que o React reponha uma marcação antiga, e funciona sem JavaScript.
  */
 export function SlotGrid({
   instantes,
@@ -64,26 +76,25 @@ export function SlotGrid({
   name,
   vazio,
   disabled,
+  prefixoDoValor = '',
+  nivelLegenda = 'forte',
 }: SlotGridProps) {
   const gerado = useId();
   const nome = name ?? gerado;
   const controlado = selecionado !== undefined;
-  const [interno, setInterno] = useState<string | null>(selecionadoInicial?.toISOString() ?? null);
-  const atual = controlado ? (selecionado?.toISOString() ?? null) : interno;
+  const atual = controlado ? (selecionado?.toISOString() ?? null) : null;
+  const inicial = selecionadoInicial?.toISOString() ?? null;
   const horarios = useMemo(() => montarHorarios(instantes, fuso), [instantes, fuso]);
 
   if (horarios.length === 0) {
     return <>{vazio ?? <EmptyState titulo="Nenhum horário disponível nesta data." nivelTitulo={3} />}</>;
   }
 
-  function escolher(iso: string) {
-    if (!controlado) setInterno(iso);
-    onSelecionar?.(new Date(iso));
-  }
+  const legenda = nivelLegenda === 'discreta' ? `${estilos.legenda} ${estilos.legendaDiscreta}` : estilos.legenda;
 
   return (
     <fieldset className={estilos.grupo} disabled={disabled}>
-      <legend className={estilos.legenda}>{rotuloGrupo}</legend>
+      <legend className={legenda}>{rotuloGrupo}</legend>
       <div className={estilos.grade}>
         {horarios.map((horario) => (
           <label key={horario.iso} className={estilos.horario}>
@@ -91,9 +102,11 @@ export function SlotGrid({
               type="radio"
               className={estilos.controle}
               name={nome}
-              value={horario.iso}
-              checked={atual === horario.iso}
-              onChange={() => escolher(horario.iso)}
+              value={prefixoDoValor + horario.iso}
+              {...(controlado
+                ? { checked: atual === horario.iso }
+                : { defaultChecked: inicial === horario.iso })}
+              onChange={() => onSelecionar?.(new Date(horario.iso))}
             />
             <span className={estilos.texto}>{horario.texto}</span>
           </label>

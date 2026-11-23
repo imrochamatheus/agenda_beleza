@@ -7,7 +7,9 @@ import { repos } from '@/server/repos';
 import { DIA, contarLinhas, criarCenarioReserva, entradaReserva, sp } from '../../support/reservas';
 import { telefoneNovo } from '../../support/sql';
 
-// D-025 T-6c: CA-10 (ids de outro salão ou malformados) e CA-13 (isolamento entre salões).
+import { item, um } from './apoio-itens';
+
+// D-025 T-6c: CA-10 (ids de outro salão ou malformados) e CA-13 (isolamento entre salões); D-050 CA-50 (criação com itens).
 
 beforeEach(() => {
   vi.spyOn(console, 'info').mockImplementation(() => {});
@@ -40,17 +42,24 @@ describe('CA-10: ids de outro salão, inexistentes e malformados', () => {
     const antesA = await fotografia(a.s.salaoId);
     const antesB = await fotografia(b.s.salaoId);
     const tentar = (sobre: Parameters<typeof entradaReserva>[1]) => criarReserva(a.ctxSistema, entradaReserva(a, sobre), { enfileirar });
+    const dez = sp(DIA, '10:00');
+    const onze = sp(DIA, '11:00');
 
-    const profDeB = await tentar({ profissionalId: b.ana });
-    expect(profDeB).toEqual({ resultado: 'profissional_indisponivel' });
-    expect(await tentar({ profissionalId: INEXISTENTE })).toEqual(profDeB);
-    expect(await tentar({ profissionalId: 'malformado' })).toEqual(profDeB);
+    const profDeB = await tentar(um(a, dez, { profissionalId: b.ana }));
+    expect(profDeB).toEqual({ resultado: 'profissional_indisponivel', itens: [0] });
+    expect(await tentar(um(a, dez, { profissionalId: INEXISTENTE }))).toEqual(profDeB);
+    expect(await tentar(um(a, dez, { profissionalId: 'malformado' }))).toEqual(profDeB);
+    // Num segundo item, o índice aponta o item com o profissional de B.
+    expect(await tentar({ itens: [item(a, dez), item(a, onze, { servicoId: a.B, profissionalId: b.ana })] })).toEqual({
+      resultado: 'profissional_indisponivel',
+      itens: [1],
+    });
 
-    const servDeB = await tentar({ servicoIds: [b.A] });
+    const servDeB = await tentar(um(a, dez, { servicoId: b.A }));
     expect(servDeB).toEqual({ resultado: 'servico_indisponivel' });
-    expect(await tentar({ servicoIds: [INEXISTENTE] })).toEqual(servDeB);
-    expect(await tentar({ servicoIds: ['malformado'] })).toEqual(servDeB);
-    expect(await tentar({ servicoIds: [a.A, b.B] })).toEqual(servDeB);
+    expect(await tentar(um(a, dez, { servicoId: INEXISTENTE }))).toEqual(servDeB);
+    expect(await tentar(um(a, dez, { servicoId: 'malformado' }))).toEqual(servDeB);
+    expect(await tentar({ itens: [item(a, dez), item(a, onze, { servicoId: b.B })] })).toEqual(servDeB);
 
     expect(await fotografia(a.s.salaoId)).toBe(antesA);
     expect(await fotografia(b.s.salaoId)).toBe(antesB);

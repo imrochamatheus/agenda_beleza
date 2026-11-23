@@ -75,12 +75,12 @@ describe('CA-7: futuras em paralelo', () => {
     );
     // Cada tentativa é "criada", "recusada por futuras" ou "horário indisponível" (mesmo profissional e horário): nunca 5xx.
     for (const r of rs) {
-      expect(['confirmada', 'recusado', 'voltar']).toContain(r.resultado);
+      expect(['confirmada', 'recusado', 'reescolher']).toContain(r.resultado);
       if (r.resultado === 'recusado') expect(r.mensagem).toBe(MENSAGENS_PROTECAO.futuras);
     }
     expect(rs.filter((r) => r.resultado === 'confirmada').length).toBeLessThanOrEqual(1);
     expect(await obterPrisma().reserva.count({ where: { salaoId: c.s.salaoId, status: 'confirmado' } })).toBeLessThanOrEqual(3);
-    // Se ninguém criou, só foi por conflito de horário (todas 'voltar'); com 1 ou mais criadas, o total é 3.
+    // Se ninguém criou, só foi por conflito de horário (todas 'reescolher'); com 1 ou mais criadas, o total é 3.
     const n3 = await obterPrisma().reserva.count({ where: { salaoId: c.s.salaoId, status: 'confirmado' } });
     expect(n3).toBe(2 + rs.filter((r) => r.resultado === 'confirmada').length);
   });

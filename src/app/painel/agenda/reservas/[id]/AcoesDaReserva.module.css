@@ -1,49 +1,132 @@
-/* Ações do detalhe da reserva (D-030). Só tokens do tema (globals.css); breakpoint único 48rem. */
-.acoes {
-  display: grid;
-  gap: var(--espaco-6);
-  max-width: 40rem;
-}
+/* Ações por item do detalhe da reserva (D-030; D-050 web-design §5.10). Só tokens do tema (globals.css);
+   breakpoint único 48rem. Independente do CSS da nova reserva (posse e evolução separadas). */
 
-.secao {
-  display: grid;
-  gap: var(--espaco-3);
-}
-
-.secao h2 {
-  margin: 0;
-}
-
+/* Linha de botões/links de uma parada. */
 .linha {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--espaco-3);
+  gap: var(--espaco-2) var(--espaco-3);
+  margin: 0;
 }
 
-.resultado {
-  padding: var(--espaco-4);
-  border: 1px solid var(--cor-borda-sutil);
-  border-radius: var(--raio);
-  background: var(--cor-superficie);
+/* Remarcar · Cancelar: links GET com alvo mínimo de 2,75 rem. */
+.linkAcao {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--alvo-minimo);
+  padding: 0 var(--espaco-1);
+  color: var(--cor-primaria-forte);
   font-weight: 600;
+  text-underline-offset: 0.15em;
 }
 
-.resultado:focus {
+.linkAcao:focus-visible,
+.linkBotao:focus-visible {
   outline: var(--foco-largura) solid var(--cor-foco);
   outline-offset: var(--foco-afastamento);
 }
 
+.linkBotao {
+  text-decoration: none;
+}
+
+/* Painel aberto sob a parada (formulário de remarcar ou confirmação): ocupa a linha inteira. */
+.painel {
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+.formulario {
+  display: grid;
+  gap: var(--espaco-4);
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda-sutil);
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+}
+
+.formulario h3 {
+  margin: 0;
+  font-family: var(--fonte-titulo), Georgia, serif;
+  font-size: var(--texto-lg);
+  font-weight: 500;
+  scroll-margin-top: var(--espaco-4);
+}
+
+.formulario h3:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.fixo {
+  margin: 0;
+}
+
+.resumoErros,
+.aviso,
 .confirmacao {
   display: grid;
-  gap: var(--espaco-3);
+  gap: var(--espaco-2);
   padding: var(--espaco-4);
-  border: 2px solid var(--cor-aviso-texto);
   border-radius: var(--raio);
+  scroll-margin-top: var(--espaco-4);
+}
+
+.resumoErros {
+  border: 2px solid var(--cor-erro-texto);
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro-texto);
+}
+
+.aviso,
+.confirmacao {
+  border: 2px solid var(--cor-aviso-texto);
   background: var(--cor-aviso-fundo);
   color: var(--cor-aviso-texto);
 }
 
+.resumoErros:focus,
+.aviso:focus,
+.confirmacao:focus {
+  outline: var(--foco-largura) solid var(--cor-foco);
+  outline-offset: var(--foco-afastamento);
+}
+
+.resumoErros p,
+.aviso p,
 .confirmacao p {
   margin: 0;
+}
+
+.resumoErros ul,
+.aviso ul {
+  margin: 0;
+  padding-left: var(--espaco-4);
+}
+
+.resumoErros a {
+  color: inherit;
+}
+
+.titulo {
+  font-weight: 600;
+}
+
+.cancelarTodos {
+  display: grid;
+  gap: var(--espaco-3);
+  margin-block-start: var(--espaco-3);
+}
+
+/* Texto só para leitor de tela (sem cor, sem token). */
+.somenteLeitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

@@ -1,8 +1,8 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { consultarDisponibilidade, listarProfissionaisElegiveis } from '@/server/disponibilidade/servico';
-import type { EntradaDisponibilidade } from '@/server/disponibilidade/tipos';
+import { consultarDisponibilidadePorServico } from '@/server/disponibilidade/servico';
+import type { EntradaDisponibilidadePorServico } from '@/server/disponibilidade/tipos';
 import { NaoEncontrado } from '@/server/tenant/erros';
 
 import { conectar } from '../../support/sql';
@@ -10,12 +10,13 @@ import { conectar } from '../../support/sql';
 import {
   AGORA, DIA, DIA_SEGUINTE, MANAUS, TODOS_OS_DIAS, criarCenario, ctxPublico, definirFuncionamento, definirRegras,
   faixa, inserirBloqueio, inserirCliente, inserirJornada, inserirReserva, marcarFuncionamentoNaoInformado,
-  rotulos, sp, UUID_INEXISTENTE,
+  profissionaisDe, rotulos, sp, UUID_INEXISTENTE,
 } from './apoio';
 import type { Cenario } from './apoio';
 
-// D-018 T-4: serviço de disponibilidade contra PostgreSQL real (RN-1..RN-27). Relógio injetado (AGORA);
-// cada cenário nasce de criarCenario (A 30 min R$ 50, B 45 min R$ 80, Ana em A e B, Bia só em A).
+// D-018 T-4, reescrito na D-050 (T-3): serviço de disponibilidade POR SERVIÇO contra PostgreSQL real
+// (regras da D-018 por serviço). Relógio injetado (AGORA); cada cenário nasce de criarCenario (A 30 min
+// R$ 50, B 45 min R$ 80, Ana em A e B, Bia só em A). Restringir a um profissional = profissionalPorServico.
 
 let c: pg.Client;
 beforeAll(async () => {
@@ -25,8 +26,14 @@ afterAll(async () => {
   await c.end();
 });
 
-const consultar = (x: Cenario, parcial: Partial<EntradaDisponibilidade> = {}) =>
-  consultarDisponibilidade(ctxPublico(x.s), { servicoIds: [x.A], de: DIA, ate: DIA, agora: AGORA, ...parcial });
+const consultar = (x: Cenario, parcial: Partial<EntradaDisponibilidadePorServico> = {}) =>
+  consultarDisponibilidadePorServico(ctxPublico(x.s), { servicoIds: [x.A], de: DIA, ate: DIA, agora: AGORA, ...parcial });
+
+/** Restringe todos os serviços pedidos ao profissional (a antiga entrada `profissionalId`). */
+const so = (profissionalId: string, servicoIds: string[]): Partial<EntradaDisponibilidadePorServico> => ({
+  servicoIds,
+  profissionalPorServico: Object.fromEntries(servicoIds.map((id) => [id, profissionalId])),
+});
 
 const comJornadaDaAna = async (...faixas: [string, string][]) => {
   const x = await criarCenario(c);
@@ -34,76 +41,65 @@ const comJornadaDaAna = async (...faixas: [string, string][]) => {
   return x;
 };
 
-describe('elegibilidade (CA-1, CA-11, CA-23)', () => {
-  it('CA-1: A+B → só Ana; A → Ana e Bia, nessa ordem', async () => {
+describe('elegibilidade por serviço (RN-7, CA-11, CA-23)', () => {
+  it('A → Ana e Bia, nessa ordem (nome, id); B → só Ana', async () => {
     const x = await criarCenario(c);
-    expect(await listarProfissionaisElegiveis(ctxPublico(x.s), [x.A, x.B])).toEqual({
-      resultado: 'ok',
-      profissionais: [{ id: x.ana, nome: 'Ana' }],
-    });
-    expect(await listarProfissionaisElegiveis(ctxPublico(x.s), [x.A])).toEqual({
-      resultado: 'ok',
-      profissionais: [
-        { id: x.ana, nome: 'Ana' },
-        { id: x.bia, nome: 'Bia' },
-      ],
-    });
+    const r = await consultar(x, { servicoIds: [x.A, x.B] });
+    expect(profissionaisDe(r, x.A)).toEqual([x.ana, x.bia]);
+    expect(profissionaisDe(r, x.B)).toEqual([x.ana]);
+    if (r.resultado !== 'ok') throw new Error();
+    expect(r.servicos[0].profissionais.map((p) => p.nome)).toEqual(['Ana', 'Bia']);
   });
 
-  it('listarProfissionaisElegiveis: entrada inválida e serviço indisponível', async () => {
-    const x = await criarCenario(c);
-    expect(await listarProfissionaisElegiveis(ctxPublico(x.s), [])).toEqual({ resultado: 'entrada_invalida', motivo: 'servicos_vazio' });
-    expect(await listarProfissionaisElegiveis(ctxPublico(x.s), [x.A, x.A])).toEqual({ resultado: 'entrada_invalida', motivo: 'servicos_repetidos' });
-    expect(await listarProfissionaisElegiveis(ctxPublico(x.s), [x.s.servicos.inativoId])).toEqual({ resultado: 'servico_indisponivel' });
-    expect(await listarProfissionaisElegiveis(ctxPublico(x.s), ['lixo'])).toEqual({ resultado: 'servico_indisponivel' });
-  });
-
-  it('CA-11: duração e preço totais (75 min, 13000) e serviços na ordem pedida', async () => {
+  it('cada serviço com a própria duração e preço, na ordem pedida; intervaloMin e fuso no resultado', async () => {
     const x = await comJornadaDaAna(['09:00', '12:00']);
     const r = await consultar(x, { servicoIds: [x.B, x.A] });
-    expect(r).toMatchObject({ resultado: 'ok', fuso: 'America/Sao_Paulo', duracaoTotalMin: 75, precoTotalCentavos: 13000 });
+    expect(r).toMatchObject({ resultado: 'ok', fuso: 'America/Sao_Paulo', intervaloMin: 0 });
     if (r.resultado !== 'ok') throw new Error();
-    expect(r.servicos).toEqual([
-      { id: x.B, nome: 'B', duracaoMin: 45, precoCentavos: 8000 },
-      { id: x.A, nome: 'A', duracaoMin: 30, precoCentavos: 5000 },
+    expect(r.servicos.map(({ servicoId, nome, duracaoMin, precoCentavos, vazioPorConflito }) => ({ servicoId, nome, duracaoMin, precoCentavos, vazioPorConflito }))).toEqual([
+      { servicoId: x.B, nome: 'B', duracaoMin: 45, precoCentavos: 8000, vazioPorConflito: false },
+      { servicoId: x.A, nome: 'A', duracaoMin: 30, precoCentavos: 5000, vazioPorConflito: false },
     ]);
-    expect(r.profissionais.map((p) => p.profissionalId)).toEqual([x.ana]);
-    expect(rotulos(r)).toEqual(faixa('09:00', '10:45'));
+    expect(rotulos(r, 0, 0, 0)).toEqual(faixa('09:00', '11:15'));
+    expect(rotulos(r, 0, 0, 1)).toEqual(faixa('09:00', '11:30'));
+    expect(r.servicos[1].profissionais[0].dias[0].horarios[0].fim.toISOString()).toBe('2026-12-01T12:30:00.000Z');
   });
 
-  it('CA-11: serviço B desativado → servico_indisponivel, sem horários', async () => {
+  it('serviço B desativado → servico_indisponivel, sem horários', async () => {
     const x = await comJornadaDaAna(['09:00', '12:00']);
     await c.query('UPDATE servico SET ativo = false WHERE id = $1', [x.B]);
     expect(await consultar(x, { servicoIds: [x.A, x.B] })).toEqual({ resultado: 'servico_indisponivel' });
   });
 
-  it('CA-11: Ana desativada não é elegível e a consulta com ela devolve lista vazia; B sem profissional ativo fica indisponível', async () => {
+  it('Ana desativada: A só com Bia; restrita à Ana → sem profissionais; B sem profissional ativo fica indisponível', async () => {
     const x = await comJornadaDaAna(['09:00', '12:00']);
     await c.query('UPDATE profissional SET ativo = false WHERE id = $1', [x.ana]);
-    expect(await listarProfissionaisElegiveis(ctxPublico(x.s), [x.A])).toEqual({ resultado: 'ok', profissionais: [{ id: x.bia, nome: 'Bia' }] });
-    expect(await consultar(x, { profissionalId: x.ana })).toMatchObject({ resultado: 'ok', profissionais: [] });
+    expect(profissionaisDe(await consultar(x), x.A)).toEqual([x.bia]);
+    expect(await consultar(x, so(x.ana, [x.A]))).toMatchObject({ resultado: 'ok', servicos: [{ servicoId: x.A, profissionais: [] }] });
     expect(await consultar(x, { servicoIds: [x.A, x.B] })).toEqual({ resultado: 'servico_indisponivel' });
   });
 
-  it('CA-23: sem profissional → uma entrada por elegível (nome/id); com Bia → só ela; Bia sem o serviço B → vazio, sem erro', async () => {
+  it('CA-23: restrição por serviço; Bia sem o serviço B → B vazio, sem erro', async () => {
     const x = await criarCenario(c);
     await inserirJornada(c, x.s.salaoId, x.ana, TODOS_OS_DIAS, ['09:00', '10:00']);
     await inserirJornada(c, x.s.salaoId, x.bia, TODOS_OS_DIAS, ['10:00', '11:00']);
     const todos = await consultar(x);
-    if (todos.resultado !== 'ok') throw new Error();
-    expect(todos.profissionais.map((p) => p.nome)).toEqual(['Ana', 'Bia']);
     expect(rotulos(todos, 0)).toEqual(['09:00', '09:15', '09:30']);
     expect(rotulos(todos, 1)).toEqual(['10:00', '10:15', '10:30']);
-    const soBia = await consultar(x, { profissionalId: x.bia });
-    if (soBia.resultado !== 'ok') throw new Error();
-    expect(soBia.profissionais.map((p) => p.profissionalId)).toEqual([x.bia]);
-    expect(await consultar(x, { servicoIds: [x.A, x.B], profissionalId: x.bia })).toMatchObject({ resultado: 'ok', profissionais: [] });
+    expect(profissionaisDe(await consultar(x, so(x.bia, [x.A])), x.A)).toEqual([x.bia]);
+    const misto = await consultar(x, { servicoIds: [x.A, x.B], profissionalPorServico: { [x.A]: x.bia, [x.B]: x.bia } });
+    expect(profissionaisDe(misto, x.A)).toEqual([x.bia]);
+    expect(profissionaisDe(misto, x.B)).toEqual([]);
+    const cruzado = await consultar(x, { servicoIds: [x.A, x.B], profissionalPorServico: { [x.A]: x.bia, [x.B]: x.ana } });
+    expect(profissionaisDe(cruzado, x.A)).toEqual([x.bia]);
+    expect(profissionaisDe(cruzado, x.B)).toEqual([x.ana]);
   });
 
-  it('profissional malformado ou inexistente → NaoEncontrado', async () => {
-    const x = await criarCenario(c);
-    await expect(consultar(x, { profissionalId: 'nao-uuid' })).rejects.toBeInstanceOf(NaoEncontrado);
-    await expect(consultar(x, { profissionalId: UUID_INEXISTENTE })).rejects.toBeInstanceOf(NaoEncontrado);
+  it('profissional da restrição malformado ou inexistente → NaoEncontrado; id em maiúsculas é aceito', async () => {
+    const x = await comJornadaDaAna(['09:00', '10:00']);
+    await expect(consultar(x, so('nao-uuid', [x.A]))).rejects.toBeInstanceOf(NaoEncontrado);
+    await expect(consultar(x, so(UUID_INEXISTENTE, [x.A]))).rejects.toBeInstanceOf(NaoEncontrado);
+    expect(rotulos(await consultar(x, so(x.ana.toUpperCase(), [x.A])))).toEqual(['09:00', '09:15', '09:30']);
   });
 });
 
@@ -113,7 +109,7 @@ describe('regras do cálculo com o banco (CA-3, CA-5, CA-9, CA-12, CA-19)', () =
     await definirRegras(c, x.s.salaoId, { intervalo_min: 15 });
     const cli = await inserirCliente(c, x.s.salaoId);
     await inserirReserva(c, { salaoId: x.s.salaoId, profissionalId: x.ana, clienteId: cli, inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30'), ocupadoAte: sp(DIA, '10:45') });
-    const i = rotulos(await consultar(x, { profissionalId: x.ana }));
+    const i = rotulos(await consultar(x, so(x.ana, [x.A])));
     expect(i).not.toContain('09:30');
     expect(i).not.toContain('10:30');
     expect(i).toContain('09:15');
@@ -124,7 +120,7 @@ describe('regras do cálculo com o banco (CA-3, CA-5, CA-9, CA-12, CA-19)', () =
     const x = await comJornadaDaAna(['09:00', '12:00']);
     const cli = await inserirCliente(c, x.s.salaoId);
     await inserirReserva(c, { salaoId: x.s.salaoId, profissionalId: x.ana, clienteId: cli, inicio: sp(DIA, '10:00'), fim: sp(DIA, '10:30') });
-    const i = rotulos(await consultar(x, { profissionalId: x.ana }));
+    const i = rotulos(await consultar(x, so(x.ana, [x.A])));
     expect(i).toContain('09:30');
     expect(i).toContain('10:30');
     expect(i).not.toContain('10:00');
@@ -146,9 +142,9 @@ describe('regras do cálculo com o banco (CA-3, CA-5, CA-9, CA-12, CA-19)', () =
   it('CA-9: grade 30 e jornada 09:05–12:00 → primeiro início 09:30 e todos múltiplos de 30', async () => {
     const x = await comJornadaDaAna(['09:05', '12:00']);
     await definirRegras(c, x.s.salaoId, { grade_min: 15 });
-    expect(rotulos(await consultar(x, { profissionalId: x.ana }))[0]).toBe('09:15');
+    expect(rotulos(await consultar(x, so(x.ana, [x.A])))[0]).toBe('09:15');
     await definirRegras(c, x.s.salaoId, { grade_min: 30 });
-    const r = await consultar(x, { profissionalId: x.ana });
+    const r = await consultar(x, so(x.ana, [x.A]));
     const i = rotulos(r);
     expect(i[0]).toBe('09:30');
     expect(i.every((h) => Number(h.slice(3)) % 30 === 0)).toBe(true);
@@ -170,7 +166,7 @@ describe('regras do cálculo com o banco (CA-3, CA-5, CA-9, CA-12, CA-19)', () =
     await R('11:00', '12:00', { status: 'nao_compareceu' });
     await R('12:00', '13:00', { encaixe: true });
     await R('13:00', '14:00', { clienteId: anon });
-    expect(rotulos(await consultar(x, { servicoIds: [C], profissionalId: x.ana }))).toEqual(['09:00']);
+    expect(rotulos(await consultar(x, so(x.ana, [C])))).toEqual(['09:00']);
   });
 
   it('serviço desativado depois de reservado continua ocupando o profissional (RN-7)', async () => {
@@ -178,20 +174,20 @@ describe('regras do cálculo com o banco (CA-3, CA-5, CA-9, CA-12, CA-19)', () =
     const cli = await inserirCliente(c, x.s.salaoId);
     await inserirReserva(c, { salaoId: x.s.salaoId, profissionalId: x.ana, clienteId: cli, inicio: sp(DIA, '09:00'), fim: sp(DIA, '09:30') });
     await c.query('UPDATE servico SET ativo = false WHERE id = $1', [x.B]);
-    expect(rotulos(await consultar(x, { profissionalId: x.ana }))).toEqual(['09:30']);
+    expect(rotulos(await consultar(x, so(x.ana, [x.A])))).toEqual(['09:30']);
   });
 
   it('CA-19: troca de fuso reinterpreta a jornada e mantém o UTC do bloqueio', async () => {
     const x = await criarCenario(c);
     await inserirJornada(c, x.s.salaoId, x.ana, TODOS_OS_DIAS, ['09:00', '12:00']);
     await inserirBloqueio(c, x.s.salaoId, x.ana, new Date('2026-12-01T12:00:00Z'), new Date('2026-12-01T13:00:00Z'));
-    const antes = await consultar(x, { profissionalId: x.ana });
+    const antes = await consultar(x, so(x.ana, [x.A]));
     expect(rotulos(antes)[0]).toBe('10:00'); // 09:00–10:00 SP está bloqueado
     await definirRegras(c, x.s.salaoId, { fuso: MANAUS });
-    const depois = await consultar(x, { profissionalId: x.ana });
+    const depois = await consultar(x, so(x.ana, [x.A]));
     if (depois.resultado !== 'ok') throw new Error();
     expect(depois.fuso).toBe(MANAUS);
-    const primeiro = depois.profissionais[0].dias[0].horarios[0];
+    const primeiro = depois.servicos[0].profissionais[0].dias[0].horarios[0];
     expect(primeiro.inicio.toISOString()).toBe('2026-12-01T13:00:00.000Z');
     expect(primeiro.local.minutosDoDia).toBe(540);
   });
@@ -201,7 +197,7 @@ describe('regras do cálculo com o banco (CA-3, CA-5, CA-9, CA-12, CA-19)', () =
     await inserirJornada(c, x.s.salaoId, x.bia, [3], ['09:00', '10:00']); // só quarta
     const r = await consultar(x);
     if (r.resultado !== 'ok') throw new Error();
-    expect(r.profissionais.map((p) => p.nome)).toEqual(['Ana', 'Bia']);
+    expect(r.servicos[0].profissionais.map((p) => p.nome)).toEqual(['Ana', 'Bia']);
     expect(rotulos(r, 0)).toEqual([]);
     expect(rotulos(r, 1)).toEqual([]);
     const quarta = await consultar(x, { de: DIA_SEGUINTE, ate: DIA_SEGUINTE });
@@ -213,16 +209,16 @@ describe('janela e entradas inválidas (CA-21)', () => {
   it('datas no passado e depois de hoje + janela → listas vazias, sem erro; o limite tem horários', async () => {
     const x = await comJornadaDaAna(['09:00', '12:00']);
     const r = await consultar(x, {
-      profissionalId: x.ana,
+      ...so(x.ana, [x.A]),
       de: { ano: 2026, mes: 11, dia: 19 },
       ate: { ano: 2026, mes: 11, dia: 20 },
     });
     expect(rotulos(r, 0, 0)).toEqual([]);
-    const limite = await consultar(x, { profissionalId: x.ana, de: { ano: 2027, mes: 1, dia: 19 }, ate: { ano: 2027, mes: 1, dia: 20 } });
+    const limite = await consultar(x, { ...so(x.ana, [x.A]), de: { ano: 2027, mes: 1, dia: 19 }, ate: { ano: 2027, mes: 1, dia: 20 } });
     if (limite.resultado !== 'ok') throw new Error();
     expect(rotulos(limite, 0, 0).length).toBeGreaterThan(0);
     expect(rotulos(limite, 0, 1)).toEqual([]);
-    expect(limite.profissionais[0].dias.map((d) => d.data)).toEqual([
+    expect(limite.servicos[0].profissionais[0].dias.map((d) => d.data)).toEqual([
       { ano: 2027, mes: 1, dia: 19 },
       { ano: 2027, mes: 1, dia: 20 },
     ]);
@@ -232,8 +228,8 @@ describe('janela e entradas inválidas (CA-21)', () => {
     const x = await comJornadaDaAna(['09:00', '12:00']);
     const r = await consultar(x, { de: { ano: 2030, mes: 1, dia: 1 }, ate: { ano: 2030, mes: 1, dia: 3 } });
     if (r.resultado !== 'ok') throw new Error();
-    expect(r.profissionais).toHaveLength(2);
-    for (const p of r.profissionais) expect(p.dias.map((d) => d.horarios)).toEqual([[], [], []]);
+    expect(r.servicos[0].profissionais).toHaveLength(2);
+    for (const p of r.servicos[0].profissionais) expect(p.dias.map((d) => d.horarios)).toEqual([[], [], []]);
   });
 
   it('entradas inválidas e período com mais de janela_dias + 1 datas', async () => {
@@ -245,6 +241,9 @@ describe('janela e entradas inválidas (CA-21)', () => {
     expect(await consultar(x, { de: d(2, 31), ate: d(3, 1) })).toEqual({ resultado: 'entrada_invalida', motivo: 'data_invalida' });
     expect(await consultar(x, { de: d(12, 2), ate: d(12, 1) })).toEqual({ resultado: 'entrada_invalida', motivo: 'periodo_invertido' });
     expect(await consultar(x, { de: d(12, 1), ate: d(1, 31, 2027) })).toEqual({ resultado: 'entrada_invalida', motivo: 'periodo_longo' });
+    expect(await consultar(x, { escolhidos: [{ servicoId: x.B, profissionalId: x.ana, inicio: sp(DIA, '09:00') }] })).toEqual({ resultado: 'entrada_invalida', motivo: 'escolhidos_invalidos' });
+    expect(await consultar(x, { calcular: [x.B] })).toEqual({ resultado: 'entrada_invalida', motivo: 'calculo_invalido' });
+    expect(await consultar(x, { servicoIds: [x.A, x.B], profissionalPorServico: { [x.A]: x.ana } })).toEqual({ resultado: 'entrada_invalida', motivo: 'calculo_invalido' });
     // 61 datas (janela_dias + 1) é o máximo aceito.
     expect((await consultar(x, { de: d(12, 1), ate: d(1, 30, 2027) })).resultado).toBe('ok');
   });
@@ -266,20 +265,20 @@ describe('horário de funcionamento (CA-29, CA-31, CA-32, CA-38, CA-39, RN-24)',
   it('CA-29: dia fechado → lista vazia com a Ana no resultado; dia aberto adjacente tem horários', async () => {
     const x = await comJornadaDaAna(['09:00', '12:00']);
     await definirFuncionamento(c, x.s.salaoId, { 3: [['09:00', '12:00']] });
-    const r = await consultar(x, { profissionalId: x.ana, de: DIA, ate: DIA_SEGUINTE });
+    const r = await consultar(x, { ...so(x.ana, [x.A]), de: DIA, ate: DIA_SEGUINTE });
     if (r.resultado !== 'ok') throw new Error();
-    expect(r.profissionais.map((p) => p.profissionalId)).toEqual([x.ana]);
+    expect(profissionaisDe(r, x.A)).toEqual([x.ana]);
     expect(rotulos(r, 0, 0)).toEqual([]);
     expect(rotulos(r, 0, 1)).toEqual(faixa('09:00', '11:30'));
   });
 
   it('CA-31: não informado, com ou sem linhas residuais, não limita e dá o mesmo resultado', async () => {
     const x = await comJornadaDaAna(['09:00', '12:00']);
-    const base = await consultar(x, { profissionalId: x.ana });
+    const base = await consultar(x, so(x.ana, [x.A]));
     await definirFuncionamento(c, x.s.salaoId, { 2: [['10:00', '11:00']] });
-    expect(rotulos(await consultar(x, { profissionalId: x.ana }))).toEqual(['10:00', '10:15', '10:30']);
+    expect(rotulos(await consultar(x, so(x.ana, [x.A])))).toEqual(['10:00', '10:15', '10:30']);
     await marcarFuncionamentoNaoInformado(c, x.s.salaoId); // linhas residuais
-    expect(await consultar(x, { profissionalId: x.ana })).toEqual(base);
+    expect(await consultar(x, so(x.ana, [x.A]))).toEqual(base);
     expect(rotulos(base)).toEqual(faixa('09:00', '11:30'));
   });
 
@@ -290,17 +289,17 @@ describe('horário de funcionamento (CA-29, CA-31, CA-32, CA-38, CA-39, RN-24)',
     await definirFuncionamento(c, x.s.salaoId, {});
     const r = await consultar(x, { de: DIA, ate: { ano: 2026, mes: 12, dia: 5 } });
     if (r.resultado !== 'ok') throw new Error();
-    expect(r.profissionais).toHaveLength(2);
-    for (const p of r.profissionais) for (const d of p.dias) expect(d.horarios).toEqual([]);
+    expect(r.servicos[0].profissionais).toHaveLength(2);
+    for (const p of r.servicos[0].profissionais) for (const d of p.dias) expect(d.horarios).toEqual([]);
   });
 
-  it('CA-30/33: interseção com a pausa do funcionamento e da jornada', async () => {
+  it('CA-30/33: interseção com a pausa do funcionamento e da jornada (B, 45 min)', async () => {
     const x = await comJornadaDaAna(['09:00', '12:00'], ['13:00', '18:00']);
     await definirFuncionamento(c, x.s.salaoId, { 2: [['08:00', '18:00']] });
-    const r = await consultar(x, { servicoIds: [x.A, x.B], profissionalId: x.ana });
-    expect(rotulos(r)).not.toContain('11:00');
+    const r = await consultar(x, so(x.ana, [x.B]));
+    expect(rotulos(r)).not.toContain('11:30');
     expect(rotulos(r)).toContain('13:00');
-    expect(rotulos(r)).toContain('10:45');
+    expect(rotulos(r)).toContain('11:15');
   });
 
   it('CA-38: encaixe fora do funcionamento não afeta, mas o ocupado_ate (com intervalo) invade a janela', async () => {
@@ -309,25 +308,25 @@ describe('horário de funcionamento (CA-29, CA-31, CA-32, CA-38, CA-39, RN-24)',
     await definirRegras(c, x.s.salaoId, { intervalo_min: 15 });
     const cli = await inserirCliente(c, x.s.salaoId);
     await inserirReserva(c, { salaoId: x.s.salaoId, profissionalId: x.ana, clienteId: cli, inicio: sp(DIA, '07:00'), fim: sp(DIA, '08:00'), encaixe: true });
-    expect(rotulos(await consultar(x, { profissionalId: x.ana }))[0]).toBe('09:00');
+    expect(rotulos(await consultar(x, so(x.ana, [x.A])))[0]).toBe('09:00');
     await inserirReserva(c, { salaoId: x.s.salaoId, profissionalId: x.ana, clienteId: cli, inicio: sp(DIA, '08:30'), fim: sp(DIA, '09:00'), ocupadoAte: sp(DIA, '09:15'), encaixe: true });
-    expect(rotulos(await consultar(x, { profissionalId: x.ana }))[0]).toBe('09:15');
+    expect(rotulos(await consultar(x, so(x.ana, [x.A])))[0]).toBe('09:15');
   });
 
   it('CA-39: troca de fuso mantém os minutos de parede do funcionamento e da jornada', async () => {
     const x = await comJornadaDaAna(['09:00', '12:00']);
     await definirFuncionamento(c, x.s.salaoId, { 2: [['09:00', '12:00']] });
-    expect(rotulos(await consultar(x, { profissionalId: x.ana }))[0]).toBe('09:00');
+    expect(rotulos(await consultar(x, so(x.ana, [x.A])))[0]).toBe('09:00');
     await definirRegras(c, x.s.salaoId, { fuso: MANAUS });
-    const r = await consultar(x, { profissionalId: x.ana });
+    const r = await consultar(x, so(x.ana, [x.A]));
     if (r.resultado !== 'ok') throw new Error();
-    expect(r.profissionais[0].dias[0].horarios[0].inicio.toISOString()).toBe('2026-12-01T13:00:00.000Z');
+    expect(r.servicos[0].profissionais[0].dias[0].horarios[0].inicio.toISOString()).toBe('2026-12-01T13:00:00.000Z');
     expect(rotulos(r)[0]).toBe('09:00');
   });
 
   it('RN-24: sem cache; alternar o estado entre duas consultas muda o resultado', async () => {
     const x = await comJornadaDaAna(['09:00', '12:00']);
-    const consulta = () => consultar(x, { profissionalId: x.ana });
+    const consulta = () => consultar(x, so(x.ana, [x.A]));
     expect(rotulos(await consulta())).toHaveLength(11);
     await definirFuncionamento(c, x.s.salaoId, {});
     expect(rotulos(await consulta())).toEqual([]);
@@ -343,6 +342,6 @@ describe('contextos', () => {
     const { ctxDoGestor } = await import('./apoio');
     const x = await comJornadaDaAna(['09:00', '12:00']);
     const entrada = { servicoIds: [x.A], de: DIA, ate: DIA, agora: AGORA };
-    expect(await consultarDisponibilidade(ctxDoGestor(x.s), entrada)).toEqual(await consultarDisponibilidade(ctxPublico(x.s), entrada));
+    expect(await consultarDisponibilidadePorServico(ctxDoGestor(x.s), entrada)).toEqual(await consultarDisponibilidadePorServico(ctxPublico(x.s), entrada));
   });
 });

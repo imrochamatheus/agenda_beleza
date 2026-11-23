@@ -14,6 +14,7 @@ import {
   instanteFuturo,
 } from '../../support/factories';
 import type { SalaoCompleto } from '../../support/factories';
+import { conferirDerivados } from '../../support/reservas';
 import { conectar } from '../../support/sql';
 
 // CA-3: as fábricas entregam dois salões completos, sem SQL manual no teste. A conferência abaixo é
@@ -128,8 +129,8 @@ describe.each([
 
   it('CA-3: reserva confirmada, no futuro, com itens em snapshot de preço e duração', async () => {
     const s = salao();
-    const r = await c.query<{ salao_id: string; status: string; inicio: Date; fim: Date; profissional_id: string; cliente_id: string }>(
-      'SELECT salao_id, status, inicio, fim, profissional_id, cliente_id FROM reserva WHERE id = $1',
+    const r = await c.query<{ salao_id: string; status: string; inicio: Date; fim: Date; cliente_id: string }>(
+      'SELECT salao_id, status, inicio, fim, cliente_id FROM reserva WHERE id = $1',
       [s.reserva.id],
     );
     expect(r.rows).toEqual([
@@ -138,14 +139,16 @@ describe.each([
         status: 'confirmado',
         inicio: s.reserva.inicio,
         fim: s.reserva.fim,
-        profissional_id: s.profissional.profissionalId,
         cliente_id: s.clientes.ativaId,
       },
     ]);
+    // D-050: derivados coerentes com os itens.
+    expect(await conferirDerivados(s.reserva.id)).toBe(1);
     expect(r.rows[0].inicio.getTime()).toBeGreaterThan(Date.now());
 
     const itens = await c.query(
       `SELECT i.id, i.salao_id, i.servico_id, i.ordem, i.preco_centavos, i.duracao_min,
+              i.profissional_id::text AS profissional_id, i.status::text AS status, i.inicio, i.fim,
               s.preco_centavos AS preco_atual, s.duracao_min AS duracao_atual
          FROM reserva_item i JOIN servico s ON s.salao_id = i.salao_id AND s.id = i.servico_id
         WHERE i.salao_id = $1 AND i.reserva_id = $2 ORDER BY i.ordem`,
@@ -156,7 +159,13 @@ describe.each([
     for (const i of itens.rows) {
       expect(i.salao_id).toBe(s.salaoId);
       expect([i.preco_centavos, i.duracao_min]).toEqual([i.preco_atual, i.duracao_atual]);
+      // D-050: cada item com o profissional da fábrica, confirmado.
+      expect([i.profissional_id, i.status]).toEqual([s.profissional.profissionalId, 'confirmado']);
     }
+    // Itens encadeados: o primeiro começa no início da reserva; o segundo, no fim do primeiro.
+    expect(itens.rows[0].inicio).toEqual(s.reserva.inicio);
+    expect(itens.rows[1].inicio).toEqual(itens.rows[0].fim);
+    expect(itens.rows[1].fim).toEqual(s.reserva.fim);
     const duracaoTotal = itens.rows.reduce((t, i) => t + i.duracao_min, 0);
     expect(s.reserva.fim.getTime() - s.reserva.inicio.getTime()).toBe(duracaoTotal * 60_000);
   });

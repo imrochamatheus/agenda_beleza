@@ -1,5 +1,6 @@
-// Pré-preenchimento da reserva manual por query (D-029 RN-1): `profissional`, `data` e `hora`. Puro, sem
-// next/*. Valor repetido (array), malformado ou fora das opções vale como ausente (sem erro nem 404).
+// Pré-preenchimento da reserva manual por query (D-029 RN-1): `data` (de todos) e `profissional`/`hora` da
+// primeira linha (D-050). Puro, sem next/*. Valor repetido (array), malformado ou fora das opções vale como
+// ausente (sem erro nem 404).
 import { lerData, lerHora } from '@/server/reservas/reserva-equipe';
 import { ehUuid } from '@/server/repos/ids';
 import type { DataCivil } from '@/server/tempo/fuso';
@@ -33,8 +34,7 @@ export function valoresIniciais(
   const data = lerData(um(params.data));
   const hora = lerHora(um(params.hora));
   return valoresVazios({
-    profissionalId,
     data: dataIso(data ?? o.hoje),
-    hora: hora === null ? '' : horaTexto(hora),
+    itens: [{ servicoId: '', profissionalId, hora: hora === null ? '' : horaTexto(hora) }],
   });
 }

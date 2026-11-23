@@ -17,8 +17,9 @@ import type { Executor } from './transacao';
 // nem `motivo` de bloqueio (R-3). Todo SQL filtra `salao_id`. Sem transação nem trava (D-10): leitura.
 //
 // NÃO troque os literais por parâmetros nem junte variantes com `$p IS NULL OR ...` (lição da D-016):
-// o literal de status e a expressão `tstzrange(r.inicio, r.ocupado_ate, '[)')` de `consultaOcupacoes`
-// são o que torna aplicável o índice parcial `reserva_sem_sobreposicao`.
+// o literal de status e a expressão `tstzrange(i.inicio, i.ocupado_ate, '[)')` de `consultaOcupacoes`
+// são o que torna aplicável o índice parcial `reserva_item_sem_sobreposicao` (D-050, dba.md Q6). A
+// ocupação é do ITEM (`reserva_item`): cada item tem profissional, início e ocupado-até próprios.
 
 export type RegrasDoSalao = {
   fuso: string;
@@ -30,7 +31,8 @@ export type RegrasDoSalao = {
 /** Regras e funcionamento da MESMA instrução (A-9); o serviço converte o funcionamento. */
 export type RegrasEFuncionamento = { regras: RegrasDoSalao; funcionamento: FuncionamentoDTO };
 export type ServicoOfertavel = { id: string; nome: string; precoCentavos: number; duracaoMin: number };
-export type CandidatoProfissional = { id: string; nome: string; ativo: boolean; vinculos: number };
+/** `servicos` = ids de `servicoIds` que ele executa (minúsculas, ordem dos ids), D-050 RN-7. */
+export type CandidatoProfissional = { id: string; nome: string; ativo: boolean; servicos: string[] };
 export type LinhaJornadaDeAgenda = { profissionalId: string; diaSemana: number; inicioMin: number; fimMin: number };
 /** `profissionalId` null = bloqueio do salão inteiro. Sem `motivo`. */
 export type BloqueioDeAgenda = { profissionalId: string | null; inicio: Date; fim: Date };
@@ -43,13 +45,14 @@ export interface RepoDisponibilidade {
   /** 1 SQL (ondeServicoOfertavel + id IN). Ids não-UUID são descartados; sobrando nenhum → [] sem SQL. */
   servicosOfertaveis(ctx: ContextoDeLeituraDeAgenda, ids: readonly string[]): Promise<ServicoOfertavel[]>;
   /**
-   * 1 SQL. `profissionalId` null → ativos do salão; senão só ele (ativo ou não). Ordem nome, id.
-   * `vinculos` = quantos de `servicoIds` ele executa. `profissionalId` malformado → NaoEncontrado sem SQL.
+   * 1 SQL. `profissionalIds` null → ativos do salão; lista → só eles (ativos ou não; lista vazia → []
+   * sem SQL). Ordem nome, id. `servicos` = ids de `servicoIds` que ele executa. Algum id malformado →
+   * NaoEncontrado sem SQL; de outro salão ou inexistente simplesmente não volta.
    */
   candidatos(
     ctx: ContextoDeLeituraDeAgenda,
     servicoIds: readonly string[],
-    profissionalId: string | null,
+    profissionalIds: readonly string[] | null,
   ): Promise<CandidatoProfissional[]>;
   /** 1 SQL; lista vazia → [] sem SQL. Ordem profissional, dia, início. */
   jornadas(ctx: ContextoDeLeituraDeAgenda, profissionalIds: readonly string[]): Promise<LinhaJornadaDeAgenda[]>;
@@ -70,20 +73,21 @@ type LinhaRegras = ColunasFuncionamento & {
 const soUuids = (ids: readonly string[]): string[] => ids.filter((id) => ehUuid(id));
 
 /**
- * Ocupação por profissional (A-5, aprovada em dba.md): `unnest` + `CROSS JOIN LATERAL` dá um acesso ao
- * índice por profissional, numa única instrução. Exportada para o teste de plano (CA-25).
+ * Ocupação por profissional sobre os ITENS (D-050, dba.md Q6; forma da D-018 A-5): `unnest` + `CROSS
+ * JOIN LATERAL` dá um acesso ao índice por profissional, numa única instrução. Exportada para o teste de
+ * plano (CA-3).
  */
 export function consultaOcupacoes(salaoId: string, profissionalIds: readonly string[], periodo: Periodo): Prisma.Sql {
   return Prisma.sql`
     SELECT x.pid::text AS profissional_id, o.inicio, o.ocupado_ate
       FROM unnest(${soUuids(profissionalIds)}::uuid[]) AS x(pid)
       CROSS JOIN LATERAL (
-        SELECT r.id, r.inicio, r.ocupado_ate
-          FROM reserva r
-         WHERE r.profissional_id = x.pid
-           AND r.salao_id = ${salaoId}::uuid
-           AND r.status IN ('confirmado', 'concluido', 'nao_compareceu')
-           AND tstzrange(r.inicio, r.ocupado_ate, '[)') && tstzrange(${periodo.de}::timestamptz, ${periodo.ate}::timestamptz, '[)')
+        SELECT i.id, i.inicio, i.ocupado_ate
+          FROM reserva_item i
+         WHERE i.profissional_id = x.pid
+           AND i.salao_id = ${salaoId}::uuid
+           AND i.status IN ('confirmado', 'concluido', 'nao_compareceu')
+           AND tstzrange(i.inicio, i.ocupado_ate, '[)') && tstzrange(${periodo.de}::timestamptz, ${periodo.ate}::timestamptz, '[)')
       ) o
      ORDER BY x.pid, o.inicio, o.id`;
 }
@@ -125,19 +129,23 @@ export function criarRepoDisponibilidade(db: Executor): RepoDisponibilidade {
       });
     },
 
-    async candidatos(ctx, servicoIds, profissionalId) {
+    async candidatos(ctx, servicoIds, profissionalIds) {
       const salaoId = exigirLeituraDeAgenda(ctx);
-      if (profissionalId !== null && !ehUuid(profissionalId)) {
+      if (profissionalIds !== null && !profissionalIds.every((id) => ehUuid(id))) {
         throw new NaoEncontrado();
+      }
+      if (profissionalIds !== null && profissionalIds.length === 0) {
+        return [];
       }
       const servicos = soUuids(servicoIds);
       const filtro =
-        profissionalId === null ? Prisma.sql`AND p.ativo` : Prisma.sql`AND p.id = ${profissionalId}::uuid`;
+        profissionalIds === null ? Prisma.sql`AND p.ativo` : Prisma.sql`AND p.id = ANY(${[...profissionalIds]}::uuid[])`;
       return db.$queryRaw<CandidatoProfissional[]>`
         SELECT p.id::text AS id, p.nome, p.ativo,
-               (SELECT count(*)::int FROM servico_profissional sp
-                 WHERE sp.salao_id = p.salao_id AND sp.profissional_id = p.id
-                   AND sp.servico_id = ANY(${servicos}::uuid[])) AS vinculos
+               ARRAY(SELECT sp.servico_id::text FROM servico_profissional sp
+                      WHERE sp.salao_id = p.salao_id AND sp.profissional_id = p.id
+                        AND sp.servico_id = ANY(${servicos}::uuid[])
+                      ORDER BY sp.servico_id) AS servicos
           FROM profissional p
          WHERE p.salao_id = ${salaoId}::uuid ${filtro}
          ORDER BY p.nome, p.id`;
